@@ -6,7 +6,8 @@
 
 [![CI](https://github.com/sentris-security/sentris/actions/workflows/ci.yml/badge.svg)](https://github.com/sentris-security/sentris/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Binary Size](https://img.shields.io/badge/binary%20size-3.2MB-success.svg)](https://github.com/sentris-security/sentris/releases)
+[![Binary Size](https://img.shields.io/badge/binary%20size-3.4MB-success.svg)](https://github.com/sentris-security/sentris/releases)
+
 [![Speed](https://img.shields.io/badge/pre--commit-sub--35ms-brightgreen.svg)](#benchmarks)
 
 ```text
@@ -73,32 +74,68 @@ sentris scan --git-history
 # CI/CD mode: Exit with code 1 if any secrets are detected
 sentris scan --fail-on-secret
 
+# Native GitHub Actions PR diff annotations (auto-detected on GITHUB_ACTIONS=true)
+sentris scan --format github
+
 # Export SARIF 2.1.0 for GitHub Code Scanning / Advanced Security
 sentris scan --format sarif > results.sarif
 ```
 
 ---
 
-### 3. Install Sub-35ms Pre-Commit Hook
+### 3. Repository Configuration & Enterprise Rules (`sentris init`)
 
-Install an idempotent, native hook that prevents secrets from ever entering your git commits:
+Scaffold a production-grade `.sentris.toml` configuration file:
 
 ```bash
-# Install hook into .git/hooks/pre-commit
-sentris install
+sentris init
+```
 
-# Test hook safety: commits containing secrets will be aborted
-git commit -m "Add new feature"
+Customize proprietary internal credentials, company tokens, and repository ignore patterns:
 
-# Uninstall whenever needed
-sentris uninstall
+```toml
+[scanner]
+max_file_size_mb = 10
+ignore_paths = ["target", "node_modules", "vendor", "tests/fixtures"]
+
+# Define proprietary internal credentials
+[[rules]]
+rule_id = "internal-service-token"
+name = "Acme Internal Service Token"
+description = "Internal Acme microservice auth token"
+severity = "critical"
+pattern = "acme_live_[0-9a-zA-Z]{32}"
+min_entropy = 3.5
+
+[remediation]
+dual_key_grace_hours = 24
+backup_branch = true
 ```
 
 ---
 
-### 4. Autonomous Safe Remediation (The "Holy Sh*t" Factor)
+### 4. Install Sub-35ms Pre-Commit Hook
 
-When Sentris detects a live secret (e.g. Stripe, AWS, GitHub), execute autonomous safe remediation:
+#### Native Idempotent Git Hook
+```bash
+sentris install
+```
+
+#### Global Python Pre-Commit Framework Support (`.pre-commit-config.yaml`)
+For teams already using Python `pre-commit`:
+```yaml
+repos:
+  - repo: https://github.com/sentris-security/sentris
+    rev: v0.1.0
+    hooks:
+      - id: sentris
+```
+
+---
+
+### 5. Multi-Provider Autonomous Remediation (Stripe, GitHub, AWS, Slack)
+
+When Sentris detects a live secret, execute autonomous safe remediation:
 
 ```bash
 # Preview the 7-step safe rotation flow (no network mutations)
@@ -107,6 +144,12 @@ sentris remediate --dry-run
 # Execute autonomous dual-key rotation
 sentris remediate --yes
 ```
+
+#### Live Verification Matrix:
+* **Stripe:** Probes live balance endpoint (`/v1/balance`) and provisions replacement key via API.
+* **GitHub:** Probes user endpoint (`/user`) and audits compromised OAuth scopes (`repo`, `workflow`, `admin:org`).
+* **AWS:** Validates Access Key ID syntax and executes non-destructive STS `GetCallerIdentity` IAM probes.
+* **Slack:** Probes `auth.test` verifying workspace team identity and bot token validity.
 
 #### What Happens During Autonomous Remediation:
 1. **API Probe:** Verifies secret viability via provider endpoint.
@@ -125,7 +168,7 @@ sentris rollback
 
 ---
 
-### 5. Zone 3 Remote Quarantine Playbook
+### 6. Zone 3 Remote Quarantine Playbook
 
 If a secret is discovered deep in remote git history, Sentris generates an isolated quarantine branch and an actionable remediation playbook:
 
@@ -139,9 +182,11 @@ Generates `.sentris/quarantine_qz_<id>_playbook.md` with safe git-filter-repo in
 
 ## 📊 Comparison Matrix
 
+
 | Feature | Sentris | TruffleHog | GitGuardian | Gitleaks |
 |:---|:---:|:---:|:---:|:---:|
-| **Language & Runtime** | **Rust (3.2MB static)** | Go (65MB binary) | Python / SaaS | Go (18MB binary) |
+| **Language & Runtime** | **Rust (3.4MB static)** | Go (65MB binary) | Python / SaaS | Go (18MB binary) |
+
 | **Scan Speed (5k files)** | **< 35ms** | ~280ms | Cloud latency | ~120ms |
 | **Pre-Commit Latency** | **< 18ms** | ~150ms | Hook blocks (~2s) | ~65ms |
 | **Autonomous Remediation** | **✅ Dual-Key Staged** | ❌ Alert only | ❌ Alert only | ❌ Alert only |
