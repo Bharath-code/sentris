@@ -1,7 +1,15 @@
+pub mod aws;
+pub mod github;
+pub mod slack;
 pub mod stripe;
 
 use crate::error::SentrisError;
 use serde::{Deserialize, Serialize};
+
+use self::aws::AwsVerifier;
+use self::github::GithubVerifier;
+use self::slack::SlackVerifier;
+use self::stripe::StripeVerifier;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LiveStatus {
@@ -14,8 +22,7 @@ pub enum LiveStatus {
 }
 
 pub trait ProviderVerifier: Send + Sync {
-    /// Returns the provider name (e.g. "Stripe", "AWS", "GitHub")
-    #[allow(dead_code)]
+    /// Returns the provider name (e.g. "Stripe", "AWS", "GitHub", "Slack")
     fn provider_name(&self) -> &'static str;
 
     /// Checks if this verifier handles the given rule ID
@@ -26,4 +33,73 @@ pub trait ProviderVerifier: Send + Sync {
 
     /// Rotates the credential, provisioning a new replacement key
     fn rotate(&self, old_secret: &str, dry_run: bool) -> Result<String, SentrisError>;
+}
+
+pub struct VerifierRegistry {
+    verifiers: Vec<Box<dyn ProviderVerifier>>,
+}
+
+impl VerifierRegistry {
+    pub fn new() -> Self {
+        Self {
+            verifiers: vec![
+                Box::new(StripeVerifier::new()),
+                Box::new(GithubVerifier::new()),
+                Box::new(AwsVerifier::new()),
+                Box::new(SlackVerifier::new()),
+            ],
+        }
+    }
+
+    pub fn find_verifier(&self, rule_id: &str) -> Option<&dyn ProviderVerifier> {
+        self.verifiers
+            .iter()
+            .find(|v| v.can_handle(rule_id))
+            .map(|b| b.as_ref())
+    }
+}
+
+impl Default for VerifierRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_registry_lookup() {
+        let registry = VerifierRegistry::new();
+        assert_eq!(
+            registry
+                .find_verifier("stripe-secret-key")
+                .unwrap()
+                .provider_name(),
+            "Stripe"
+        );
+        assert_eq!(
+            registry
+                .find_verifier("github-pat")
+                .unwrap()
+                .provider_name(),
+            "GitHub"
+        );
+        assert_eq!(
+            registry
+                .find_verifier("aws-access-key-id")
+                .unwrap()
+                .provider_name(),
+            "AWS"
+        );
+        assert_eq!(
+            registry
+                .find_verifier("slack-webhook-url")
+                .unwrap()
+                .provider_name(),
+            "Slack"
+        );
+        assert!(registry.find_verifier("unknown-rule").is_none());
+    }
 }

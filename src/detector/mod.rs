@@ -9,9 +9,9 @@ use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 pub struct CompiledRule {
-    pub rule_id: &'static str,
-    pub name: &'static str,
-    pub description: &'static str,
+    pub rule_id: String,
+    pub name: String,
+    pub description: String,
     pub severity: Severity,
     pub regex: Regex,
     pub min_entropy: f64,
@@ -22,23 +22,43 @@ pub struct DetectorEngine {
 }
 
 impl DetectorEngine {
-    pub fn new() -> Result<Self, SentrisError> {
+    pub fn with_config(config: Option<&crate::config::Config>) -> Result<Self, SentrisError> {
         let raw_rules = patterns::get_rules();
-        let mut compiled = Vec::with_capacity(raw_rules.len());
+        let custom_count = config.map(|c| c.rules.len()).unwrap_or(0);
+        let mut compiled = Vec::with_capacity(raw_rules.len() + custom_count);
 
         for rule in raw_rules {
             let re = Regex::new(rule.pattern)?;
             compiled.push(CompiledRule {
-                rule_id: rule.rule_id,
-                name: rule.name,
-                description: rule.description,
+                rule_id: rule.rule_id.to_string(),
+                name: rule.name.to_string(),
+                description: rule.description.to_string(),
                 severity: rule.severity,
                 regex: re,
                 min_entropy: rule.min_entropy,
             });
         }
 
+        if let Some(cfg) = config {
+            for custom in &cfg.rules {
+                let re = Regex::new(&custom.pattern)?;
+                compiled.push(CompiledRule {
+                    rule_id: custom.rule_id.clone(),
+                    name: custom.name.clone(),
+                    description: custom.description.clone(),
+                    severity: custom.severity,
+                    regex: re,
+                    min_entropy: custom.min_entropy,
+                });
+            }
+        }
+
         Ok(Self { rules: compiled })
+    }
+
+    #[allow(dead_code)]
+    pub fn new() -> Result<Self, SentrisError> {
+        Self::with_config(None)
     }
 
     /// Scans a single line of text with custom line number and optional commit hash
@@ -75,7 +95,7 @@ impl DetectorEngine {
                 // Check world-class false positive suppression filter
                 if false_positives::FalsePositiveFilter::is_false_positive(
                     matched_str,
-                    rule.rule_id,
+                    &rule.rule_id,
                     line,
                 ) {
                     continue;
@@ -90,9 +110,10 @@ impl DetectorEngine {
                 let redacted = Finding::mask_secret(matched_str);
 
                 findings.push(Finding {
-                    rule_id: rule.rule_id.to_string(),
-                    description: rule.description.to_string(),
+                    rule_id: rule.rule_id.clone(),
+                    description: rule.description.clone(),
                     severity: rule.severity,
+
                     file_path: file_path.to_string(),
                     line_number,
                     column,
@@ -191,5 +212,26 @@ mod tests {
         );
         let findings = engine.scan_text(test_code, "deploy.sh");
         assert_eq!(findings.len(), 0);
+    }
+
+    #[test]
+    fn test_custom_rule_from_config() {
+        use crate::config::{Config, CustomRule};
+        let mut config = Config::default();
+        config.rules.push(CustomRule {
+            rule_id: "acme-corp-key".to_string(),
+            name: "Acme Corp Secret".to_string(),
+            description: "Internal company key".to_string(),
+            severity: Severity::Critical,
+            pattern: r"acme_corp_[a-zA-Z0-9]{24}".to_string(),
+            min_entropy: 3.0,
+        });
+
+        let engine = DetectorEngine::with_config(Some(&config)).unwrap();
+        let test_code = "const key = \"acme_corp_8f7b6c5d4e3a2b1c0d9e8f7a\";\n";
+        let findings = engine.scan_text(test_code, "config.js");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "acme-corp-key");
+        assert_eq!(findings[0].severity, Severity::Critical);
     }
 }

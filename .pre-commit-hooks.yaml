@@ -1,0 +1,7 @@
+- id: sentris
+  name: sentris
+  description: High-performance, memory-safe, zero-knowledge secret scanner with sub-35ms pre-commit speed.
+  entry: sentris scan --staged --fail-on-secret
+  language: system
+  pass_filenames: false
+  always_run: true

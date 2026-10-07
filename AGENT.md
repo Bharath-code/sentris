@@ -34,9 +34,12 @@ When modifying or writing code in this repository, **you must preserve these 5 N
 ```
 sentris/
 ├── Cargo.toml                  # Workspace & release optimization profiles
+├── .pre-commit-hooks.yaml      # Global Python pre-commit framework manifest
 ├── src/
+│   ├── lib.rs                  # Core library exports
 │   ├── main.rs                 # CLI entry point & dispatch
 │   ├── cli/                    # clap v4 args, subcommands, help formatting
+│   ├── config/                 # .sentris.toml parser & custom enterprise rules
 │   ├── scanner/                # Rayon parallel directory walker (ignore crate)
 │   ├── detector/               # Regex signatures, Shannon entropy filter
 │   │   ├── engine.rs           # Detector trait & execution pipeline
@@ -44,10 +47,13 @@ sentris/
 │   │   ├── entropy.rs          # Shannon entropy calculator
 │   │   ├── false_positives.rs  # Precision FP suppression engine (docs, templates, walks, UUIDs)
 │   │   └── gitleaks.rs         # .gitleaks.toml compatibility parser
+│   ├── verifier/               # Multi-provider live key validation (ureq)
+│   │   ├── mod.rs              # VerifierRegistry & ProviderVerifier trait
+│   │   ├── stripe.rs           # Stripe live balance probe & rotation
+│   │   ├── github.rs           # GitHub PAT / user API probe & scope audit
+│   │   ├── aws.rs              # AWS STS SigV4 verification & IAM probe
+│   │   └── slack.rs            # Slack auth.test probe & team identity
 
-│   ├── verifier/               # Async live key validation (reqwest + tokio)
-│   │   ├── provider.rs         # Provider trait (verify, rotate, revoke)
-│   │   └── stripe.rs           # Stripe API implementation
 │   ├── remediator/             # Autonomous self-healing engine
 │   │   ├── pipeline.rs         # 7-step remediation state machine
 │   │   ├── env_patcher.rs      # .env file safe injection & .gitignore verify

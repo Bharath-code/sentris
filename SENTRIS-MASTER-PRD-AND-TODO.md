@@ -254,10 +254,14 @@ flowchart TD
   - [x] UUIDv4 and telemetry/tracking identifier suppression for generic API keys (`request_id`, `trace_id`, `session_id`).
   - [x] Safe non-production Stripe test keys (`sk_test_`, `rk_test_`).
 - [x] **M1.5 Terminal UI & Structured Outputs**
-
   - [x] Implemented ANSI table report via `comfy-table` and `owo-colors`.
   - [x] Added `--format json` emitting typed scan statistics and findings.
   - [x] Implemented `--fail-on-secret` CI exit code handling.
+- [x] **M1.6 Configuration Engine & Custom Rules (`src/config/mod.rs`)**
+  - [x] Built `.sentris.toml` configuration engine with zero external dependencies.
+  - [x] Implemented `sentris init` command to generate production-ready configuration.
+  - [x] Supported custom enterprise regex rules, severity overrides, and custom entropy thresholds.
+  - [x] Supported repository-level `ignore_paths` and `max_file_size_mb` limits.
 
 #### Acceptance Criteria for Milestone 1:
 1. **Speed:** Scans a 5,000-file repository in `< 250ms` on Apple Silicon / standard x86-64 Linux.
@@ -280,6 +284,10 @@ flowchart TD
   - [x] Implement `--format sarif` complying strictly with SARIF v2.1.0 OASIS standard for GitHub Advanced Security.
 - [x] **M2.3 CI Exit Codes**
   - [x] Add `--fail-on-secret` flag: exits with code `1` if any secret is detected, code `0` if clean.
+- [x] **M2.4 GitHub Actions Workflow Annotations**
+  - [x] Implement `--format github` emitting native `::error file=...` annotations.
+  - [x] Auto-emit GitHub PR code-diff annotations when `GITHUB_ACTIONS=true` is present.
+
 
 #### Acceptance Criteria for Milestone 2:
 1. **SARIF Compliance:** SARIF output complies strictly with OASIS SARIF v2.1.0 schema.
@@ -296,6 +304,8 @@ flowchart TD
 - [x] **M3.2 One-Click Hook Installer & Uninstaller**
   - [x] Implement `sentris install` command that writes idempotent executable `.git/hooks/pre-commit`.
   - [x] Implement `sentris uninstall` command that cleans up hooks without breaking other git hooks.
+- [x] **M3.3 Global Python Pre-Commit Framework Support**
+  - [x] Provided `.pre-commit-hooks.yaml` manifest allowing seamless adoption via Python `pre-commit` framework.
 
 #### Acceptance Criteria for Milestone 3:
 1. **Hook Latency:** `sentris scan --staged` executes in `< 45ms` on standard commits.
@@ -303,23 +313,28 @@ flowchart TD
 
 ---
 
-### Milestone 4: Autonomous Remediation Engine (Stripe Pilot with Dual-Key Safety) ✅ (COMPLETED)
+### Milestone 4: Autonomous Remediation Engine (Multi-Provider Matrix with Dual-Key Safety) ✅ (COMPLETED)
 *Goal: Deliver the 10x "Holy Sh*t" moment—autonomous verification and credential rotation without production downtime.*
 
-- [x] **M4.1 Provider Verification Trait**
-  - [x] Define `Provider` trait with verification, dual-key rotation, and graceful deprecation.
-  - [x] Implement `StripeProvider` targeting `https://api.stripe.com/v1`.
-- [x] **M4.2 Safe Remediation Workflow**
+- [x] **M4.1 Provider Verification Trait & Registry**
+  - [x] Define `ProviderVerifier` trait with verification, dual-key rotation, and graceful deprecation.
+  - [x] Implement `VerifierRegistry` for pluggable multi-provider dispatch.
+- [x] **M4.2 Multi-Provider Live Verification Matrix**
+  - [x] `StripeVerifier` targeting Stripe Balance API (`/v1/balance`).
+  - [x] `GithubVerifier` targeting GitHub User API (`/user`) and `x-oauth-scopes` header inspection.
+  - [x] `AwsVerifier` targeting AWS STS SigV4 IAM probe (`sts:GetCallerIdentity`).
+  - [x] `SlackVerifier` targeting Slack Auth API (`/api/auth.test`).
+- [x] **M4.3 Safe Remediation Workflow**
   - [x] Classify finding into Zone 1 (uncommitted), Zone 2 (unpushed commit), or Zone 3 (pushed history).
   *Zone 1 Remediation Flow:*
-  - [x] Step 1: Query Stripe API to confirm key viability.
+  - [x] Step 1: Query provider API to confirm key viability.
   - [x] Step 2: Create atomic local git backup branch (`sentris/backup/<timestamp>`).
-  - [x] Step 3: Provision replacement API key via Stripe API.
+  - [x] Step 3: Provision replacement API key via provider API.
   - [x] Step 4: Inject replacement key into `.env` (ensuring `.env` is gitignored).
   - [x] Step 5: Replace hardcoded secret in source file with environment variable.
   - [x] Step 6: Queue old key for deprecation (24h timer or user confirmation).
   - [x] Step 7: Record transaction in `.sentris/rollback_ledger.json`.
-- [x] **M4.3 Rollback Engine**
+- [x] **M4.4 Rollback Engine**
   - [x] Implement `sentris rollback --session <session-id>`: restores git branch state and prints reactivation instructions.
 
 #### Acceptance Criteria for Milestone 4:
@@ -357,7 +372,7 @@ flowchart TD
   - [x] Comprehensive open-source `README.md` and `LICENSE`.
 
 #### Acceptance Criteria for Milestone 6:
-1. **Binary Size:** Production stripped binary is `< 8.0MB` (achieved **3.2MB**).
+1. **Binary Size:** Production stripped binary is `< 8.0MB` (achieved **3.4MB**).
 2. **Zero Dependencies:** Pure static binary without external OpenSSL or Python runtime.
 
 ---
@@ -366,7 +381,7 @@ flowchart TD
 
 All unit, synthetic fixture, and CLI integration tests pass with zero warnings:
 ```bash
-# Run complete test suite (16 unit tests + 7 CLI integration tests)
+# Run complete test suite (30 unit tests + 10 CLI integration tests + 1 SLA benchmark = 41 tests)
 cargo test --workspace
 
 # Run Clippy quality gate (Zero warnings enforced)
@@ -375,10 +390,11 @@ cargo clippy --workspace -- -D warnings
 # Verify Rust formatting
 cargo fmt --check
 
-# Build and verify release binary size (<3.3MB)
+# Build and verify release binary size (<3.4MB)
 cargo build --release
 ls -lh target/release/sentris
 ```
+
 
 ---
 

@@ -12,17 +12,22 @@ use self::env_patcher::EnvPatcher;
 use self::rollback::{RollbackEntry, RollbackLedger};
 use crate::error::SentrisError;
 use crate::model::Finding;
-use crate::verifier::stripe::StripeVerifier;
-use crate::verifier::{LiveStatus, ProviderVerifier};
+use crate::verifier::{LiveStatus, VerifierRegistry};
 
 pub struct Remediator {
-    stripe_verifier: StripeVerifier,
+    registry: VerifierRegistry,
+}
+
+impl Default for Remediator {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Remediator {
     pub fn new() -> Self {
         Self {
-            stripe_verifier: StripeVerifier::new(),
+            registry: VerifierRegistry::new(),
         }
     }
 
@@ -51,10 +56,10 @@ impl Remediator {
         dry_run: bool,
     ) -> Result<String, SentrisError> {
         let session_id = format!("rm_{}", &finding.fingerprint[..8]);
-        let provider_name = if self.stripe_verifier.can_handle(&finding.rule_id) {
-            "Stripe"
-        } else {
-            "Generic Provider"
+        let matched_verifier = self.registry.find_verifier(&finding.rule_id);
+        let provider_name = match matched_verifier {
+            Some(v) => v.provider_name(),
+            None => "Generic Provider",
         };
 
         println!();
@@ -87,10 +92,9 @@ impl Remediator {
             None
         };
 
-        let live_status = if self.stripe_verifier.can_handle(&finding.rule_id) {
-            self.stripe_verifier.verify_live(raw_secret)?
-        } else {
-            LiveStatus::Unverified("Provider verification pending".to_string())
+        let live_status = match matched_verifier {
+            Some(v) => v.verify_live(raw_secret)?,
+            None => LiveStatus::Unverified("Provider verification pending".to_string()),
         };
 
         if let Some(sp) = spinner {
@@ -125,12 +129,13 @@ impl Remediator {
 
         // Step 3: Provision Replacement Key
         print!("  [3/7] 🔑 Provisioning replacement API credential... ");
-        let new_key = if self.stripe_verifier.can_handle(&finding.rule_id) {
-            self.stripe_verifier.rotate(raw_secret, dry_run)?
+        let new_key = if let Some(verifier) = matched_verifier {
+            verifier.rotate(raw_secret, dry_run)?
         } else {
             format!("sec_replacement_{}", &finding.fingerprint[..16])
         };
         let masked_new_key = Finding::mask_secret(&new_key);
+
         println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
 
         // Step 4: Inject into .env and verify .gitignore

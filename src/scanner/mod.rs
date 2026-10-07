@@ -7,18 +7,21 @@ use std::time::Instant;
 use ignore::WalkBuilder;
 use rayon::prelude::*;
 
+use crate::config::Config;
 use crate::detector::DetectorEngine;
 use crate::error::SentrisError;
 use crate::model::{Finding, ScanReport, ScanStats};
 
 pub struct Scanner {
     detector: DetectorEngine,
+    config: Option<Config>,
 }
 
 impl Scanner {
     pub fn new() -> Result<Self, SentrisError> {
-        let detector = DetectorEngine::new()?;
-        Ok(Self { detector })
+        let config = Config::load_from_dir(Path::new("."));
+        let detector = DetectorEngine::with_config(config.as_ref())?;
+        Ok(Self { detector, config })
     }
 
     /// Scans a target path recursively using Rayon parallelism and the `ignore` crate.
@@ -63,6 +66,21 @@ impl Scanner {
                             files_ignored.fetch_add(1, Ordering::Relaxed);
                             continue;
                         }
+
+                        // Check custom ignore_paths from config
+                        if let Some(cfg) = &self.config {
+                            let path_str = entry.path().to_string_lossy();
+                            if cfg
+                                .scanner
+                                .ignore_paths
+                                .iter()
+                                .any(|p| path_str.contains(p))
+                            {
+                                files_ignored.fetch_add(1, Ordering::Relaxed);
+                                continue;
+                            }
+                        }
+
                         file_paths.push(entry.into_path());
                     }
                 }
@@ -75,6 +93,12 @@ impl Scanner {
         let total_files_scanned = AtomicUsize::new(0);
         let total_bytes_scanned = AtomicU64::new(0);
 
+        let max_file_bytes = self
+            .config
+            .as_ref()
+            .map(|c| c.scanner.max_file_size_mb * 1024 * 1024)
+            .unwrap_or(10 * 1024 * 1024);
+
         // Scan files in parallel using Rayon
         let findings: Vec<Finding> = file_paths
             .par_iter()
@@ -86,9 +110,9 @@ impl Scanner {
                     Err(_) => return Vec::new(),
                 };
 
-                // Skip oversized files exceeding 10MB to protect memory and CPU
+                // Skip oversized files exceeding max_file_bytes to protect memory and CPU
                 if let Ok(meta) = file.metadata() {
-                    if meta.len() > 10 * 1024 * 1024 {
+                    if meta.len() > max_file_bytes {
                         files_ignored.fetch_add(1, Ordering::Relaxed);
                         return Vec::new();
                     }

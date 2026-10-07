@@ -96,6 +96,13 @@ pub enum Commands {
         #[arg(value_enum)]
         shell: completions::ShellType,
     },
+
+    /// Initialize a new .sentris.toml configuration file in the current repository
+    Init {
+        /// Force overwrite of existing configuration file
+        #[arg(short, long, default_value_t = false)]
+        force: bool,
+    },
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,4 +110,5 @@ pub enum OutputFormat {
     Text,
     Json,
     Sarif,
+    Github,
 }

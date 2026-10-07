@@ -1,4 +1,5 @@
 mod cli;
+mod config;
 mod detector;
 mod error;
 mod git;
@@ -80,6 +81,9 @@ fn main() {
             match format {
                 OutputFormat::Text => {
                     Reporter::print_terminal_report(&report, cli.quiet, cli.no_color);
+                    if std::env::var_os("GITHUB_ACTIONS").is_some() {
+                        Reporter::print_github_annotations(&report);
+                    }
                 }
                 OutputFormat::Json => match Reporter::to_json(&report) {
                     Ok(json_str) => println!("{json_str}"),
@@ -103,6 +107,9 @@ fn main() {
                         process::exit(1);
                     }
                 },
+                OutputFormat::Github => {
+                    Reporter::print_github_annotations(&report);
+                }
             }
 
             if fail_on_secret && !report.findings.is_empty() {
@@ -429,5 +436,24 @@ fn main() {
                 crate::cli::completions::CompletionGenerator::generate(shell)
             );
         }
+
+        Commands::Init { force } => match config::Config::init(std::path::Path::new("."), force) {
+            Ok(path) => {
+                println!(
+                    "{} Created Sentris configuration file at {}",
+                    "✔".green().bold(),
+                    path.display().to_string().cyan().bold()
+                );
+                println!("Edit .sentris.toml to configure custom enterprise rules, ignore patterns, and remediation parameters.");
+            }
+            Err(err) => {
+                eprintln!(
+                    "{} Failed to initialize configuration: {}",
+                    "ERROR:".red().bold(),
+                    err
+                );
+                process::exit(1);
+            }
+        },
     }
 }

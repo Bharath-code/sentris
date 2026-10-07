@@ -212,4 +212,19 @@ impl Reporter {
         let sarif_log = sarif::convert_to_sarif(report);
         serde_json::to_string_pretty(&sarif_log)
     }
+
+    /// Emits native GitHub Actions workflow error annotations for inline PR diff code-review
+    pub fn print_github_annotations(report: &ScanReport) {
+        for f in &report.findings {
+            println!(
+                "::error file={},line={},col={},title=Hardcoded Secret Detected ({rule})::[sentris] {} (Entropy: {:.2})",
+                f.file_path,
+                f.line_number,
+                f.column,
+                f.description,
+                f.entropy,
+                rule = f.rule_id
+            );
+        }
+    }
 }

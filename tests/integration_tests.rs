@@ -4,9 +4,10 @@ use std::process::Command;
 fn get_sentris_bin() -> PathBuf {
     let release_bin = PathBuf::from("./target/release/sentris");
     if release_bin.exists() {
-        return release_bin;
+        return std::fs::canonicalize(&release_bin).unwrap_or(release_bin);
     }
-    PathBuf::from("./target/debug/sentris")
+    let debug_bin = PathBuf::from("./target/debug/sentris");
+    std::fs::canonicalize(&debug_bin).unwrap_or(debug_bin)
 }
 
 #[test]
@@ -169,4 +170,46 @@ fn test_cli_false_positive_suppression() {
     assert!(!output_str.contains("STRIPE_SECRET_KEY"));
     assert!(!output_str.contains("AWS_SECRET_KEY"));
     assert!(!output_str.contains("sk_test_"));
+}
+
+#[test]
+fn test_cli_init_command() {
+    let bin = get_sentris_bin();
+    let temp_dir = tempfile::tempdir().unwrap();
+
+    let output = Command::new(&bin)
+        .current_dir(temp_dir.path())
+        .arg("init")
+        .output()
+        .expect("Failed to execute sentris init");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Created Sentris configuration file"));
+
+    let config_file = temp_dir.path().join(".sentris.toml");
+    assert!(config_file.exists());
+    let content = std::fs::read_to_string(&config_file).unwrap();
+    assert!(content.contains("[scanner]"));
+    assert!(content.contains("[[rules]]"));
+}
+
+#[test]
+fn test_cli_format_github() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args([
+            "scan",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--format",
+            "github",
+        ])
+        .output()
+        .expect("Failed to execute sentris scan");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("::error file=tests/fixtures/synthetic_secrets.txt"));
+    assert!(stdout.contains("title=Hardcoded Secret Detected"));
+    assert!(stdout.contains("stripe-secret-key"));
 }
