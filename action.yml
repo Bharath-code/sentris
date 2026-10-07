@@ -1,0 +1,71 @@
+name: "Sentris Secret Scanner & Pre-Commit Guard"
+description: "High-performance, zero-knowledge secret scanner with SARIF reporting for GitHub Code Scanning."
+author: "Sentris Contributors"
+branding:
+  icon: "shield"
+  color: "blue"
+
+inputs:
+  version:
+    description: "Version of Sentris to install and run"
+    required: false
+    default: "v0.1.0"
+  path:
+    description: "Path to scan (defaults to entire repository)"
+    required: false
+    default: "."
+  fail-on-secret:
+    description: "Exit with non-zero code if any secrets are detected"
+    required: false
+    default: "true"
+  format:
+    description: "Output format (text, json, sarif)"
+    required: false
+    default: "sarif"
+  sarif-file:
+    description: "Target file path to output SARIF results"
+    required: false
+    default: "sentris-results.sarif"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Download & Install Sentris Binary
+      shell: bash
+      run: |
+        OS="$(uname -s)"
+        ARCH="$(uname -m)"
+        case "$OS" in
+          Linux) TARGET="x86_64-unknown-linux-musl" ;;
+          Darwin) TARGET="aarch64-apple-darwin" ;;
+          *) echo "Unsupported runner OS: $OS"; exit 1 ;;
+        esac
+
+        URL="https://github.com/sentris-security/sentris/releases/download/${{ inputs.version }}/sentris-${{ inputs.version }}-${TARGET}.tar.gz"
+        TMP_DIR="$(mktemp -d)"
+        curl -fsSL "$URL" -o "${TMP_DIR}/sentris.tar.gz"
+        tar -xzf "${TMP_DIR}/sentris.tar.gz" -C "$TMP_DIR"
+        sudo mv "${TMP_DIR}/sentris" /usr/local/bin/sentris
+        chmod +x /usr/local/bin/sentris
+        rm -rf "$TMP_DIR"
+        sentris --version
+
+    - name: Execute Sentris Scan
+      shell: bash
+      run: |
+        EXTRA_FLAGS=""
+        if [ "${{ inputs.fail-on-secret }}" = "true" ]; then
+          EXTRA_FLAGS="--fail-on-secret"
+        fi
+
+        if [ "${{ inputs.format }}" = "sarif" ]; then
+          sentris scan "${{ inputs.path }}" --format sarif $EXTRA_FLAGS > "${{ inputs.sarif-file }}"
+        else
+          sentris scan "${{ inputs.path }}" --format "${{ inputs.format }}" $EXTRA_FLAGS
+        fi
+
+    - name: Upload SARIF to GitHub Code Scanning
+      if: inputs.format == 'sarif' && always()
+      uses: github/codeql-action/upload-sarif@v3
+      with:
+        sarif_file: ${{ inputs.sarif-file }}

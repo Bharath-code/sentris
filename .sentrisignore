@@ -1,0 +1,15 @@
+# .sentrisignore - Sentris Ignore Patterns
+# Add file and directory glob patterns to exclude from secret scans
+
+# Build and package artifacts
+target/
+dist/
+node_modules/
+vendor/
+
+# Documentation and scratch files
+*.md
+Formula/
+docs/
+tests/fixtures/
+src/detector/patterns.rs
