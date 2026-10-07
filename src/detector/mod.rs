@@ -1,4 +1,5 @@
 pub mod entropy;
+pub mod false_positives;
 pub mod patterns;
 
 use crate::error::SentrisError;
@@ -68,6 +69,15 @@ impl DetectorEngine {
                 // Check Shannon entropy threshold
                 let entropy = entropy::calculate_shannon_entropy(matched_str);
                 if entropy < rule.min_entropy {
+                    continue;
+                }
+
+                // Check world-class false positive suppression filter
+                if false_positives::FalsePositiveFilter::is_false_positive(
+                    matched_str,
+                    rule.rule_id,
+                    line,
+                ) {
                     continue;
                 }
 
@@ -144,10 +154,18 @@ mod tests {
     #[test]
     fn test_detect_aws_key() {
         let engine = DetectorEngine::new().unwrap();
-        let test_code = concat!("AWS_ACCESS_KEY_ID = \"", "AKIAIOS", "FODNN7EXAMPLE\"\n");
+        let test_code = concat!("AWS_ACCESS_KEY_ID = \"", "AKIA2J5W", "9X7Y8Z9MNO4P\"\n");
         let findings = engine.scan_text(test_code, ".env");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "aws-access-key-id");
+    }
+
+    #[test]
+    fn test_suppress_aws_docs_example() {
+        let engine = DetectorEngine::new().unwrap();
+        let test_code = concat!("AWS_ACCESS_KEY_ID = \"", "AKIAIOS", "FODNN7EXAMPLE\"\n");
+        let findings = engine.scan_text(test_code, ".env");
+        assert_eq!(findings.len(), 0);
     }
 
     #[test]
@@ -155,11 +173,23 @@ mod tests {
         let engine = DetectorEngine::new().unwrap();
         let test_code = concat!(
             "export GITHUB_TOKEN=\"",
-            "ghp_1234",
-            "567890abcdefghijklmnopqrstuvwxyz\"\n"
+            "ghp_k9L2mP8q",
+            "R4vW7xZ1bN5jC3dF6hT0sU8yA2cB\"\n"
         );
         let findings = engine.scan_text(test_code, "deploy.sh");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "github-pat");
+    }
+
+    #[test]
+    fn test_suppress_sequential_github_walk() {
+        let engine = DetectorEngine::new().unwrap();
+        let test_code = concat!(
+            "export GITHUB_TOKEN=\"",
+            "ghp_1234",
+            "567890abcdefghijklmnopqrstuvwxyz\"\n"
+        );
+        let findings = engine.scan_text(test_code, "deploy.sh");
+        assert_eq!(findings.len(), 0);
     }
 }

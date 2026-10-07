@@ -246,7 +246,15 @@ flowchart TD
 - [x] **M1.4 Ignore Rule & Inline Suppression**
   - [x] Parse `.sentrisignore` files at repository root.
   - [x] Implement inline suppression comment parser (`// sentris-ignore` / `# sentris-ignore` / `gitleaks:allow`).
+- [x] **M1.4.1 Precision False Positive Suppression Engine (`src/detector/false_positives.rs`)**
+  - [x] Known SDK/RFC documentation keys (`AKIAIOSFODNN7EXAMPLE`, Firebase doc keys, Slack sample URLs).
+  - [x] Template interpolations and placeholder tokens (`${...}`, `{{...}}`, `<YOUR_API_KEY>`, `CHANGEME`, `DUMMY_KEY`).
+  - [x] Low variance character masks ($\le 2$ unique characters over 12+ bytes: `000000...`, `XXXXXX...`).
+  - [x] Sequential alphabetical/numeric keyboard walks ($\ge 10$ sequential characters: `abcdefghijk...`, `0123456789...`).
+  - [x] UUIDv4 and telemetry/tracking identifier suppression for generic API keys (`request_id`, `trace_id`, `session_id`).
+  - [x] Safe non-production Stripe test keys (`sk_test_`, `rk_test_`).
 - [x] **M1.5 Terminal UI & Structured Outputs**
+
   - [x] Implemented ANSI table report via `comfy-table` and `owo-colors`.
   - [x] Added `--format json` emitting typed scan statistics and findings.
   - [x] Implemented `--fail-on-secret` CI exit code handling.

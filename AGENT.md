@@ -42,7 +42,9 @@ sentris/
 │   │   ├── engine.rs           # Detector trait & execution pipeline
 │   │   ├── patterns.rs         # 50+ built-in secret rules
 │   │   ├── entropy.rs          # Shannon entropy calculator
+│   │   ├── false_positives.rs  # Precision FP suppression engine (docs, templates, walks, UUIDs)
 │   │   └── gitleaks.rs         # .gitleaks.toml compatibility parser
+
 │   ├── verifier/               # Async live key validation (reqwest + tokio)
 │   │   ├── provider.rs         # Provider trait (verify, rotate, revoke)
 │   │   └── stripe.rs           # Stripe API implementation

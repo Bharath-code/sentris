@@ -39,6 +39,9 @@ fn test_cli_scan_synthetic_fixtures() {
     // Verify false positives and inline ignores are NOT in table
     assert!(!stdout.contains("999999"));
     assert!(!stdout.contains("123e4567"));
+    assert!(!stdout.contains("AKIAIOSFODNN7EXAMPLE"));
+    assert!(!stdout.contains("your-api-key-here"));
+    assert!(!stdout.contains("STRIPE_SECRET_KEY"));
 }
 
 #[test]
@@ -131,4 +134,39 @@ fn test_cli_quiet_mode_silence() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.trim().is_empty());
+}
+
+#[test]
+fn test_cli_false_positive_suppression() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args([
+            "scan",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--format",
+            "json",
+        ])
+        .output()
+        .expect("Failed to execute sentris scan");
+
+    assert!(output.status.success());
+    let json_val: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("Failed to parse JSON output");
+
+    let findings = json_val["findings"].as_array().expect("findings is array");
+    // Synthetic fixture has exactly 4 true positives:
+    // 1. Stripe live key
+    // 2. AWS access key
+    // 3. GitHub PAT
+    // 4. Slack webhook URL
+    // All other 12 candidates are false positive candidates / inline ignores and must be suppressed.
+    assert_eq!(findings.len(), 4);
+
+    let output_str = String::from_utf8_lossy(&output.stdout);
+    assert!(!output_str.contains("AKIAIOSFODNN7EXAMPLE"));
+    assert!(!output_str.contains("AKIAI44QH8DHBEXAMPLE"));
+    assert!(!output_str.contains("your-api-key-here"));
+    assert!(!output_str.contains("STRIPE_SECRET_KEY"));
+    assert!(!output_str.contains("AWS_SECRET_KEY"));
+    assert!(!output_str.contains("sk_test_"));
 }
