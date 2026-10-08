@@ -18,6 +18,7 @@ use std::process;
 
 use crate::audit::{AuditAction, AuditLedger};
 use crate::cli::{BaselineSubcommand, Cli, Commands, OutputFormat};
+use crate::config::GitleaksMigrator;
 use crate::detector::baseline::BaselineFile;
 use crate::git::GitManager;
 use crate::remediator::rollback::RollbackLedger;
@@ -206,6 +207,17 @@ fn main() {
                 OutputFormat::Github => {
                     Reporter::print_github_annotations(&report);
                 }
+                OutputFormat::Gitlab => match Reporter::to_gitlab(&report) {
+                    Ok(gitlab_str) => println!("{gitlab_str}"),
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to serialize GitLab report: {}",
+                            "ERROR:".red().bold(),
+                            err
+                        );
+                        process::exit(1);
+                    }
+                },
             }
 
             if let Some(webhook_url) = webhook {
@@ -813,6 +825,50 @@ fn main() {
                 }
             }
             println!();
+        }
+
+        Commands::MigrateGitleaks {
+            input,
+            output,
+            force,
+        } => {
+            let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
+            match GitleaksMigrator::migrate_file(&input, &output, force) {
+                Ok((rules_count, ignore_paths_count)) => {
+                    if !cli.quiet {
+                        if no_color {
+                            println!("✔ Migration completed successfully!");
+                            println!("   Source: {}", input.display());
+                            println!("   Destination: {}", output.display());
+                            println!("   Rules migrated: {}", rules_count);
+                            println!("   Ignore paths migrated: {}", ignore_paths_count);
+                        } else {
+                            println!("{}", "✔ Migration completed successfully!".bold().green());
+                            println!("   Source: {}", input.display().to_string().cyan());
+                            println!("   Destination: {}", output.display().to_string().cyan());
+                            println!(
+                                "   Rules migrated: {}",
+                                rules_count.to_string().yellow().bold()
+                            );
+                            println!(
+                                "   Ignore paths migrated: {}",
+                                ignore_paths_count.to_string().yellow().bold()
+                            );
+                        }
+                    }
+                }
+                Err(err) => {
+                    if no_color {
+                        eprintln!("ERROR: Failed to migrate .gitleaks.toml: {err}");
+                    } else {
+                        eprintln!(
+                            "{} Failed to migrate .gitleaks.toml: {err}",
+                            "ERROR:".red().bold()
+                        );
+                    }
+                    process::exit(1);
+                }
+            }
         }
     }
 }

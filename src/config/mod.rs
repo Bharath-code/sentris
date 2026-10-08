@@ -1,3 +1,6 @@
+pub mod gitleaks_migrator;
+pub use gitleaks_migrator::GitleaksMigrator;
+
 use crate::error::SentrisError;
 use crate::model::Severity;
 use serde::{Deserialize, Serialize};

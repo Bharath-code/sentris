@@ -1,0 +1,29 @@
+# ==============================================================================
+# GitLab CI/CD Pipeline Template for Sentris Secret Detection
+# Conforms to GitLab Secret Detection Report Schema v15.0.7
+# Place in your repository or include in .gitlab-ci.yml
+# ==============================================================================
+
+stages:
+  - test
+
+sentris_secret_detection:
+  stage: test
+  image:
+    name: ghcr.io/sentris-security/sentris:latest
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "50"
+  script:
+    - sentris scan . --format gitlab --fail-on-secret > gl-secret-detection-report.json
+  artifacts:
+    reports:
+      secret_detection: gl-secret-detection-report.json
+    paths:
+      - gl-secret-detection-report.json
+    expire_in: 1 week
+    when: always
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule"

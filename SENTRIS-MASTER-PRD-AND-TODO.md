@@ -426,11 +426,35 @@ flowchart TD
 
 ---
 
+### Milestone 9: Category 2 Multi-Platform CI/CD & Cloud Ecosystem ✅ (COMPLETED)
+*Goal: Provide turnkey CI/CD integration, native GitLab Secret Detection reporting, automated Gitleaks configuration migration, and a hardened multi-arch Docker container.*
+
+- [x] **M9.1 GitLab Secret Detection Reporter (`--format gitlab`)**
+  - [x] Conforms strictly to official GitLab Secret Detection schema v15.0.7 (`gl-secret-detection-report.json`).
+  - [x] Emits `GitLabSecretDetectionReport` with `vulnerabilities`, `scanner`, `location`, `identifiers`, and `scan` execution metadata.
+  - [x] Seamless integration with GitLab Merge Request security widget.
+- [x] **M9.2 Gitleaks Migration Engine (`sentris migrate-gitleaks`)**
+  - [x] Zero-dependency TOML parser extracting `[[rules]]` (`id`, `description`, `regex`, `entropy`) and `[allowlist]` (`paths`).
+  - [x] Automatic severity level inference and normalization into native `.sentris.toml`.
+  - [x] CLI command `sentris migrate-gitleaks [INPUT] [--output <FILE>] [--force]`.
+- [x] **M9.3 Hardened Multi-Arch Docker Container (`Dockerfile`, `.dockerignore`)**
+  - [x] Multi-stage Alpine 3.20 build producing a sub-15MB container footprint.
+  - [x] Unprivileged non-root system user `sentris` (UID:GID 10001:10001).
+  - [x] OCI metadata labels, standard entrypoint `["/usr/local/bin/sentris"]`, default CMD `["scan", "."]`.
+- [x] **M9.4 Turnkey Enterprise CI/CD Templates**
+  - [x] `templates/gitlab-ci.yml`: Native GitLab CI job with `secret_detection` artifact reporting.
+  - [x] `templates/bitbucket-pipelines.yml`: Bitbucket Pipelines step with `--fail-on-secret`.
+  - [x] `templates/azure-pipelines.yml`: Azure DevOps pipeline publishing SARIF to Advanced Security.
+  - [x] `templates/github-actions.yml`: Comprehensive GitHub Actions workflow with caching and PR annotations.
+  - [x] `docs/CI-CD-INTEGRATION-GUIDE.md`: Professional enterprise integration manual.
+
+---
+
 ## 8. End-to-End Testing & Verification Protocol ✅ (COMPLETED)
 
 All unit, synthetic fixture, and CLI integration tests pass with zero warnings:
 ```bash
-# Run complete test suite (102 lib & bin unit tests + 17 CLI integration tests + 1 SLA benchmark = 120 tests)
+# Run complete test suite (106 lib unit tests + 19 CLI integration tests + 1 SLA benchmark = 126 tests)
 cargo test --workspace
 
 # Run Clippy quality gate (Zero warnings enforced)

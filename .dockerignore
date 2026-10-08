@@ -1,0 +1,12 @@
+target/
+.git/
+.sentris/
+.sentris-baseline.json
+.env*
+*.log
+scratch/
+tests/fixtures/
+*.tar.gz
+demo.tape
+docs/
+Formula/

@@ -1,0 +1,22 @@
+# ==============================================================================
+# Bitbucket Pipelines Template for Sentris Secret Detection
+# Fast native scanning with zero downtime credential leak prevention
+# Place in bitbucket-pipelines.yml
+# ==============================================================================
+
+image: ghcr.io/sentris-security/sentris:latest
+
+pipelines:
+  default:
+    - step:
+        name: Sentris Secret Scanning
+        script:
+          # Run high-speed scan across repository and exit non-zero on secrets
+          - sentris scan . --fail-on-secret
+  pull-requests:
+    '**':
+      - step:
+          name: Scan Staged PR Commits
+          script:
+            # Fast scan targeting recent PR files with baseline suppression
+            - sentris scan . --fail-on-secret --baseline .sentris-baseline.json

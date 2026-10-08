@@ -1,0 +1,60 @@
+# ==============================================================================
+# GitHub Actions Workflow Template for Sentris Secret Detection
+# High-speed native scanning with PR annotations, caching, & baseline support
+# Place in .github/workflows/sentris.yml
+# ==============================================================================
+
+name: Sentris Secret Detection
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  schedule:
+    - cron: '0 4 * * 1' # Weekly security audit on Monday at 04:00 UTC
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  secret-scan:
+    name: Sentris Secret Scanner
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Cache Sentris Binary
+        id: cache-sentris
+        uses: actions/cache@v4
+        with:
+          path: ~/.sentris/bin
+          key: ${{ runner.os }}-sentris-v0.1.0
+
+      - name: Install Sentris
+        if: steps.cache-sentris.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL https://sentris.dev/install.sh | bash
+
+      - name: Add Sentris to PATH
+        run: echo "$HOME/.sentris/bin" >> $GITHUB_PATH
+
+      - name: Run Secret Scan with PR Annotations
+        run: |
+          sentris scan . --format github --fail-on-secret
+
+      - name: Generate SARIF Security Report
+        if: always()
+        run: |
+          sentris scan . --format sarif > sentris-results.sarif
+
+      - name: Upload SARIF to GitHub Code Scanning
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: sentris-results.sarif
+          category: sentris-secrets

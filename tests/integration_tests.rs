@@ -351,22 +351,31 @@ fn test_cli_baseline_record_and_filter() {
 #[test]
 fn test_cli_audit_verify() {
     let bin = get_sentris_bin();
-    let ledger_path = "target/test_audit_ledger.json";
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+    let ledger_path = temp_dir.path().join("audit_ledger.json");
 
-    // First do a scan to generate an audit event into ledger
-    let scan_output = Command::new(&bin)
-        .args(["scan", "src/error.rs"])
-        .output()
-        .expect("Failed to run scan");
-    assert!(scan_output.status.success());
+    // Initialize an isolated ledger and record events
+    let mut ledger =
+        sentris::audit::AuditLedger::load_or_init(&ledger_path).expect("Failed to init ledger");
+    ledger
+        .record_event(
+            sentris::audit::AuditAction::ScanCompleted {
+                files_scanned: 10,
+                findings_count: 0,
+                duration_ms: 12,
+            },
+            serde_json::json!({"test": true}),
+        )
+        .expect("Failed to record event");
+    ledger.save().expect("Failed to save ledger");
 
-    // Verify audit command
+    // Verify audit command on this isolated ledger
     let audit_output = Command::new(&bin)
         .args([
             "--no-color",
             "audit",
             "--ledger",
-            ".sentris/audit_ledger.json",
+            ledger_path.to_str().unwrap(),
             "--verify",
         ])
         .output()
@@ -377,7 +386,6 @@ fn test_cli_audit_verify() {
     assert!(stdout.contains("SOC 2 Cryptographic Audit Ledger"));
     assert!(stdout.contains("Chain Integrity: PASS"));
     assert!(stdout.contains("HMAC-SHA256 verified"));
-    let _ = std::fs::remove_file(ledger_path);
 }
 
 #[test]
@@ -391,4 +399,76 @@ fn test_cli_review_non_interactive_fallback() {
     assert!(output.status.success());
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(stderr.contains("Interactive review requires a TTY terminal"));
+}
+
+#[test]
+fn test_cli_format_gitlab() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args([
+            "scan",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--format",
+            "gitlab",
+        ])
+        .output()
+        .expect("Failed to execute sentris scan --format gitlab");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("\"version\": \"15.0.7\""));
+    assert!(stdout.contains("secret-detection-report.json"));
+    assert!(stdout.contains("\"category\": \"secret_detection\""));
+    assert!(stdout.contains("\"severity\": \"Critical\""));
+    assert!(stdout.contains("\"id\": \"sentris\""));
+    assert!(stdout.contains("sentris_rule_id"));
+}
+
+#[test]
+fn test_cli_migrate_gitleaks() {
+    let bin = get_sentris_bin();
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+    let gitleaks_path = temp_dir.path().join(".gitleaks.toml");
+    let sentris_path = temp_dir.path().join(".sentris.toml");
+
+    let sample_gitleaks = r#"
+title = "gitleaks config"
+
+[[rules]]
+id = "stripe-secret-key"
+description = "Stripe Secret Key"
+regex = '''sk_live_[0-9a-zA-Z]{24}'''
+entropy = 3.5
+
+[allowlist]
+paths = [
+    '''node_modules''',
+    '''vendor''',
+]
+"#;
+    std::fs::write(&gitleaks_path, sample_gitleaks).expect("Failed to write test gitleaks toml");
+
+    let output = Command::new(&bin)
+        .args([
+            "--no-color",
+            "migrate-gitleaks",
+            gitleaks_path.to_str().unwrap(),
+            "--output",
+            sentris_path.to_str().unwrap(),
+        ])
+        .output()
+        .expect("Failed to execute migrate-gitleaks");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Migration completed successfully!"));
+    assert!(stdout.contains("Rules migrated: 1"));
+    assert!(stdout.contains("Ignore paths migrated: 2"));
+
+    // Verify .sentris.toml file content
+    let content = std::fs::read_to_string(&sentris_path).expect("Failed to read migrated file");
+    assert!(content.contains("[[rules]]"));
+    assert!(content.contains("rule_id = \"stripe-secret-key\""));
+    assert!(content.contains("node_modules"));
+    assert!(content.contains("vendor"));
 }

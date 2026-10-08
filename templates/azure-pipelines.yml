@@ -1,0 +1,45 @@
+# ==============================================================================
+# Azure DevOps Pipeline Template for Sentris Secret Detection
+# SARIF output publishing to Azure DevOps Advanced Security / Build Artifacts
+# Place in azure-pipelines.yml
+# ==============================================================================
+
+trigger:
+  branches:
+    include:
+      - main
+      - master
+      - release/*
+pr:
+  branches:
+    include:
+      - '*'
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+variables:
+  SENTRIS_VERSION: '0.1.0'
+
+steps:
+  - checkout: self
+    fetchDepth: 50
+
+  - script: |
+      echo "Installing Sentris v$(SENTRIS_VERSION)..."
+      curl -fsSL https://sentris.dev/install.sh | bash
+      echo "##vso[task.prependpath]$HOME/.sentris/bin"
+    displayName: 'Install Sentris CLI'
+
+  - script: |
+      sentris scan . --format sarif --fail-on-secret > sentris-scan.sarif
+    displayName: 'Execute Sentris Secret Scan'
+    continueOnError: false
+
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish SARIF Report Artifact'
+    inputs:
+      PathtoPublish: 'sentris-scan.sarif'
+      ArtifactName: 'CodeAnalysisLogs'
+      publishLocation: 'Container'
+    condition: always()

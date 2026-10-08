@@ -1,3 +1,4 @@
+pub mod gitlab;
 pub mod sarif;
 pub mod webhook;
 
@@ -215,6 +216,11 @@ impl Reporter {
     pub fn to_sarif(report: &ScanReport) -> Result<String, serde_json::Error> {
         let sarif_log = sarif::convert_to_sarif(report);
         serde_json::to_string_pretty(&sarif_log)
+    }
+
+    /// Renders the report as GitLab Secret Detection JSON format (schema v15.0.7)
+    pub fn to_gitlab(report: &ScanReport) -> Result<String, serde_json::Error> {
+        gitlab::to_gitlab(report)
     }
 
     /// Emits native GitHub Actions workflow error annotations for inline PR diff code-review

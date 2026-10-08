@@ -155,6 +155,21 @@ pub enum Commands {
         #[arg(long, default_value_t = true)]
         verify: bool,
     },
+
+    /// Migrate existing .gitleaks.toml configuration into native .sentris.toml
+    MigrateGitleaks {
+        /// Path to source .gitleaks.toml file
+        #[arg(default_value = ".gitleaks.toml")]
+        input: PathBuf,
+
+        /// Destination path for generated .sentris.toml file
+        #[arg(short, long, default_value = ".sentris.toml")]
+        output: PathBuf,
+
+        /// Force overwrite of existing destination file
+        #[arg(short, long, default_value_t = false)]
+        force: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -177,4 +192,5 @@ pub enum OutputFormat {
     Json,
     Sarif,
     Github,
+    Gitlab,
 }
