@@ -266,6 +266,25 @@ fi
             _ => Ok(None),
         }
     }
+
+    /// Returns current HEAD git branch name if available
+    pub fn get_head_branch() -> Result<Option<String>, SentrisError> {
+        let output = Command::new("git")
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let branch = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if branch.is_empty() || branch == "HEAD" {
+                    Ok(None)
+                } else {
+                    Ok(Some(branch))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]

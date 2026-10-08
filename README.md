@@ -219,6 +219,33 @@ Measured on Apple Silicon M-series (standard 2026 developer workstation):
 
 ---
 
+## 🏢 Sentris Pro Commercial Team & SaaS Platform ($8/seat)
+
+While the core Sentris CLI is 100% free forever under the MIT license, **Sentris Pro** ($8/dev/month or $7/mo annual) provides high-growth engineering teams (10–75 devs) with centralized visibility, team-wide pre-commit synchronization, and automated SOC 2 audit evidence:
+
+```bash
+# Authenticate local workstation with team license token
+sentris auth login --token sp_live_9f8e7d6c5b4a3210deadbeef
+
+# Inspect active team seats, monthly run-rate, and member roster
+sentris team
+
+# Scan and synchronize zero-knowledge HMAC-SHA256 telemetry to team dashboard
+sentris sync
+
+# Auto-sync during standard scans
+sentris scan . --cloud
+```
+
+### Pro Platform Architecture & Anti-Slop Design System
+The Sentris Pro Web Platform and SaaS Dashboard (`web/`) is crafted with world-class product design principles:
+* **Zero-Knowledge Telemetry Mesh:** Transmits salted `HMAC-SHA256` finding fingerprints only—your proprietary source code never touches cloud servers.
+* **3D Cryptographic Hash Reactor:** Built on Three.js (WebGL) visualizing encrypted particle fields and scan wavefronts.
+* **Mechanical Motion Grammar:** GSAP physics-based animations with zero floaty "AI slop" or generic gradients.
+* **Full Design System Specification:** Documented in [`docs/DESIGN-SYSTEM.md`](docs/DESIGN-SYSTEM.md).
+
+---
+
 ## 📄 License
 
 This project is licensed under the [MIT License](LICENSE).

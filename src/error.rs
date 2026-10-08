@@ -25,4 +25,8 @@ pub enum SentrisError {
     #[allow(dead_code)]
     #[error("Audit error: {0}")]
     Audit(String),
+
+    #[allow(dead_code)]
+    #[error("Cloud error: {0}")]
+    Cloud(String),
 }

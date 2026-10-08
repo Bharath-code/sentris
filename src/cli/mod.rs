@@ -67,6 +67,10 @@ pub enum Commands {
         /// Minimum severity floor (critical, high, medium, low)
         #[arg(long, value_enum)]
         min_severity: Option<crate::model::Severity>,
+
+        /// Synchronize zero-knowledge salted HMAC-SHA256 findings to Sentris Pro Cloud
+        #[arg(long, default_value_t = false)]
+        cloud: bool,
     },
 
     /// Install the Sentris pre-commit hook into .git/hooks/pre-commit
@@ -170,6 +174,50 @@ pub enum Commands {
         #[arg(short, long, default_value_t = false)]
         force: bool,
     },
+
+    /// Manage Sentris Pro Cloud authentication and developer license tokens
+    Auth {
+        #[command(subcommand)]
+        subcommand: AuthSubcommand,
+    },
+
+    /// Synchronize local repository findings to Sentris Pro Cloud dashboard
+    Sync {
+        /// Target directory or file path to scan and sync (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Repository name override (defaults to current folder name)
+        #[arg(long)]
+        repo: Option<String>,
+
+        /// Branch name override
+        #[arg(long)]
+        branch: Option<String>,
+    },
+
+    /// View team license utilization, seat allocation ($8/seat Pro tier), and active member roster
+    Team,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum AuthSubcommand {
+    /// Log in with a Sentris Pro license token or API key
+    Login {
+        /// Sentris Pro API token (starts with `sp_live_` or license key)
+        #[arg(short, long)]
+        token: String,
+
+        /// Custom Sentris Pro Cloud API endpoint (defaults to https://api.sentris.dev)
+        #[arg(long)]
+        server: Option<String>,
+    },
+
+    /// Check active authentication and organization subscription status
+    Status,
+
+    /// Log out and remove stored developer credentials
+    Logout,
 }
 
 #[derive(Subcommand, Debug)]

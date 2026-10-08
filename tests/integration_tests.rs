@@ -472,3 +472,117 @@ paths = [
     assert!(content.contains("node_modules"));
     assert!(content.contains("vendor"));
 }
+
+#[test]
+fn test_cli_auth_login_status_logout_flow() {
+    let bin = get_sentris_bin();
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+    let config_dir = temp_dir.path().to_str().unwrap();
+
+    // 1. Auth Login
+    let login_output = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args([
+            "auth",
+            "login",
+            "--token",
+            "sp_live_9f8e7d6c5b4a3210deadbeef",
+        ])
+        .output()
+        .expect("Failed to execute auth login");
+    assert!(login_output.status.success());
+    let login_stdout = String::from_utf8_lossy(&login_output.stdout);
+    assert!(login_stdout.contains("Successfully authenticated with Sentris Pro Cloud"));
+    assert!(login_stdout.contains("Pro ($8/seat)"));
+
+    // 2. Auth Status
+    let status_output = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args(["auth", "status"])
+        .output()
+        .expect("Failed to execute auth status");
+    assert!(status_output.status.success());
+    let status_stdout = String::from_utf8_lossy(&status_output.stdout);
+    assert!(status_stdout.contains("Active Sentris Pro Cloud Session"));
+    assert!(status_stdout.contains("$8/dev/mo Pro Tier"));
+
+    // 3. Auth Logout
+    let logout_output = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args(["auth", "logout"])
+        .output()
+        .expect("Failed to execute auth logout");
+    assert!(logout_output.status.success());
+    let logout_stdout = String::from_utf8_lossy(&logout_output.stdout);
+    assert!(logout_stdout.contains("Logged out from Sentris Pro Cloud"));
+}
+
+#[test]
+fn test_cli_team_overview_command() {
+    let bin = get_sentris_bin();
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+    let config_dir = temp_dir.path().to_str().unwrap();
+
+    // Seed credentials
+    let _ = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args(["auth", "login", "--token", "sp_live_test_team_998877665544"])
+        .output();
+
+    let output = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args(["--no-color", "team"])
+        .output()
+        .expect("Failed to execute sentris team");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Commercial Team Overview"));
+    assert!(stdout.contains("$8 / seat / month (Self-serve Pro)"));
+    assert!(stdout.contains("Seat Utilization"));
+    assert!(stdout.contains("Monthly Run-Rate"));
+    assert!(stdout.contains("Active Team Seats"));
+}
+
+#[test]
+fn test_cli_scan_cloud_offline_suppression() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args(["--offline", "scan", "src/error.rs", "--cloud"])
+        .output()
+        .expect("Failed to execute sentris scan --cloud --offline");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("offline mode active") || stdout.contains("suppressed"));
+}
+
+#[test]
+fn test_cli_sync_with_mock_credentials() {
+    let bin = get_sentris_bin();
+    let temp_dir = tempfile::tempdir().expect("Failed to create tempdir");
+    let config_dir = temp_dir.path().to_str().unwrap();
+
+    // Authenticate with a mock endpoint
+    let _ = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args([
+            "auth",
+            "login",
+            "--token",
+            "sp_live_mock_token_1234567890",
+            "--server",
+            "https://mock.sentris.dev",
+        ])
+        .output();
+
+    let output = Command::new(&bin)
+        .env("SENTRIS_CONFIG_DIR", config_dir)
+        .args(["sync", "src/error.rs"])
+        .output()
+        .expect("Failed to execute sentris sync");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Sentris Pro Cloud") || stdout.contains("Scan ID"));
+}

@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod cli;
+pub mod cloud;
 pub mod config;
 pub mod detector;
 pub mod error;

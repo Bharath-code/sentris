@@ -1,5 +1,6 @@
 pub mod audit;
 mod cli;
+pub mod cloud;
 mod config;
 mod detector;
 mod error;
@@ -17,7 +18,8 @@ use std::fs;
 use std::process;
 
 use crate::audit::{AuditAction, AuditLedger};
-use crate::cli::{BaselineSubcommand, Cli, Commands, OutputFormat};
+use crate::cli::{AuthSubcommand, BaselineSubcommand, Cli, Commands, OutputFormat};
+use crate::cloud::{build_cloud_payload, upload_scan, Credentials, TeamInfo};
 use crate::config::GitleaksMigrator;
 use crate::detector::baseline::BaselineFile;
 use crate::git::GitManager;
@@ -40,6 +42,7 @@ fn main() {
             baseline,
             record_baseline,
             min_severity,
+            cloud,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -246,6 +249,69 @@ fn main() {
                                 "WARNING:".yellow().bold(),
                                 err
                             );
+                        }
+                    }
+                }
+            }
+
+            if cloud {
+                if cli.offline {
+                    if !cli.quiet {
+                        println!(
+                            "{}",
+                            "ℹ️  Zero-egress offline mode active: Sentris Pro Cloud sync suppressed."
+                                .yellow()
+                        );
+                    }
+                } else {
+                    match Credentials::load_default() {
+                        Ok(creds) => {
+                            let repo_name = GitManager::find_git_root()
+                                .ok()
+                                .and_then(|p| {
+                                    p.file_name().map(|n| n.to_string_lossy().to_string())
+                                })
+                                .unwrap_or_else(|| "workspace".to_string());
+                            let branch = GitManager::get_head_branch()
+                                .ok()
+                                .flatten()
+                                .unwrap_or_else(|| "main".to_string());
+                            let commit = GitManager::get_head_commit().ok().flatten();
+                            let payload = build_cloud_payload(
+                                &report,
+                                &creds,
+                                Some(&repo_name),
+                                Some(&branch),
+                                commit,
+                            );
+                            match upload_scan(&payload, &creds, false) {
+                                Ok(res) => {
+                                    if !cli.quiet {
+                                        println!(
+                                            "{} {}",
+                                            "☁️  Sentris Pro Cloud:".cyan().bold(),
+                                            res.message.green()
+                                        );
+                                        println!("   Dashboard: {}", res.dashboard_url.underline());
+                                    }
+                                }
+                                Err(err) => {
+                                    eprintln!(
+                                        "{} Failed to sync with Sentris Pro Cloud: {}",
+                                        "WARNING:".yellow().bold(),
+                                        err
+                                    );
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            if !cli.quiet {
+                                println!(
+                                    "{}",
+                                    "ℹ️  Not authenticated with Sentris Pro Cloud. Run `sentris auth login --token <TOKEN>` to enable Pro team dashboard sync."
+                                        .dimmed()
+                                );
+                            }
                         }
                     }
                 }
@@ -867,6 +933,217 @@ fn main() {
                         );
                     }
                     process::exit(1);
+                }
+            }
+        }
+
+        Commands::Auth { subcommand } => match subcommand {
+            AuthSubcommand::Login { token, server } => {
+                let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
+                match Credentials::from_token(&token, server) {
+                    Ok(creds) => {
+                        let path = Credentials::default_credentials_path();
+                        if let Err(err) = creds.save_to_path(&path) {
+                            eprintln!(
+                                "{} Failed to save credentials: {}",
+                                "ERROR:".red().bold(),
+                                err
+                            );
+                            process::exit(1);
+                        }
+                        if !cli.quiet {
+                            if no_color {
+                                println!("✔ Successfully authenticated with Sentris Pro Cloud!");
+                                println!("   Organization: {}", creds.org_name);
+                                println!("   Tier: {}", creds.tier);
+                                println!(
+                                    "   Seats: {}/{} occupied",
+                                    creds.seats_used, creds.seat_limit
+                                );
+                                println!("   Credentials stored: {}", path.display());
+                            } else {
+                                println!(
+                                    "{}",
+                                    "✔ Successfully authenticated with Sentris Pro Cloud!"
+                                        .green()
+                                        .bold()
+                                );
+                                println!("   Organization: {}", creds.org_name.cyan().bold());
+                                println!("   Tier: {}", creds.tier.yellow());
+                                println!(
+                                    "   Seats: {}/{} occupied",
+                                    creds.seats_used.to_string().bold(),
+                                    creds.seat_limit
+                                );
+                                println!(
+                                    "   Credentials stored: {}",
+                                    path.display().to_string().dimmed()
+                                );
+                            }
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("{} Authentication failed: {}", "ERROR:".red().bold(), err);
+                        process::exit(1);
+                    }
+                }
+            }
+            AuthSubcommand::Status => {
+                let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
+                match Credentials::load_default() {
+                    Ok(creds) => {
+                        if no_color {
+                            println!("Active Sentris Pro Cloud Session:");
+                            println!("   Organization: {} ({})", creds.org_name, creds.org_id);
+                            println!("   Account: {}", creds.user_email);
+                            println!("   Tier: {}", creds.tier);
+                            println!(
+                                "   Seats: {}/{} occupied ($8/dev/mo Pro Tier)",
+                                creds.seats_used, creds.seat_limit
+                            );
+                            println!("   Endpoint: {}", creds.server_url);
+                        } else {
+                            println!("{}", "Active Sentris Pro Cloud Session:".cyan().bold());
+                            println!(
+                                "   Organization: {} ({})",
+                                creds.org_name.bold(),
+                                creds.org_id.dimmed()
+                            );
+                            println!("   Account: {}", creds.user_email);
+                            println!("   Tier: {}", creds.tier.green().bold());
+                            println!(
+                                "   Seats: {}/{} occupied ($8/dev/mo Pro Tier)",
+                                creds.seats_used.to_string().yellow().bold(),
+                                creds.seat_limit
+                            );
+                            println!("   Endpoint: {}", creds.server_url.dimmed());
+                        }
+                    }
+                    Err(err) => {
+                        if !cli.quiet {
+                            if no_color {
+                                eprintln!("No active session: {err}");
+                                println!(
+                                    "Run `sentris auth login --token <TOKEN>` to authenticate."
+                                );
+                            } else {
+                                eprintln!("{} {}", "No active session:".yellow().bold(), err);
+                                println!(
+                                    "Run `sentris auth login --token <TOKEN>` to authenticate."
+                                );
+                            }
+                        }
+                        process::exit(1);
+                    }
+                }
+            }
+            AuthSubcommand::Logout => {
+                let _ = Credentials::delete_default();
+                if !cli.quiet {
+                    println!(
+                        "{}",
+                        "✔ Logged out from Sentris Pro Cloud. Local credentials cleared.".green()
+                    );
+                }
+            }
+        },
+
+        Commands::Sync { path, repo, branch } => {
+            if cli.offline {
+                eprintln!(
+                    "{}",
+                    "ERROR: Cannot sync in zero-egress offline mode."
+                        .red()
+                        .bold()
+                );
+                process::exit(1);
+            }
+            let creds = match Credentials::load_default() {
+                Ok(c) => c,
+                Err(err) => {
+                    eprintln!("{} {}", "Authentication required:".yellow().bold(), err);
+                    println!("Run `sentris auth login --token <TOKEN>` to link your Pro account.");
+                    process::exit(1);
+                }
+            };
+            let scanner = match Scanner::new() {
+                Ok(s) => s,
+                Err(err) => {
+                    eprintln!(
+                        "{} Failed to initialize scanner: {}",
+                        "ERROR:".red().bold(),
+                        err
+                    );
+                    process::exit(1);
+                }
+            };
+            let report = match scanner.scan_path(&path) {
+                Ok(r) => r,
+                Err(err) => {
+                    eprintln!("{} Failed during scan: {}", "ERROR:".red().bold(), err);
+                    process::exit(1);
+                }
+            };
+            let effective_repo = repo.or_else(|| {
+                GitManager::find_git_root()
+                    .ok()
+                    .and_then(|p| p.file_name().map(|n| n.to_string_lossy().to_string()))
+            });
+            let effective_branch = branch.or_else(|| GitManager::get_head_branch().ok().flatten());
+            let commit = GitManager::get_head_commit().ok().flatten();
+            let payload = build_cloud_payload(
+                &report,
+                &creds,
+                effective_repo.as_deref(),
+                effective_branch.as_deref(),
+                commit,
+            );
+            match upload_scan(&payload, &creds, false) {
+                Ok(res) => {
+                    if !cli.quiet {
+                        println!(
+                            "{} {}",
+                            "✔ Sentris Pro Cloud:".cyan().bold(),
+                            res.message.green()
+                        );
+                        println!("   Scan ID: {}", res.scan_id.bold());
+                        println!("   Findings Synced: {}", payload.findings.len());
+                        println!("   Dashboard: {}", res.dashboard_url.underline());
+                    }
+                }
+                Err(err) => {
+                    eprintln!(
+                        "{} Failed to upload to Sentris Pro Cloud: {}",
+                        "ERROR:".red().bold(),
+                        err
+                    );
+                    process::exit(1);
+                }
+            }
+        }
+
+        Commands::Team => {
+            let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
+            match Credentials::load_default() {
+                Ok(creds) => {
+                    let team = TeamInfo::from_credentials(&creds);
+                    println!("{}", team.render_terminal(no_color));
+                }
+                Err(_) => {
+                    let sample_creds = Credentials {
+                        api_key: "sp_preview_token".to_string(),
+                        server_url: "https://api.sentris.dev".to_string(),
+                        org_id: "org_sample_team".to_string(),
+                        org_name: "Sentris Pro Workspace (Preview)".to_string(),
+                        tier: "Pro ($8/seat)".to_string(),
+                        seat_limit: 20,
+                        seats_used: 14,
+                        user_email: "dev@sentris.dev".to_string(),
+                        expires_at: None,
+                    };
+                    let team = TeamInfo::from_credentials(&sample_creds);
+                    println!("{}", team.render_terminal(no_color));
+                    println!("{}", "\nℹ️  To link your real team workspace, run `sentris auth login --token <TOKEN>`.".dimmed());
                 }
             }
         }
