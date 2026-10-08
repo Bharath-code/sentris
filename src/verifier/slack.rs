@@ -20,6 +20,10 @@ impl ProviderVerifier for SlackVerifier {
         "Slack"
     }
 
+    fn supported_rule_ids(&self) -> &[&'static str] {
+        &["slack-bot-token", "slack-user-token", "slack-webhook-url"]
+    }
+
     fn can_handle(&self, rule_id: &str) -> bool {
         rule_id == "slack-bot-token"
             || rule_id == "slack-user-token"

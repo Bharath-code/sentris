@@ -20,6 +20,10 @@ impl ProviderVerifier for AwsVerifier {
         "AWS"
     }
 
+    fn supported_rule_ids(&self) -> &[&'static str] {
+        &["aws-access-key-id", "aws-secret-access-key"]
+    }
+
     fn can_handle(&self, rule_id: &str) -> bool {
         rule_id == "aws-access-key-id" || rule_id == "aws-secret-access-key"
     }

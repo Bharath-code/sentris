@@ -21,4 +21,8 @@ pub enum SentrisError {
     #[allow(dead_code)]
     #[error("Webhook error: {0}")]
     Webhook(String),
+
+    #[allow(dead_code)]
+    #[error("Audit error: {0}")]
+    Audit(String),
 }

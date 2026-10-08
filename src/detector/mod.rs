@@ -1,3 +1,4 @@
+pub mod baseline;
 pub mod entropy;
 pub mod false_positives;
 pub mod patterns;
@@ -232,6 +233,34 @@ mod tests {
         let findings = engine.scan_text(test_code, "config.js");
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "acme-corp-key");
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_detect_openai_key() {
+        let engine = DetectorEngine::new().unwrap();
+        let test_code = concat!(
+            "const openaiToken = \"",
+            "sk-proj-",
+            "aB8kM9xL2qR5tW7zP1nY3vF6hJ0sD4gE7jK9mN2pQ4\";\n"
+        );
+        let findings = engine.scan_text(test_code, "config.ts");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "openai-api-key");
+        assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_detect_anthropic_key() {
+        let engine = DetectorEngine::new().unwrap();
+        let test_code = concat!(
+            "const anthropicToken = \"",
+            "sk-ant-api03-",
+            "aB8kM9xL2qR5tW7zP1nY3vF6hJ0sD4gE7jK9mN2pQ4rT6vX8zA1bC3dE5fG7hI9jK1lM3nO5pQ7rS9tU1vW3xY5z\";\n"
+        );
+        let findings = engine.scan_text(test_code, "config.ts");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "anthropic-api-key");
         assert_eq!(findings[0].severity, Severity::Critical);
     }
 }

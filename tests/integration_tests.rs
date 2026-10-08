@@ -288,3 +288,107 @@ fn test_cli_remediate_dry_run_backends() {
         assert!(stdout.contains("PATCHED"));
     }
 }
+
+#[test]
+fn test_cli_min_severity_filter() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args([
+            "scan",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--min-severity",
+            "critical",
+        ])
+        .output()
+        .expect("Failed to execute scan with min-severity");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("stripe-secret-key"));
+    assert!(!stdout.contains("aws-access-key-id")); // HIGH is below CRITICAL
+}
+
+#[test]
+fn test_cli_baseline_record_and_filter() {
+    let bin = get_sentris_bin();
+    let baseline_path = "target/integration_test_baseline.json";
+
+    // 1. Record baseline snapshot
+    let record_output = Command::new(&bin)
+        .args([
+            "baseline",
+            "record",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--output",
+            baseline_path,
+        ])
+        .output()
+        .expect("Failed to execute baseline record");
+
+    assert!(record_output.status.success());
+    assert!(std::path::Path::new(baseline_path).exists());
+
+    // 2. Scan with baseline suppression active
+    let scan_output = Command::new(&bin)
+        .args([
+            "scan",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--baseline",
+            baseline_path,
+        ])
+        .output()
+        .expect("Failed to execute scan with baseline");
+
+    assert!(scan_output.status.success());
+    let stdout = String::from_utf8_lossy(&scan_output.stdout);
+    assert!(stdout.contains("suppressed via baseline"));
+    assert!(stdout.contains("Zero secrets detected") || stdout.contains("0 finding"));
+
+    // Cleanup
+    let _ = std::fs::remove_file(baseline_path);
+}
+
+#[test]
+fn test_cli_audit_verify() {
+    let bin = get_sentris_bin();
+    let ledger_path = "target/test_audit_ledger.json";
+
+    // First do a scan to generate an audit event into ledger
+    let scan_output = Command::new(&bin)
+        .args(["scan", "src/error.rs"])
+        .output()
+        .expect("Failed to run scan");
+    assert!(scan_output.status.success());
+
+    // Verify audit command
+    let audit_output = Command::new(&bin)
+        .args([
+            "--no-color",
+            "audit",
+            "--ledger",
+            ".sentris/audit_ledger.json",
+            "--verify",
+        ])
+        .output()
+        .expect("Failed to run audit verify");
+
+    assert!(audit_output.status.success());
+    let stdout = String::from_utf8_lossy(&audit_output.stdout);
+    assert!(stdout.contains("SOC 2 Cryptographic Audit Ledger"));
+    assert!(stdout.contains("Chain Integrity: PASS"));
+    assert!(stdout.contains("HMAC-SHA256 verified"));
+    let _ = std::fs::remove_file(ledger_path);
+}
+
+#[test]
+fn test_cli_review_non_interactive_fallback() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args(["review", "tests/fixtures/synthetic_secrets.txt"])
+        .output()
+        .expect("Failed to run review");
+
+    assert!(output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("Interactive review requires a TTY terminal"));
+}

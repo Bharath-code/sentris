@@ -1,13 +1,17 @@
+pub mod anthropic;
 pub mod aws;
 pub mod github;
+pub mod openai;
 pub mod slack;
 pub mod stripe;
 
 use crate::error::SentrisError;
 use serde::{Deserialize, Serialize};
 
+use self::anthropic::AnthropicVerifier;
 use self::aws::AwsVerifier;
 use self::github::GithubVerifier;
+use self::openai::OpenAiVerifier;
 use self::slack::SlackVerifier;
 use self::stripe::StripeVerifier;
 
@@ -22,11 +26,18 @@ pub enum LiveStatus {
 }
 
 pub trait ProviderVerifier: Send + Sync {
-    /// Returns the provider name (e.g. "Stripe", "AWS", "GitHub", "Slack")
+    /// Returns the provider name (e.g. "Stripe", "AWS", "GitHub", "Slack", "OpenAI", "Anthropic")
     fn provider_name(&self) -> &'static str;
 
+    /// Supported rule IDs for this provider
+    fn supported_rule_ids(&self) -> &[&'static str] {
+        &[]
+    }
+
     /// Checks if this verifier handles the given rule ID
-    fn can_handle(&self, rule_id: &str) -> bool;
+    fn can_handle(&self, rule_id: &str) -> bool {
+        self.supported_rule_ids().contains(&rule_id)
+    }
 
     /// Checks live status via provider API
     fn verify_live(&self, secret: &str) -> Result<LiveStatus, SentrisError>;
@@ -47,6 +58,8 @@ impl VerifierRegistry {
                 Box::new(GithubVerifier::new()),
                 Box::new(AwsVerifier::new()),
                 Box::new(SlackVerifier::new()),
+                Box::new(OpenAiVerifier::new()),
+                Box::new(AnthropicVerifier::new()),
             ],
         }
     }
@@ -99,6 +112,20 @@ mod tests {
                 .unwrap()
                 .provider_name(),
             "Slack"
+        );
+        assert_eq!(
+            registry
+                .find_verifier("openai-api-key")
+                .unwrap()
+                .provider_name(),
+            "OpenAI"
+        );
+        assert_eq!(
+            registry
+                .find_verifier("anthropic-api-key")
+                .unwrap()
+                .provider_name(),
+            "Anthropic"
         );
         assert!(registry.find_verifier("unknown-rule").is_none());
     }

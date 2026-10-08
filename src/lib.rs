@@ -1,3 +1,4 @@
+pub mod audit;
 pub mod cli;
 pub mod config;
 pub mod detector;
@@ -7,4 +8,5 @@ pub mod model;
 pub mod remediator;
 pub mod reporter;
 pub mod scanner;
+pub mod tui;
 pub mod verifier;

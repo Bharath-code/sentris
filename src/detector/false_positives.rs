@@ -248,6 +248,11 @@ impl FalsePositiveFilter {
             }
         }
 
+        // 3. OpenAI rule heuristics: Anthropic tokens starting with sk-ant- are not OpenAI keys
+        if rule_id == "openai-api-key" && token.starts_with("sk-ant-") {
+            return true;
+        }
+
         false
     }
 

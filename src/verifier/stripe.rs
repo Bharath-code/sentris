@@ -20,6 +20,10 @@ impl ProviderVerifier for StripeVerifier {
         "Stripe"
     }
 
+    fn supported_rule_ids(&self) -> &[&'static str] {
+        &["stripe-secret-key", "stripe-restricted-key"]
+    }
+
     fn can_handle(&self, rule_id: &str) -> bool {
         rule_id == "stripe-secret-key" || rule_id == "stripe-restricted-key"
     }

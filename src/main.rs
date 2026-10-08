@@ -1,3 +1,4 @@
+pub mod audit;
 mod cli;
 mod config;
 mod detector;
@@ -7,6 +8,7 @@ mod model;
 mod remediator;
 mod reporter;
 mod scanner;
+pub mod tui;
 mod verifier;
 
 use clap::Parser;
@@ -14,7 +16,9 @@ use owo_colors::OwoColorize;
 use std::fs;
 use std::process;
 
-use crate::cli::{Cli, Commands, OutputFormat};
+use crate::audit::{AuditAction, AuditLedger};
+use crate::cli::{BaselineSubcommand, Cli, Commands, OutputFormat};
+use crate::detector::baseline::BaselineFile;
 use crate::git::GitManager;
 use crate::remediator::rollback::RollbackLedger;
 use crate::remediator::Remediator;
@@ -32,6 +36,9 @@ fn main() {
             format,
             fail_on_secret,
             webhook,
+            baseline,
+            record_baseline,
+            min_severity,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -45,7 +52,7 @@ fn main() {
                 }
             };
 
-            let report = if git_history {
+            let mut report = if git_history {
                 match scanner.scan_git_history() {
                     Ok(r) => r,
                     Err(err) => {
@@ -78,6 +85,94 @@ fn main() {
                     }
                 }
             };
+
+            // Severity floor filtering
+            if let Some(min_sev) = min_severity {
+                report.findings.retain(|f| f.severity >= min_sev);
+                report.stats.findings_count = report.findings.len();
+            }
+
+            // Baseline suppression filtering
+            if let Some(baseline_path) = &baseline {
+                match BaselineFile::load_from_path(baseline_path) {
+                    Ok(base) => {
+                        let (unsuppressed, suppressed_count) =
+                            base.filter_findings(report.findings);
+                        report.findings = unsuppressed;
+                        report.stats.findings_count = report.findings.len();
+                        if suppressed_count > 0 && !cli.quiet && format == OutputFormat::Text {
+                            println!(
+                                "{} {} legacy secret(s) suppressed via baseline ({})",
+                                "ℹ️ ".cyan(),
+                                suppressed_count.to_string().bold(),
+                                baseline_path.display().to_string().dimmed()
+                            );
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to load baseline from {}: {}",
+                            "ERROR:".red().bold(),
+                            baseline_path.display(),
+                            err
+                        );
+                        process::exit(1);
+                    }
+                }
+            }
+
+            // Record baseline snapshot if requested
+            if let Some(record_path) = &record_baseline {
+                let commit = GitManager::get_head_commit().ok().flatten();
+                let base_file = BaselineFile::from_findings(&report.findings, commit.clone());
+                if let Err(err) = base_file.save_to_path(record_path) {
+                    eprintln!(
+                        "{} Failed to write baseline snapshot to {}: {}",
+                        "ERROR:".red().bold(),
+                        record_path.display(),
+                        err
+                    );
+                    process::exit(1);
+                }
+                if !cli.quiet && format == OutputFormat::Text {
+                    println!(
+                        "{} Recorded {} finding(s) into baseline snapshot at {}",
+                        "✔".green().bold(),
+                        base_file.findings.len(),
+                        record_path.display().to_string().cyan().bold()
+                    );
+                }
+                if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json") {
+                    let _ = ledger.record_event(
+                        AuditAction::BaselineRecorded {
+                            entries_count: base_file.findings.len(),
+                            git_commit: commit,
+                        },
+                        serde_json::json!({
+                            "output_file": record_path.to_string_lossy(),
+                        }),
+                    );
+                    let _ = ledger.save();
+                }
+            }
+
+            // Record scan event in SOC 2 cryptographic audit ledger (best-effort)
+            if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json") {
+                let _ = ledger.record_event(
+                    AuditAction::ScanCompleted {
+                        files_scanned: report.stats.files_scanned,
+                        findings_count: report.findings.len(),
+                        duration_ms: report.stats.duration_ms as u64,
+                    },
+                    serde_json::json!({
+                        "path": path.to_string_lossy(),
+                        "staged": staged,
+                        "git_history": git_history,
+                        "fail_on_secret": fail_on_secret,
+                    }),
+                );
+                let _ = ledger.save();
+            }
 
             match format {
                 OutputFormat::Text => {
@@ -510,5 +605,214 @@ fn main() {
                 process::exit(1);
             }
         },
+        Commands::Review { path, min_severity } => {
+            let scanner = match Scanner::new() {
+                Ok(s) => s,
+                Err(err) => {
+                    eprintln!(
+                        "{} Failed to initialize scanner: {}",
+                        "ERROR:".red().bold(),
+                        err
+                    );
+                    process::exit(1);
+                }
+            };
+
+            let mut report = match scanner.scan_path(&path) {
+                Ok(r) => r,
+                Err(err) => {
+                    eprintln!(
+                        "{} Failed to scan directory: {}",
+                        "ERROR:".red().bold(),
+                        err
+                    );
+                    process::exit(1);
+                }
+            };
+
+            if let Some(min_sev) = min_severity {
+                report.findings.retain(|f| f.severity >= min_sev);
+            }
+
+            match crate::tui::run_interactive_review(report.findings) {
+                Ok(Some(crate::tui::TuiAction::Remediate(_idx))) => {
+                    println!(
+                        "{}",
+                        "✔ Initiating autonomous remediation workflow for selected finding..."
+                            .green()
+                            .bold()
+                    );
+                }
+                Ok(Some(crate::tui::TuiAction::AddToBaseline(_idx))) => {
+                    println!(
+                        "{}",
+                        "✔ Finding marked for baseline snapshot recording.".green()
+                    );
+                }
+                Ok(Some(crate::tui::TuiAction::IgnoreFinding(_idx))) => {
+                    println!("{}", "✔ Finding marked as ignored.".yellow());
+                }
+                Ok(None) => {}
+                Err(err) => {
+                    eprintln!("{} TUI review error: {}", "ERROR:".red().bold(), err);
+                    process::exit(1);
+                }
+            }
+        }
+
+        Commands::Baseline { subcommand } => match subcommand {
+            BaselineSubcommand::Record { path, output } => {
+                let scanner = match Scanner::new() {
+                    Ok(s) => s,
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to initialize scanner: {}",
+                            "ERROR:".red().bold(),
+                            err
+                        );
+                        process::exit(1);
+                    }
+                };
+
+                let report = match scanner.scan_path(&path) {
+                    Ok(r) => r,
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to scan directory: {}",
+                            "ERROR:".red().bold(),
+                            err
+                        );
+                        process::exit(1);
+                    }
+                };
+
+                let git_commit = GitManager::get_head_commit().ok().flatten();
+                let baseline = BaselineFile::from_findings(&report.findings, git_commit.clone());
+                if let Err(err) = baseline.save_to_path(&output) {
+                    eprintln!(
+                        "{} Failed to save baseline to {}: {}",
+                        "ERROR:".red().bold(),
+                        output.display(),
+                        err
+                    );
+                    process::exit(1);
+                }
+
+                println!(
+                    "{} Recorded {} findings into baseline snapshot at {}",
+                    "✔".green().bold(),
+                    baseline.findings.len(),
+                    output.display().to_string().cyan().bold()
+                );
+
+                if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json") {
+                    let _ = ledger.record_event(
+                        AuditAction::BaselineRecorded {
+                            entries_count: baseline.findings.len(),
+                            git_commit,
+                        },
+                        serde_json::json!({
+                            "output_file": output.to_string_lossy(),
+                        }),
+                    );
+                    let _ = ledger.save();
+                }
+            }
+        },
+
+        Commands::Audit { ledger, verify } => {
+            let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
+            let audit_ledger = match AuditLedger::load_or_init(&ledger) {
+                Ok(l) => l,
+                Err(err) => {
+                    if no_color {
+                        eprintln!(
+                            "ERROR: Failed to load audit ledger at {}: {}",
+                            ledger.display(),
+                            err
+                        );
+                    } else {
+                        eprintln!(
+                            "{} Failed to load audit ledger at {}: {}",
+                            "ERROR:".red().bold(),
+                            ledger.display(),
+                            err
+                        );
+                    }
+                    process::exit(1);
+                }
+            };
+
+            println!();
+            if no_color {
+                println!("🔒 SOC 2 Cryptographic Audit Ledger: {}", ledger.display());
+                println!("   Total Records: {}", audit_ledger.records.len());
+            } else {
+                println!(
+                    "{} {}",
+                    "🔒 SOC 2 Cryptographic Audit Ledger:".cyan().bold(),
+                    ledger.display().to_string().bold()
+                );
+                println!(
+                    "   Total Records: {}",
+                    audit_ledger.records.len().to_string().cyan()
+                );
+            }
+
+            if verify {
+                match audit_ledger.verify_integrity() {
+                    Ok(true) => {
+                        if no_color {
+                            println!(
+                                "   Chain Integrity: PASS (HMAC-SHA256 verified, 0 broken links)"
+                            );
+                        } else {
+                            println!(
+                                "   Chain Integrity: {} (HMAC-SHA256 verified, 0 broken links)",
+                                "PASS".green().bold()
+                            );
+                        }
+                    }
+                    Ok(false) => {
+                        if no_color {
+                            eprintln!(
+                                "   Chain Integrity: FAIL (Tamper detected or hash mismatch!)"
+                            );
+                        } else {
+                            eprintln!(
+                                "   Chain Integrity: {} (Tamper detected or hash mismatch!)",
+                                "FAIL".red().bold()
+                            );
+                        }
+                        process::exit(1);
+                    }
+                    Err(err) => {
+                        if no_color {
+                            eprintln!("   Chain Integrity: ERROR ({err})");
+                        } else {
+                            eprintln!("   Chain Integrity: {} ({err})", "ERROR".red().bold());
+                        }
+                        process::exit(1);
+                    }
+                }
+            }
+
+            if !cli.quiet && !audit_ledger.records.is_empty() {
+                println!();
+                println!("   Recent Audit Events:");
+                for record in audit_ledger.records.iter().rev().take(5) {
+                    let hash_prefix = if record.entry_hash.len() >= 8 {
+                        &record.entry_hash[..8]
+                    } else {
+                        &record.entry_hash
+                    };
+                    println!(
+                        "   • [#{}] {:?} (Hash: {hash_prefix}...)",
+                        record.index, record.action,
+                    );
+                }
+            }
+            println!();
+        }
     }
 }

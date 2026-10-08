@@ -20,6 +20,14 @@ impl ProviderVerifier for GithubVerifier {
         "GitHub"
     }
 
+    fn supported_rule_ids(&self) -> &[&'static str] {
+        &[
+            "github-pat",
+            "github-fine-grained-pat",
+            "github-oauth-access-token",
+        ]
+    }
+
     fn can_handle(&self, rule_id: &str) -> bool {
         rule_id == "github-pat"
             || rule_id == "github-fine-grained-pat"

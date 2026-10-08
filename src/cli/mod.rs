@@ -55,6 +55,18 @@ pub enum Commands {
         /// Dispatch incident alert cards to a Slack or Discord webhook URL
         #[arg(long)]
         webhook: Option<String>,
+
+        /// Path to baseline snapshot file to suppress pre-existing findings
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+
+        /// Record detected findings into a new baseline snapshot file
+        #[arg(long)]
+        record_baseline: Option<PathBuf>,
+
+        /// Minimum severity floor (critical, high, medium, low)
+        #[arg(long, value_enum)]
+        min_severity: Option<crate::model::Severity>,
     },
 
     /// Install the Sentris pre-commit hook into .git/hooks/pre-commit
@@ -114,6 +126,48 @@ pub enum Commands {
         /// Force overwrite of existing configuration file
         #[arg(short, long, default_value_t = false)]
         force: bool,
+    },
+
+    /// Launch interactive terminal UI review session for detected findings
+    Review {
+        /// Target directory or file path to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Filter findings by minimum severity floor (critical, high, medium, low)
+        #[arg(long, value_enum)]
+        min_severity: Option<crate::model::Severity>,
+    },
+
+    /// Manage baseline snapshots to suppress legacy secrets
+    Baseline {
+        #[command(subcommand)]
+        subcommand: BaselineSubcommand,
+    },
+
+    /// Verify SOC 2 cryptographic hash chain and append-only audit ledger integrity
+    Audit {
+        /// Path to the audit ledger file (defaults to .sentris/audit_ledger.json)
+        #[arg(short, long, default_value = ".sentris/audit_ledger.json")]
+        ledger: PathBuf,
+
+        /// Verify integrity of the cryptographic hash chain
+        #[arg(long, default_value_t = true)]
+        verify: bool,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+pub enum BaselineSubcommand {
+    /// Scan target path and record findings into a baseline file
+    Record {
+        /// Target directory or file path to scan (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Destination baseline snapshot file (defaults to .sentris-baseline.json)
+        #[arg(short, long, default_value = ".sentris-baseline.json")]
+        output: PathBuf,
     },
 }
 

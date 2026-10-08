@@ -249,6 +249,23 @@ fi
 
         Ok(staged_files)
     }
+
+    /// Returns current HEAD git commit hash if available
+    pub fn get_head_commit() -> Result<Option<String>, SentrisError> {
+        let output = Command::new("git").args(["rev-parse", "HEAD"]).output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let commit = String::from_utf8_lossy(&out.stdout).trim().to_string();
+                if commit.is_empty() {
+                    Ok(None)
+                } else {
+                    Ok(Some(commit))
+                }
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 #[cfg(test)]
