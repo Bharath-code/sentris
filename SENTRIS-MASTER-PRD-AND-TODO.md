@@ -399,11 +399,38 @@ flowchart TD
 
 ---
 
+### Milestone 8: Category 1 Enterprise Features (Baseline, AI Verifiers, SOC 2 Ledger & TUI Review) ✅ (COMPLETED)
+*Goal: Provide enterprise baseline snapshot management, AI provider live verifiers, SOC 2 append-only cryptographic hash chain audit ledger, and an interactive terminal review UI.*
+
+- [x] **M8.1 Baseline & Snapshot Management Engine**
+  - [x] Implement `BaselineRecord` & `BaselineFile` in `src/detector/baseline.rs` supporting ISO-8601 timestamps, versioning, and git commit linkage.
+  - [x] CLI flag `sentris scan --baseline <FILE>` suppressing legacy pre-existing secrets.
+  - [x] CLI flag `sentris scan --record-baseline <FILE>` and subcommand `sentris baseline record [PATH] [--output <FILE>]`.
+  - [x] Match suppression via unique fingerprint and `(file_path, rule_id)` tuple.
+- [x] **M8.2 Minimum Severity Floor Filtering**
+  - [x] Derive `clap::ValueEnum` on `Severity` with case-insensitive lowercase parsing (`critical`, `high`, `medium`, `low`).
+  - [x] CLI flag `sentris scan --min-severity <LEVEL>` filtering out lower severity findings in terminal, JSON, and SARIF reports.
+- [x] **M8.3 AI / LLM Provider Live Verifiers (OpenAI & Anthropic)**
+  - [x] Implement `OpenAiVerifier` (`src/verifier/openai.rs`): probes `/v1/models` endpoint with Bearer auth, extracts organization and project headers, returns `LiveStatus::Active` or `LiveStatus::Revoked`. Includes rotation dry-run.
+  - [x] Implement `AnthropicVerifier` (`src/verifier/anthropic.rs`): probes `/v1/models` with `x-api-key` and `anthropic-version`, returns `LiveStatus::Active` or `LiveStatus::Revoked`. Includes rotation dry-run.
+  - [x] Trait method `supported_rule_ids()` and registry integration in `VerifierRegistry::new()`.
+- [x] **M8.4 SOC 2 / ISO 27001 Cryptographic Audit Ledger**
+  - [x] Implement `AuditLedger` (`src/audit/mod.rs`): append-only cryptographic hash chain with RFC 2104 HMAC-SHA256 signature and SHA-256 entry hashing.
+  - [x] Audit actions: `ScanCompleted`, `SecretRemediated`, `BaselineRecorded`, `QuarantineCreated`.
+  - [x] Subcommand `sentris audit [--ledger <FILE>] [--verify]` detecting file tampering, deletions, re-orderings, or corrupted entries.
+- [x] **M8.5 Interactive Terminal Review TUI (`sentris review`)**
+  - [x] Modern terminal interface built on `ratatui` (0.30) and `crossterm` (0.29).
+  - [x] 40/60 split-pane layout: findings list on left with severity pills, metadata and real file context viewer on right.
+  - [x] Vim & arrow key navigation (`j`/`k`, `↑`/`↓`), instant remediation shortcut (`r`/`Enter`), baseline addition (`b`), and inline ignore (`i`).
+  - [x] Non-interactive TTY detection with graceful fallback message for CI/CD.
+
+---
+
 ## 8. End-to-End Testing & Verification Protocol ✅ (COMPLETED)
 
 All unit, synthetic fixture, and CLI integration tests pass with zero warnings:
 ```bash
-# Run complete test suite (69 lib tests + 69 bin tests + 13 CLI integration tests + 1 SLA benchmark = 152 tests)
+# Run complete test suite (102 lib & bin unit tests + 17 CLI integration tests + 1 SLA benchmark = 120 tests)
 cargo test --workspace
 
 # Run Clippy quality gate (Zero warnings enforced)
@@ -412,7 +439,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 # Verify Rust formatting
 cargo fmt --check
 
-# Build and verify release binary size (<3.4MB)
+# Build and verify release binary size (<3.8MB)
 cargo build --release
 ls -lh target/release/sentris
 ```
