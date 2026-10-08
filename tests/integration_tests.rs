@@ -2,12 +2,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn get_sentris_bin() -> PathBuf {
-    let release_bin = PathBuf::from("./target/release/sentris");
-    if release_bin.exists() {
-        return std::fs::canonicalize(&release_bin).unwrap_or(release_bin);
-    }
-    let debug_bin = PathBuf::from("./target/debug/sentris");
-    std::fs::canonicalize(&debug_bin).unwrap_or(debug_bin)
+    PathBuf::from(env!("CARGO_BIN_EXE_sentris"))
 }
 
 #[test]
@@ -212,4 +207,84 @@ fn test_cli_format_github() {
     assert!(stdout.contains("::error file=tests/fixtures/synthetic_secrets.txt"));
     assert!(stdout.contains("title=Hardcoded Secret Detected"));
     assert!(stdout.contains("stripe-secret-key"));
+}
+
+#[test]
+fn test_cli_help_flags_discovery() {
+    let bin = get_sentris_bin();
+
+    // Global --offline
+    let out = Command::new(&bin).arg("--help").output().unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--offline"));
+
+    // Scan --webhook
+    let out = Command::new(&bin)
+        .args(["scan", "--help"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--webhook"));
+
+    // Remediate --backend
+    let out = Command::new(&bin)
+        .args(["remediate", "--help"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--backend"));
+}
+
+#[test]
+fn test_cli_scan_offline_suppresses_webhook() {
+    let bin = get_sentris_bin();
+    let output = Command::new(&bin)
+        .args([
+            "--offline",
+            "scan",
+            "tests/fixtures/synthetic_secrets.txt",
+            "--webhook",
+            "https://hooks.slack.com/services/MOCK/WEBHOOK/URL",
+        ])
+        .output()
+        .expect("Failed to execute scan with webhook");
+
+    assert!(output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("Zero-egress offline mode active"));
+}
+
+#[test]
+fn test_cli_remediate_dry_run_backends() {
+    let bin = get_sentris_bin();
+
+    for backend in ["env", "vault", "aws", "doppler"] {
+        let output = Command::new(&bin)
+            .args([
+                "--offline",
+                "remediate",
+                "tests/fixtures/synthetic_secrets.txt",
+                "--dry-run",
+                "--yes",
+                "--backend",
+                backend,
+            ])
+            .output()
+            .expect("Failed to execute remediate dry-run");
+
+        assert!(
+            output.status.success(),
+            "Backend {} failed with stderr: {}",
+            backend,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("Autonomous Remediation Session"));
+        assert!(stdout.contains("Zero-egress offline mode active"));
+        assert!(stdout.contains("PROVISIONED"));
+        assert!(stdout.contains("PATCHED"));
+    }
 }

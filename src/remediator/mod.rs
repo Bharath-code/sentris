@@ -1,3 +1,4 @@
+pub mod backend;
 pub mod code_replacer;
 pub mod env_patcher;
 pub mod rollback;
@@ -8,7 +9,6 @@ use std::io::IsTerminal;
 use std::process::Command;
 
 use self::code_replacer::CodeReplacer;
-use self::env_patcher::EnvPatcher;
 use self::rollback::{RollbackEntry, RollbackLedger};
 use crate::error::SentrisError;
 use crate::model::Finding;
@@ -54,6 +54,8 @@ impl Remediator {
         finding: &Finding,
         raw_secret: &str,
         dry_run: bool,
+        backend_name: Option<&str>,
+        offline: bool,
     ) -> Result<String, SentrisError> {
         let session_id = format!("rm_{}", &finding.fingerprint[..8]);
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
@@ -77,7 +79,7 @@ impl Remediator {
         println!();
 
         // Step 1: Verification with terminal spinner
-        let spinner = if std::io::stdout().is_terminal() {
+        let spinner = if std::io::stdout().is_terminal() && !offline {
             let pb = ProgressBar::new_spinner();
             pb.set_style(
                 ProgressStyle::default_spinner()
@@ -92,9 +94,13 @@ impl Remediator {
             None
         };
 
-        let live_status = match matched_verifier {
-            Some(v) => v.verify_live(raw_secret)?,
-            None => LiveStatus::Unverified("Provider verification pending".to_string()),
+        let live_status = if offline {
+            LiveStatus::Unverified("Zero-egress offline mode active".to_string())
+        } else {
+            match matched_verifier {
+                Some(v) => v.verify_live(raw_secret)?,
+                None => LiveStatus::Unverified("Provider verification pending".to_string()),
+            }
         };
 
         if let Some(sp) = spinner {
@@ -129,7 +135,9 @@ impl Remediator {
 
         // Step 3: Provision Replacement Key
         print!("  [3/7] 🔑 Provisioning replacement API credential... ");
-        let new_key = if let Some(verifier) = matched_verifier {
+        let new_key = if offline {
+            format!("sec_replacement_{}", &finding.fingerprint[..16])
+        } else if let Some(verifier) = matched_verifier {
             verifier.rotate(raw_secret, dry_run)?
         } else {
             format!("sec_replacement_{}", &finding.fingerprint[..16])
@@ -138,8 +146,13 @@ impl Remediator {
 
         println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
 
-        // Step 4: Inject into .env and verify .gitignore
-        print!("  [4/7] 🔒 Securing .env and updating .gitignore... ");
+        // Step 4: Inject into selected secret backend and verify gitignore
+        let backend_choice = backend_name.unwrap_or("env");
+        let backend_driver = backend::SecretBackendFactory::from_name(backend_choice)?;
+        print!(
+            "  [4/7] 🔒 Securing credential into {} backend... ",
+            backend_driver.backend_name().cyan()
+        );
         let env_var_name = match finding.rule_id.as_str() {
             "stripe-secret-key" | "stripe-restricted-key" => "STRIPE_SECRET_KEY",
             "aws-access-key-id" => "AWS_ACCESS_KEY_ID",
@@ -148,9 +161,7 @@ impl Remediator {
             _ => "API_SECRET_KEY",
         };
 
-        if !dry_run {
-            EnvPatcher::inject_env_variable(env_var_name, &new_key)?;
-        }
+        backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
         println!("{} ({}=***)", "INJECTED".green(), env_var_name);
 
         // Step 5: Replace hardcoded secret in target source file
@@ -163,9 +174,10 @@ impl Remediator {
                 env_var_name,
             )?
         } else {
+            let accessor = CodeReplacer::get_env_accessor(&finding.file_path, env_var_name);
             (
                 "const key = '...'".to_string(),
-                format!("const key = process.env.{}", env_var_name),
+                format!("const key = {accessor}"),
             )
         };
         println!("{}", "PATCHED".green());

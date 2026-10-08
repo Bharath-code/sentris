@@ -22,6 +22,10 @@ pub struct Cli {
     /// Disable colored terminal output (also respects NO_COLOR environment variable)
     #[arg(long, global = true, default_value_t = false)]
     pub no_color: bool,
+
+    /// Zero-egress offline mode: suppress all network requests, live provider API checks, and webhook alerts
+    #[arg(long, global = true, default_value_t = false)]
+    pub offline: bool,
 }
 
 #[derive(Subcommand, Debug)]
@@ -47,6 +51,10 @@ pub enum Commands {
         /// Exit with non-zero code (1) if any secrets are detected (useful for CI/CD)
         #[arg(long, default_value_t = false)]
         fail_on_secret: bool,
+
+        /// Dispatch incident alert cards to a Slack or Discord webhook URL
+        #[arg(long)]
+        webhook: Option<String>,
     },
 
     /// Install the Sentris pre-commit hook into .git/hooks/pre-commit
@@ -71,6 +79,10 @@ pub enum Commands {
         /// Auto-approve all confirmation prompts (required in non-interactive CI/CD)
         #[arg(short, long, default_value_t = false)]
         yes: bool,
+
+        /// Secret store backend to provision replacement into: env, vault, aws, doppler
+        #[arg(long, default_value = "env")]
+        backend: String,
     },
 
     /// Revert a previous remediation session and restore original files

@@ -1,4 +1,8 @@
 pub mod sarif;
+pub mod webhook;
+
+#[allow(unused_imports)]
+pub use webhook::WebhookReporter;
 
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Cell, Color, ContentArrangement, Table};

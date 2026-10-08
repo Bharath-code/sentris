@@ -31,6 +31,7 @@ fn main() {
             git_history,
             format,
             fail_on_secret,
+            webhook,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -112,6 +113,37 @@ fn main() {
                 }
             }
 
+            if let Some(webhook_url) = webhook {
+                if cli.offline {
+                    if !cli.quiet {
+                        println!(
+                            "{}",
+                            "ℹ️  Zero-egress offline mode active: Webhook incident dispatch suppressed."
+                                .yellow()
+                        );
+                    }
+                } else {
+                    match crate::reporter::webhook::WebhookReporter::post_incident_card(
+                        &webhook_url,
+                        &report,
+                        false,
+                    ) {
+                        Ok(msg) => {
+                            if !cli.quiet {
+                                println!("{}", msg.green());
+                            }
+                        }
+                        Err(err) => {
+                            eprintln!(
+                                "{} Failed to dispatch incident webhook: {}",
+                                "WARNING:".yellow().bold(),
+                                err
+                            );
+                        }
+                    }
+                }
+            }
+
             if fail_on_secret && !report.findings.is_empty() {
                 process::exit(1);
             }
@@ -145,6 +177,7 @@ fn main() {
             finding_id,
             dry_run,
             yes,
+            backend,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -158,14 +191,21 @@ fn main() {
                 }
             };
 
-            let report = match scanner.scan_path(".") {
+            let scan_target = if let Some(id) = &finding_id {
+                let p = std::path::Path::new(id);
+                if p.is_file() || p.is_dir() {
+                    p.to_path_buf()
+                } else {
+                    std::path::PathBuf::from(".")
+                }
+            } else {
+                std::path::PathBuf::from(".")
+            };
+
+            let report = match scanner.scan_path(&scan_target) {
                 Ok(r) => r,
                 Err(err) => {
-                    eprintln!(
-                        "{} Failed to scan directory: {}",
-                        "ERROR:".red().bold(),
-                        err
-                    );
+                    eprintln!("{} Failed to scan target: {}", "ERROR:".red().bold(), err);
                     process::exit(1);
                 }
             };
@@ -173,7 +213,7 @@ fn main() {
             if report.findings.is_empty() {
                 println!(
                     "{}",
-                    "✔ No findings detected to remediate. Repository is clean!"
+                    "✔ No findings detected to remediate. Target is clean!"
                         .green()
                         .bold()
                 );
@@ -182,12 +222,17 @@ fn main() {
 
             // Find matching finding or first remediable finding (Stripe preferred)
             let target_finding = if let Some(id) = &finding_id {
-                report.findings.iter().find(|f| {
-                    f.rule_id == *id
-                        || f.fingerprint.starts_with(id)
-                        || f.file_path == *id
-                        || f.file_path.ends_with(id)
-                })
+                report
+                    .findings
+                    .iter()
+                    .find(|f| {
+                        f.rule_id == *id
+                            || f.fingerprint.starts_with(id)
+                            || f.file_path == *id
+                            || f.file_path.ends_with(id)
+                            || std::path::Path::new(&f.file_path) == std::path::Path::new(id)
+                    })
+                    .or_else(|| report.findings.first())
             } else {
                 report
                     .findings
@@ -266,10 +311,14 @@ fn main() {
                     finding.line_number
                 );
                 println!("   Secret rule:     {}", finding.rule_id.cyan());
+                println!("   Backend:         {}", backend.cyan().bold());
                 println!("   Planned actions: 1. Verify credential via provider API");
                 println!("                    2. Create atomic local git backup branch");
                 println!("                    3. Provision replacement credential");
-                println!("                    4. Update .env (and ensure .env is gitignored)");
+                println!(
+                    "                    4. Store credential in {} backend",
+                    backend.cyan()
+                );
                 println!(
                     "                    5. Replace literal in code with environment variable"
                 );
@@ -296,7 +345,13 @@ fn main() {
             }
 
             let remediator = Remediator::new();
-            if let Err(err) = remediator.remediate_finding(finding, raw_secret, dry_run) {
+            if let Err(err) = remediator.remediate_finding(
+                finding,
+                raw_secret,
+                dry_run,
+                Some(&backend),
+                cli.offline,
+            ) {
                 eprintln!("{} Remediation failed: {}", "ERROR:".red().bold(), err);
                 process::exit(1);
             }
