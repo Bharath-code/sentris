@@ -82,6 +82,20 @@ impl DetectorEngine {
         None
     }
 
+    /// Extracts the exact secret behind `finding`: the regex match on `line` whose SHA-256 equals its fingerprint.
+    pub fn extract_secret_for_fingerprint(
+        &self,
+        line: &str,
+        rule_id: &str,
+        fingerprint: &str,
+    ) -> Option<String> {
+        let rule = self.rules.iter().find(|r| r.rule_id == rule_id)?;
+        rule.regex.captures_iter(line).find_map(|caps| {
+            let m = caps.get(1).or_else(|| caps.get(0))?.as_str();
+            (hex::encode(Sha256::digest(m.as_bytes())) == fingerprint).then(|| m.to_string())
+        })
+    }
+
     /// Extracts a multi-line PEM / private key block starting at `start_line_number` (1-indexed),
     /// returning `(start_line_number, end_line_number, escaped_single_line_pem_for_env)`.
     pub fn extract_multiline_pem_block(

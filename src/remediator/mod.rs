@@ -100,6 +100,37 @@ impl Remediator {
         }
     }
 
+    /// Env var name to store `secret` under: the rule's canonical name, made unique with a fingerprint
+    /// suffix when the rule is generic or `.env` already holds a different value under that name.
+    pub fn resolve_env_var_name(finding: &Finding, secret: &str, backend: &str) -> String {
+        Self::resolve_env_var_name_in(std::path::Path::new("."), finding, secret, backend)
+    }
+
+    pub fn resolve_env_var_name_in(
+        base_dir: &std::path::Path,
+        finding: &Finding,
+        secret: &str,
+        backend: &str,
+    ) -> String {
+        let base = Self::env_var_name_for_rule(&finding.rule_id);
+        let suffixed = || format!("{base}_{}", finding.fingerprint[..8].to_ascii_uppercase());
+        if matches!(base, "API_SECRET_KEY" | "APP_SECRET_KEY") {
+            return suffixed();
+        }
+        let is_env = matches!(
+            backend.trim().to_ascii_lowercase().as_str(),
+            "env" | "envfile"
+        );
+        if is_env {
+            if let Some(existing) = env_patcher::EnvPatcher::existing_value_in(base_dir, base) {
+                if existing != secret {
+                    return suffixed();
+                }
+            }
+        }
+        base.to_string()
+    }
+
     /// Creates an atomic git backup branch prior to any file mutations
     fn create_backup_branch() -> Result<String, SentrisError> {
         let timestamp = chrono_compact_timestamp();
@@ -276,7 +307,8 @@ impl Remediator {
                 backend_driver.backend_name().cyan()
             );
         }
-        let env_var_name = Self::env_var_name_for_rule(&finding.rule_id);
+        let env_var_name = Self::resolve_env_var_name(finding, raw_secret, backend_choice);
+        let env_var_name = env_var_name.as_str();
 
         let inject_note = backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
         if backend_driver.is_mock() && !dry_run && !quiet {
@@ -421,5 +453,50 @@ mod tests {
             assert!(matches!(err, SentrisError::NotImplemented(_)));
             assert_eq!(std::fs::read_to_string(&file).unwrap(), src);
         }
+    }
+
+    fn finding_for(rule: &str, fp: &str) -> Finding {
+        Finding {
+            rule_id: rule.into(),
+            description: "d".into(),
+            severity: Severity::Critical,
+            file_path: "f".into(),
+            line_number: 1,
+            column: 1,
+            redacted_match: "x".into(),
+            entropy: 4.0,
+            fingerprint: fp.into(),
+            commit_hash: None,
+        }
+    }
+
+    #[test]
+    fn env_var_names_never_collide_or_clobber() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".env"), "STRIPE_SECRET_KEY=sk_live_prod\n").unwrap();
+        let fp = "abcdef0123456789abcdef0123456789";
+        let stripe = finding_for("stripe-secret-key", fp);
+
+        // A different key must not reuse (and overwrite) the existing variable
+        let other =
+            Remediator::resolve_env_var_name_in(dir.path(), &stripe, "sk_live_leaked", "env");
+        assert_eq!(other, "STRIPE_SECRET_KEY_ABCDEF01");
+        // The same value reuses the canonical name
+        let same = Remediator::resolve_env_var_name_in(dir.path(), &stripe, "sk_live_prod", "env");
+        assert_eq!(same, "STRIPE_SECRET_KEY");
+        // Generic rules are always unique per finding
+        let a = Remediator::resolve_env_var_name_in(
+            dir.path(),
+            &finding_for("unknown-rule", fp),
+            "s",
+            "env",
+        );
+        let b = Remediator::resolve_env_var_name_in(
+            dir.path(),
+            &finding_for("unknown-rule", "99999999999999999999999999999999"),
+            "s",
+            "env",
+        );
+        assert_ne!(a, b);
     }
 }

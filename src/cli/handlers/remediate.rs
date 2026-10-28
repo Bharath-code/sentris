@@ -131,27 +131,14 @@ pub fn handle_remediate(
             }
         };
 
-        let lines: Vec<&str> = content.lines().collect();
-        if finding.line_number == 0 || finding.line_number > lines.len() {
-            eprintln!("{} Invalid line number in finding.", "ERROR:".red().bold());
-            process::exit(1);
-        }
-
-        let target_line = lines[finding.line_number - 1];
-        let mut raw_secret_owned = crate::detector::DetectorEngine::extract_multiline_pem_block(
-            &content,
-            finding.line_number,
-        )
-        .map(|(_, _, pem)| pem)
-        .or_else(|| scanner.extract_raw_secret(target_line, &finding.rule_id))
-        .unwrap_or_else(|| {
-            target_line
-                .split(&['"', '\'', '`'][..])
-                .nth(1)
-                .unwrap_or(target_line)
-                .trim()
-                .to_string()
-        });
+        let mut raw_secret_owned = match scanner.resolve_finding_secret(&content, finding) {
+            Ok(secret) => secret,
+            Err(err) => {
+                eprintln!("{} {}", "ERROR:".red().bold(), err);
+                process::exit(1);
+            }
+        };
+        let env_var_name = Remediator::resolve_env_var_name(finding, &raw_secret_owned, &backend);
 
         let result = remediator.remediate_finding_with_options(
             finding,
@@ -171,7 +158,7 @@ pub fn handle_remediate(
                     "file_path": finding.file_path,
                     "line_number": finding.line_number,
                     "rule_id": finding.rule_id,
-                    "env_var_injected": Remediator::env_var_name_for_rule(&finding.rule_id),
+                    "env_var_injected": env_var_name,
                 }));
                 if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json") {
                     let _ = ledger.record_event(

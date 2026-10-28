@@ -25,6 +25,38 @@ impl Scanner {
     }
 
     /// Extracts the raw secret token from a line using the compiled rule's regex capture
+    /// Resolves the secret a finding points at, shared by CLI and MCP remediation.
+    /// PEM blocks come from the file; anything else must hash to the finding's fingerprint.
+    pub fn resolve_finding_secret(
+        &self,
+        content: &str,
+        finding: &Finding,
+    ) -> Result<String, SentrisError> {
+        if let Some((_, _, pem)) = crate::detector::DetectorEngine::extract_multiline_pem_block(
+            content,
+            finding.line_number,
+        ) {
+            return Ok(pem);
+        }
+        let line = content
+            .lines()
+            .nth(finding.line_number.saturating_sub(1))
+            .ok_or_else(|| {
+                SentrisError::Scan(format!(
+                    "Line {} no longer exists in {}",
+                    finding.line_number, finding.file_path
+                ))
+            })?;
+        self.detector
+            .extract_secret_for_fingerprint(line, &finding.rule_id, &finding.fingerprint)
+            .ok_or_else(|| {
+                SentrisError::Scan(format!(
+                    "Could not isolate the flagged secret on line {} of {} (file changed since the scan?); refusing to guess",
+                    finding.line_number, finding.file_path
+                ))
+            })
+    }
+
     pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
         self.detector.extract_raw_secret(line, rule_id)
     }
@@ -307,5 +339,29 @@ mod tests {
         let report = scanner.scan_path(dir.path()).unwrap();
 
         assert_eq!(report.stats.findings_count, 0);
+    }
+
+    #[test]
+    fn resolve_picks_the_flagged_secret_not_the_first_match() {
+        let dir = tempdir().unwrap();
+        let a = concat!("ghp_", "R8sT2vXq9LmN4pWz7KdJ3hYb6FcA1eUo5GtV");
+        let b = concat!("ghp_", "Zq7Lm3Xv9Tn2Kp8Wd4Rb6Yc1Fa5Ho0Ej9Gsq");
+        let src = format!("x = \"{a}\"; y = \"{b}\"\n");
+        let p = dir.path().join("t.py");
+        fs::write(&p, &src).unwrap();
+        let scanner = Scanner::new().unwrap();
+        let report = scanner.scan_path(&p).unwrap();
+        assert_eq!(report.findings.len(), 2);
+        for f in &report.findings {
+            let got = scanner.resolve_finding_secret(&src, f).unwrap();
+            assert!(got == a || got == b);
+            assert_eq!(
+                f.fingerprint,
+                hex::encode(<sha2::Sha256 as sha2::Digest>::digest(got.as_bytes()))
+            );
+        }
+        let mut stale = report.findings[0].clone();
+        stale.fingerprint = "0".repeat(64);
+        assert!(scanner.resolve_finding_secret(&src, &stale).is_err());
     }
 }

@@ -103,6 +103,10 @@ impl McpServer {
                                 "type": "string",
                                 "description": "Secret backend: env, vault, aws, or doppler (default: env)"
                             },
+                            "fingerprint": {
+                                "type": "string",
+                                "description": "Fingerprint of the finding to remediate when the file has several (default: the first)"
+                            },
                             "confirm": {
                                 "type": "string",
                                 "description": "Required when dry_run=false: the confirm_token returned by a dry_run=true call for this exact finding. Writes also need SENTRIS_MCP_ALLOW_WRITES=1 on the server"
@@ -261,7 +265,12 @@ impl McpServer {
                     .scan_path(&target)
                     .map_err(|e| (-32603, e.to_string()))?;
 
-                let finding = match report.findings.first() {
+                let wanted = args.get("fingerprint").and_then(|v| v.as_str());
+                let picked = match wanted {
+                    Some(fp) => report.findings.iter().find(|f| f.fingerprint == fp),
+                    None => report.findings.first(),
+                };
+                let finding = match picked {
                     Some(f) => f,
                     None => {
                         return Ok(json!({
@@ -287,14 +296,10 @@ impl McpServer {
 
                 let content = std::fs::read_to_string(&finding.file_path)
                     .map_err(|e| (-32603, e.to_string()))?;
-                let lines: Vec<&str> = content.lines().collect();
-                let target_line = lines
-                    .get(finding.line_number.saturating_sub(1))
-                    .copied()
-                    .unwrap_or("");
                 let mut raw_secret = scanner
-                    .extract_raw_secret(target_line, &finding.rule_id)
-                    .unwrap_or_else(|| target_line.trim().to_string());
+                    .resolve_finding_secret(&content, finding)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let env_var = Remediator::resolve_env_var_name(finding, &raw_secret, backend);
 
                 let remediator = Remediator::new();
                 let res = remediator.remediate_finding_with_options(
@@ -309,7 +314,6 @@ impl McpServer {
                 Remediator::zeroize_secret_string(&mut raw_secret);
                 let session_id = res.map_err(|e| (-32603, e.to_string()))?;
 
-                let env_var = Remediator::env_var_name_for_rule(&finding.rule_id);
                 let backend_is_mock =
                     crate::remediator::backend::SecretBackendFactory::from_name(backend)
                         .map(|b| b.is_mock())

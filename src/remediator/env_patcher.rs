@@ -50,6 +50,15 @@ impl EnvPatcher {
         Ok(())
     }
 
+    /// Current value of `var_name` in `<base_dir>/.env`, if any.
+    pub fn existing_value_in(base_dir: &Path, var_name: &str) -> Option<String> {
+        let prefix = format!("{var_name}=");
+        fs::read_to_string(base_dir.join(".env"))
+            .ok()?
+            .lines()
+            .find_map(|l| l.trim().strip_prefix(&prefix).map(str::to_string))
+    }
+
     /// Injects or updates an environment variable inside `.env`
     pub fn inject_env_variable(var_name: &str, secret_value: &str) -> Result<(), SentrisError> {
         Self::inject_env_variable_in(Path::new("."), var_name, secret_value)
@@ -79,8 +88,12 @@ impl EnvPatcher {
         let mut found = false;
 
         for line in &mut lines {
-            if line.trim().starts_with(&prefix) {
-                *line = new_line.clone();
+            if let Some(current) = line.trim().strip_prefix(&prefix) {
+                if current != secret_value {
+                    return Err(SentrisError::Scan(format!(
+                        "{var_name} already holds a different value in .env; refusing to overwrite it"
+                    )));
+                }
                 found = true;
                 break;
             }
@@ -139,6 +152,22 @@ mod tests {
         EnvPatcher::ensure_env_gitignored_in(dir.path()).unwrap();
         let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert!(content.contains(".env"));
+    }
+
+    #[test]
+    fn inject_refuses_to_overwrite_a_different_value() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".env"), "A=1\nSTRIPE_KEY=prod\n").unwrap();
+        assert!(EnvPatcher::inject_env_variable_in(dir.path(), "STRIPE_KEY", "leaked").is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join(".env")).unwrap(),
+            "A=1\nSTRIPE_KEY=prod\n"
+        );
+        EnvPatcher::inject_env_variable_in(dir.path(), "STRIPE_KEY", "prod").unwrap();
+        EnvPatcher::inject_env_variable_in(dir.path(), "OTHER", "x").unwrap();
+        assert!(fs::read_to_string(dir.path().join(".env"))
+            .unwrap()
+            .contains("OTHER=x"));
     }
 
     #[test]
