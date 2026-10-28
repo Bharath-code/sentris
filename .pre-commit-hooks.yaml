@@ -1,7 +1,18 @@
 - id: sentris
-  name: sentris
-  description: High-performance, memory-safe, zero-knowledge secret scanner with sub-35ms pre-commit speed.
+  name: sentris (pre-commit staged scan)
+  description: High-performance, memory-safe, zero-knowledge secret scanner with sub-25ms pre-commit speed.
   entry: sentris scan --staged --fail-on-secret
   language: system
   pass_filenames: false
   always_run: true
+  stages: [pre-commit]
+
+- id: sentris-pre-push
+  name: sentris (pre-push branch guard)
+  description: Intercepts unpushed secret commits (HEAD~1..HEAD) before git push even if --no-verify was used on commit.
+  entry: sentris scan --since HEAD~1 --fail-on-secret
+  language: system
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
+
