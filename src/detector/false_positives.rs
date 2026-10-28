@@ -202,6 +202,20 @@ impl FalsePositiveFilter {
             return true;
         }
 
+        // Check for consecutive identical character runs (e.g. ghp_aaaaaaaaaaaa or sk_live_1111111111)
+        let bytes = token.as_bytes();
+        let mut identical_run = 1usize;
+        for window in bytes.windows(2) {
+            if window[0] == window[1] {
+                identical_run += 1;
+                if identical_run >= 8 {
+                    return true;
+                }
+            } else {
+                identical_run = 1;
+            }
+        }
+
         false
     }
 

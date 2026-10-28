@@ -92,6 +92,7 @@ pub enum Commands {
     Uninstall,
 
     /// Safely auto-remediate a detected secret finding
+    #[command(visible_alias = "fix")]
     Remediate {
         /// The finding ID, file path, or fingerprint prefix to remediate
         finding_id: Option<String>,

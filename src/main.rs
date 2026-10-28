@@ -240,7 +240,7 @@ fn main() {
                 },
             }
 
-            if verify && !report.findings.is_empty() && !cli.quiet {
+            if verify && !report.findings.is_empty() && !cli.quiet && matches!(format, OutputFormat::Text) {
                 if cli.offline {
                     println!(
                         "{}",

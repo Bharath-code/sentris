@@ -147,8 +147,11 @@ impl DetectorEngine {
 
         // Check for inline suppression comments (supports multi-tool ecosystem standards)
         if line.contains("sentris-ignore")
+            || line.contains("sentris:ignore")
             || line.contains("rustscan-ignore")
+            || line.contains("rustscan:ignore")
             || line.contains("gitleaks:allow")
+            || line.contains("pragma: allowlist secret")
             || line.contains("nosec")
             || line.contains("trufflehog:ignore")
             || line.contains("secretlint-disable")
