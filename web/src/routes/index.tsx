@@ -206,14 +206,14 @@ function Cloud() {
           <p className="font-mono text-xs tracking-[0.14em] text-zinc-500 uppercase">Sentris Pro Cloud</p>
           <h2 className="mt-4 text-title font-semibold">See one leaked key across fifty repos. Without seeing the key.</h2>
           <p className="mt-5 text-zinc-400">
-            The CLI hashes every finding on the developer's laptop with an org-scoped salt. The cloud only receives
-            fingerprints, so it can tell you the same Stripe key lives in <span className="text-zinc-200">billing-svc</span> and{' '}
+            The CLI fingerprints every finding with a team secret that lives only on your developers' machines. The
+            cloud receives keyed fingerprints it can match but never reverse or test guesses against, so it can tell you the same Stripe key lives in <span className="text-zinc-200">billing-svc</span> and{' '}
             <span className="text-zinc-200">checkout-web</span>. It never stores a single byte of source or secret.
           </p>
         </div>
         <div className="space-y-3 font-mono text-[12.5px]" aria-label="Data flow: raw secret stays local, only a salted fingerprint is sent">
           <FlowRow label="On your laptop" value='"sk_live_51AbcDef…"' tone="text-crit" />
-          <p className="pl-4 text-zinc-600">↓ HMAC-SHA256(org salt)</p>
+          <p className="pl-4 text-zinc-600">↓ HMAC-SHA256(team secret)</p>
           <FlowRow label="Sent to cloud" value="zk_9f3c1a…e04b" tone="text-ok" />
           <p className="pl-4 text-zinc-600">↓ correlate</p>
           <FlowRow label="You see" value="2 repos · same credential" tone="text-ember" />

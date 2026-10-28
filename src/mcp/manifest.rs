@@ -67,6 +67,7 @@ impl McpServer {
                         seats_used: 14,
                         user_email: "dev@sentris.dev".to_string(),
                         expires_at: None,
+                        team_secret: None,
                     }
                 });
                 let team = crate::cloud::TeamInfo::from_credentials(&creds);

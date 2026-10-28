@@ -393,9 +393,9 @@ fn sync_cloud_report(cli: &Cli, report: &ScanReport) {
                 .flatten()
                 .unwrap_or_else(|| "main".to_string());
             let commit = GitManager::get_head_commit().ok().flatten();
-            let payload =
-                build_cloud_payload(report, &creds, Some(&repo_name), Some(&branch), commit);
-            match upload_scan(&payload, &creds, false) {
+            match build_cloud_payload(report, &creds, Some(&repo_name), Some(&branch), commit)
+                .and_then(|payload| upload_scan(&payload, &creds, false))
+            {
                 Ok(res) => {
                     if !cli.quiet {
                         println!(

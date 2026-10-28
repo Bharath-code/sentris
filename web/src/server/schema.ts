@@ -55,7 +55,7 @@ export const org = sqliteTable('org', {
   id: text('id').primaryKey(),
   name: text('name').notNull(),
   ownerId: text('owner_id').notNull().unique().references(() => user.id, { onDelete: 'cascade' }),
-  // 8 hex chars shared by every key in the org; the CLI derives its zero-knowledge salt from it
+  // 8 hex chars shared by every key in the org; the CLI displays it as the org id
   zkTag: text('zk_tag').notNull().unique(),
   plan: text('plan', { enum: ['free', 'pro'] }).notNull().default('free'),
   seats: integer('seats').notNull().default(1),

@@ -269,6 +269,11 @@ pub enum AuthSubcommand {
         /// Custom Sentris Pro Cloud API endpoint (defaults to https://api.sentris.dev)
         #[arg(long)]
         server: Option<String>,
+
+        /// Join an existing team: the 64-hex team secret printed by your first teammate's login.
+        /// Omit on the first machine to generate one. Never sent to Sentris Cloud.
+        #[arg(long)]
+        team_secret: Option<String>,
     },
 
     /// Check active authentication and organization subscription status

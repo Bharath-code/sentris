@@ -167,6 +167,7 @@ function Onboarding({ d }: { d: Data }) {
           <div className="space-y-2">
             <CopyCommand command={loginCommand(d.serverUrl)} />
             <CopyCommand command="sentris sync ." />
+            <p className="text-xs text-faint">Login prints a team secret. Share it privately; teammates add <span className="font-mono">--team-secret &lt;secret&gt;</span>.</p>
           </div>
         </Step>
       </ol>
@@ -211,7 +212,7 @@ function Keys({ d }: { d: Data }) {
   }
 
   return (
-    <Panel title="CLI API keys" hint="Every key in this org shares one zero-knowledge salt, so findings correlate across machines.">
+    <Panel title="CLI API keys" hint="Your first login prints a team secret. Teammates join with --team-secret so fingerprints match across machines. Sentris never sees it.">
       {fresh && (
         <div className="mb-5 space-y-2 rounded-xl bg-ok/5 p-4 ring-1 ring-ok/20">
           <p className="text-sm font-medium">Copy this now. It won't be shown again.</p>

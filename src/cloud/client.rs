@@ -7,8 +7,9 @@ use sha2::{Digest, Sha256};
 /// Zero-knowledge finding payload transmitted to Sentris Pro Cloud
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CloudFindingPayload {
-    pub finding_id: String,
-    pub fingerprint: String, // Salted SHA-256 / HMAC hash — never the raw secret!
+    /// HMAC-SHA256(team secret, secret hash). The server never holds the key, so it
+    /// cannot test a guessed secret against this value.
+    pub fingerprint: String,
     pub rule_id: String,
     pub description: String,
     pub severity: String,
@@ -149,14 +150,14 @@ pub fn record_and_correlate_local_blast_radius(
     correlate_multi_repo_blast_radius(&payloads)
 }
 
-/// Compute a zero-knowledge salted SHA-256 fingerprint from a finding fingerprint
-pub fn compute_zero_knowledge_fingerprint(base_fp: &str, salt: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(salt.as_bytes());
-    hasher.update(b":");
-    hasher.update(base_fp.as_bytes());
-    let result = hasher.finalize();
-    format!("zk_{}", hex::encode(result))
+/// Keyed zero-knowledge fingerprint: `zk_` + HMAC-SHA256(team_secret, base_fp).
+/// `team_secret` is the 64-hex team secret; teammates sharing it get identical fingerprints.
+pub fn compute_zero_knowledge_fingerprint(base_fp: &str, team_secret: &str) -> String {
+    let key = hex::decode(team_secret).unwrap_or_else(|_| team_secret.as_bytes().to_vec());
+    format!(
+        "zk_{}",
+        hex::encode(crate::audit::hmac_sha256(&key, base_fp.as_bytes()))
+    )
 }
 
 /// Build a zero-knowledge cloud scan payload from a local ScanReport
@@ -166,38 +167,36 @@ pub fn build_cloud_payload(
     repo_name: Option<&str>,
     branch: Option<&str>,
     commit_hash: Option<String>,
-) -> CloudScanPayload {
+) -> Result<CloudScanPayload, SentrisError> {
+    let team_secret = creds.team_secret.as_deref().ok_or_else(|| {
+        SentrisError::Cloud(
+            "No team secret configured. Re-run `sentris auth login --token <KEY>` (add `--team-secret <SECRET>` to join an existing team)."
+                .to_string(),
+        )
+    })?;
     let stats_hash = Sha256::digest(format!("{:?}", report.stats).as_bytes());
     let hex_hash = hex::encode(stats_hash);
     let scan_id = format!("scn_{}", &hex_hash[..8]);
     let effective_repo = repo_name.unwrap_or("local-workspace").to_string();
     let effective_branch = branch.unwrap_or("main").to_string();
 
-    let salt = &creds.org_id;
-
     let findings: Vec<CloudFindingPayload> = report
         .findings
         .iter()
-        .map(|f| {
-            // Salted zero-knowledge fingerprint ensures raw finding identity is cryptographically salted
-            let zk_fingerprint = compute_zero_knowledge_fingerprint(&f.fingerprint, salt);
-
-            CloudFindingPayload {
-                finding_id: f.fingerprint.clone(),
-                fingerprint: zk_fingerprint,
-                rule_id: f.rule_id.clone(),
-                description: f.description.clone(),
-                severity: f.severity.to_string(),
-                file_path: f.file_path.clone(),
-                line_number: f.line_number,
-                entropy: f.entropy,
-                redacted_preview: f.redacted_match.clone(),
-                zone: "Zone 1 (Staged / Working Tree)".to_string(),
-            }
+        .map(|f| CloudFindingPayload {
+            fingerprint: compute_zero_knowledge_fingerprint(&f.fingerprint, team_secret),
+            rule_id: f.rule_id.clone(),
+            description: f.description.clone(),
+            severity: f.severity.to_string(),
+            file_path: f.file_path.clone(),
+            line_number: f.line_number,
+            entropy: f.entropy,
+            redacted_preview: f.redacted_match.clone(),
+            zone: "Zone 1 (Staged / Working Tree)".to_string(),
         })
         .collect();
 
-    CloudScanPayload {
+    Ok(CloudScanPayload {
         scan_id,
         org_id: creds.org_id.clone(),
         repo_name: effective_repo,
@@ -207,7 +206,7 @@ pub fn build_cloud_payload(
         files_scanned: report.stats.files_scanned,
         duration_ms: report.stats.duration_ms,
         findings,
-    }
+    })
 }
 
 /// Upload scan findings to Sentris Pro Cloud API
@@ -295,9 +294,9 @@ mod tests {
     #[test]
     fn test_compute_zero_knowledge_fingerprint_deterministic() {
         let base_fp = "fp_abc123456789";
-        let salt = "org_sentris_test";
-        let fp1 = compute_zero_knowledge_fingerprint(base_fp, salt);
-        let fp2 = compute_zero_knowledge_fingerprint(base_fp, salt);
+        let secret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let fp1 = compute_zero_knowledge_fingerprint(base_fp, secret);
+        let fp2 = compute_zero_knowledge_fingerprint(base_fp, secret);
         assert_eq!(fp1, fp2);
         assert!(fp1.starts_with("zk_"));
         assert_eq!(fp1.len(), 3 + 64);
@@ -306,8 +305,14 @@ mod tests {
     #[test]
     fn test_compute_zero_knowledge_fingerprint_salt_variance() {
         let base_fp = "fp_abc123456789";
-        let fp1 = compute_zero_knowledge_fingerprint(base_fp, "org_a");
-        let fp2 = compute_zero_knowledge_fingerprint(base_fp, "org_b");
+        let fp1 = compute_zero_knowledge_fingerprint(
+            base_fp,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        let fp2 = compute_zero_knowledge_fingerprint(
+            base_fp,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
         assert_ne!(fp1, fp2);
     }
 
@@ -349,7 +354,16 @@ mod tests {
             seats_used: 12,
             user_email: "dev@acme.corp".to_string(),
             expires_at: None,
+            team_secret: Some(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            ),
         };
+
+        let no_secret = Credentials {
+            team_secret: None,
+            ..creds.clone()
+        };
+        assert!(build_cloud_payload(&report, &no_secret, None, None, None).is_err());
 
         let payload = build_cloud_payload(
             &report,
@@ -357,7 +371,8 @@ mod tests {
             Some("backend-api"),
             Some("feature-payments"),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(payload.findings.len(), 1);
         let item = &payload.findings[0];
         assert_eq!(item.rule_id, "stripe-api-key");
@@ -366,6 +381,9 @@ mod tests {
         let json = serde_json::to_string(&payload).unwrap();
         assert!(json.contains("sk_live_51...f89a"));
         assert!(!json.contains("raw_unmasked"));
+        // The unsalted secret hash must never leave the machine
+        assert!(!json.contains("hash_a1b2c3d4e5f6"));
+        assert!(!json.contains("finding_id"));
     }
 
     #[test]
@@ -392,6 +410,7 @@ mod tests {
             seats_used: 12,
             user_email: "dev@acme.corp".to_string(),
             expires_at: None,
+            team_secret: None,
         };
 
         let err = upload_scan(&payload, &creds, true).unwrap_err();
@@ -410,6 +429,9 @@ mod tests {
             seats_used: 24,
             user_email: "ciso@acme.corp".to_string(),
             expires_at: None,
+            team_secret: Some(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            ),
         };
 
         let shared_pg_finding = Finding {
@@ -442,7 +464,9 @@ mod tests {
         let repos = ["billing-svc", "auth-worker", "analytics-etl", "admin-api"];
         let payloads: Vec<CloudScanPayload> = repos
             .iter()
-            .map(|repo| build_cloud_payload(&report, &creds, Some(repo), Some("main"), None))
+            .map(|repo| {
+                build_cloud_payload(&report, &creds, Some(repo), Some("main"), None).unwrap()
+            })
             .collect();
 
         let insights = correlate_multi_repo_blast_radius(&payloads);

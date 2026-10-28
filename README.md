@@ -320,13 +320,16 @@ sentris lsp
 # Verify RFC 2104 HMAC-SHA256 hash chain and export SOC 2 CC6.1/CC6.7/CC6.8 & ISO 27001 A.8.24 evidence
 sentris audit --verify --export-vanta vanta-evidence.json
 
-# Authenticate workstation with Sentris Pro Cloud ($8/seat/mo)
+# Authenticate workstation with Sentris Pro Cloud ($8/seat/mo).
+# First machine prints a 256-bit team secret; it keys every fingerprint and never leaves your machines.
 sentris auth login --token sp_live_9f8e7d6c5b4a3210deadbeef
+# Teammates join the same fingerprint space (share the secret privately, e.g. via your password manager):
+sentris auth login --token <their key> --team-secret <64-hex secret>
 
 # View team seats, run-rate, and Zero-Knowledge Multi-Repo Blast Radius Insight table
 sentris team
 
-# Sync salted HMAC-SHA256 fingerprints (0 bytes of source code or plaintext secrets uploaded)
+# Sync team-secret-keyed HMAC-SHA256 fingerprints (0 bytes of source code or plaintext secrets uploaded)
 sentris sync
 ```
 

@@ -319,6 +319,7 @@ mod tests {
             seats_used: 12,
             user_email: "lead@acme.com".to_string(),
             expires_at: None,
+            team_secret: None,
         };
 
         let team = TeamInfo::from_credentials(&creds);

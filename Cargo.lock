@@ -1624,6 +1624,7 @@ dependencies = [
  "clap",
  "comfy-table",
  "crossterm",
+ "getrandom 0.2.17",
  "hex",
  "ignore",
  "indicatif",

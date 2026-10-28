@@ -15,6 +15,31 @@ pub struct Credentials {
     pub seats_used: u32,
     pub user_email: String,
     pub expires_at: Option<String>,
+    /// 256-bit team secret (hex) used as the HMAC key for zero-knowledge fingerprints.
+    /// Shared between teammates out of band and never transmitted to Sentris Cloud.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_secret: Option<String>,
+}
+
+/// Generate a fresh 256-bit team secret from the OS CSPRNG.
+pub fn generate_team_secret() -> Result<String, SentrisError> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| SentrisError::Cloud(format!("OS random number generator unavailable: {e}")))?;
+    Ok(hex::encode(bytes))
+}
+
+/// Accept only 64 hex chars (256 bits); anything shorter weakens the fingerprint HMAC.
+pub fn validate_team_secret(secret: &str) -> Result<String, SentrisError> {
+    let s = secret.trim().to_ascii_lowercase();
+    if s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(s)
+    } else {
+        Err(SentrisError::Cloud(
+            "Team secret must be 64 hex characters (as printed by the first teammate's `sentris auth login`)."
+                .to_string(),
+        ))
+    }
 }
 
 impl Credentials {
@@ -59,6 +84,12 @@ impl Credentials {
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| SentrisError::Cloud(format!("Failed to serialize credentials: {e}")))?;
         fs::write(path, json)?;
+        // Holds the API key and team secret: owner read/write only
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+        }
         Ok(())
     }
 
@@ -122,6 +153,7 @@ impl Credentials {
             seats_used: 14,
             user_email: email,
             expires_at: Some("2027-10-08T00:00:00Z".to_string()),
+            team_secret: None,
         })
     }
 }
@@ -163,6 +195,7 @@ mod tests {
             seats_used: 28,
             user_email: "lead@acme.com".to_string(),
             expires_at: Some("2028-01-01T00:00:00Z".to_string()),
+            team_secret: None,
         };
 
         creds.save_to_path(&path).expect("Save should succeed");
