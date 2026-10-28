@@ -263,13 +263,13 @@ fn confirm_interactive_remediation(
     println!("   Backend:         {}", backend.cyan().bold());
     println!("   Planned actions: 1. Verify credential via provider API");
     println!("                    2. Create atomic local git backup branch");
-    println!("                    3. Provision replacement credential");
+    println!("                    3. Extract working credential (no rotation)");
     println!(
         "                    4. Store credential in {} backend",
         backend.cyan()
     );
     println!("                    5. Replace literal in code with environment variable");
-    println!("                    6. Queue old key for 24h grace window (zero downtime)");
+    println!("                    6. Remind you to revoke the old key at the provider");
     println!("                    7. Record transaction in rollback ledger");
     println!();
     print!("Proceed with live remediation? [y/N]: ");

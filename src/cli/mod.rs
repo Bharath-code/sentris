@@ -124,7 +124,7 @@ pub enum Commands {
         #[arg(long, default_value = "env")]
         backend: String,
 
-        /// Rotate the credential via provider API instead of safe local extraction
+        /// Provider-side rotation (not supported yet: errors out before touching anything)
         #[arg(long, default_value_t = false)]
         rotate: bool,
 

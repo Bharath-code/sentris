@@ -165,6 +165,12 @@ impl Remediator {
         rotate: bool,
         quiet: bool,
     ) -> Result<String, SentrisError> {
+        if rotate {
+            return Err(SentrisError::NotImplemented(
+                "--rotate: provider-side key rotation is not available yet; the leaked key stays valid until you revoke it at the provider"
+                    .to_string(),
+            ));
+        }
         let session_id = format!("rm_{}", &finding.fingerprint[..8]);
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
         let provider_name = match matched_verifier {
@@ -249,29 +255,16 @@ impl Remediator {
             // Step 3: Provision Replacement Key or Extract Working Credential
             print!("  [3/7] 🔑 Provisioning replacement API credential... ");
         }
-        let mut new_key = if !rotate && !dry_run {
-            // Safe Local Extraction default: preserve the working credential when moving to .env/vault
-            // so the developer's local application never breaks.
-            raw_secret.to_string()
-        } else if offline {
-            format!("sec_replacement_{}", &finding.fingerprint[..16])
-        } else if let Some(verifier) = matched_verifier {
-            verifier.rotate(raw_secret, dry_run)?
-        } else {
-            format!("sec_replacement_{}", &finding.fingerprint[..16])
-        };
+        // Extraction only: the same working credential moves to the backend, so the app keeps running
+        let mut new_key = raw_secret.to_string();
         let masked_new_key = Finding::mask_secret(&new_key);
 
         if !quiet {
-            if !rotate && !dry_run {
-                println!(
-                    "{} ({} • extracted working key; pass --rotate to roll via API)",
-                    "PROVISIONED".green(),
-                    masked_new_key.cyan()
-                );
-            } else {
-                println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
-            }
+            println!(
+                "{} ({} • extracted working key, not rotated)",
+                "EXTRACTED".green(),
+                masked_new_key.cyan()
+            );
         }
 
         // Step 4: Inject into selected secret backend and verify gitignore
@@ -331,9 +324,10 @@ impl Remediator {
                 replacement_line.trim().green()
             );
 
-            // Step 6: Dual-Key Graceful Deprecation (Zero Prod Downtime)
-            print!("  [6/7] ⏳ Queuing old credential for safe deprecation... ");
-            println!("{}", "24H GRACE WINDOW ACTIVE (0s downtime)".green().bold());
+            println!(
+                "  [6/7] ⚠️  Leaked key NOT revoked: {}",
+                "still valid until you rotate it at the provider".yellow().bold()
+            );
 
             // Step 7: Record transaction in Rollback Ledger
             print!("  [7/7] 📋 Logging transaction to rollback ledger... ");
@@ -358,7 +352,7 @@ impl Remediator {
             println!();
             println!(
                 "{}",
-                "🎉 Remediation completed successfully in 12s with zero production downtime!"
+                "Remediation complete: secret moved out of source. Revoke the old key at your provider and purge it from git history."
                     .bold()
                     .green()
             );
@@ -382,4 +376,45 @@ fn chrono_compact_timestamp() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Severity;
+
+    #[test]
+    fn rotate_is_rejected_before_any_side_effect() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("app.py");
+        let src = "key = \"sk_live_abcdefghijklmnopqrstuvwx\"\n";
+        std::fs::write(&file, src).unwrap();
+        let finding = Finding {
+            rule_id: "stripe-secret-key".into(),
+            description: "d".into(),
+            severity: Severity::Critical,
+            file_path: file.to_string_lossy().into_owned(),
+            line_number: 1,
+            column: 1,
+            redacted_match: "sk_liv...".into(),
+            entropy: 4.0,
+            fingerprint: "0123456789abcdef0123456789abcdef".into(),
+            commit_hash: None,
+        };
+        for dry_run in [true, false] {
+            let err = Remediator::new()
+                .remediate_finding_with_options(
+                    &finding,
+                    "sk_live_abcdefghijklmnopqrstuvwx",
+                    dry_run,
+                    Some("env"),
+                    true,
+                    true,
+                    true,
+                )
+                .unwrap_err();
+            assert!(matches!(err, SentrisError::NotImplemented(_)));
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), src);
+        }
+    }
 }

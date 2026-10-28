@@ -86,7 +86,7 @@ fn test_format_slack_card_critical() {
 
     let action_block_text = blocks.last().unwrap()["text"]["text"].as_str().unwrap();
     assert!(
-        action_block_text.contains("Run 'sentris remediate' to rotate safely with zero downtime")
+        action_block_text.contains("Run 'sentris remediate' to move the secret out of source (then revoke the old key)")
     );
 }
 
@@ -147,7 +147,7 @@ fn test_format_discord_card_critical() {
     assert_eq!(embed["color"].as_u64().unwrap(), 15158332);
 
     let desc = embed["description"].as_str().unwrap();
-    assert!(desc.contains("Run 'sentris remediate' to rotate safely with zero downtime"));
+    assert!(desc.contains("Run 'sentris remediate' to move the secret out of source (then revoke the old key)"));
 
     let fields = embed["fields"].as_array().unwrap();
     assert_eq!(fields[0]["name"].as_str().unwrap(), "📊 Scan Summary");
@@ -173,7 +173,7 @@ fn test_format_discord_card_critical() {
     );
     assert_eq!(
         action_field["value"].as_str().unwrap(),
-        "Run 'sentris remediate' to rotate safely with zero downtime"
+        "Run 'sentris remediate' to move the secret out of source (then revoke the old key)"
     );
 }
 

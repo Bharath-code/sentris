@@ -204,12 +204,12 @@ impl Reporter {
                 .map(|f| f.file_path.as_str())
                 .unwrap_or(".");
             if no_color {
-                println!("Tip: Run 'sentris remediate' to safely rotate live credentials with zero downtime.");
+                println!("Tip: Run 'sentris remediate' to move live credentials out of source.");
                 println!("     Quick fix: sentris remediate {first_target}  |  Interactive TUI: sentris review");
             } else {
                 println!(
                     "{}",
-                    "Tip: Run 'sentris remediate' to safely rotate live credentials with zero downtime."
+                    "Tip: Run 'sentris remediate' to move live credentials out of source."
                         .italic()
                         .dimmed()
                 );

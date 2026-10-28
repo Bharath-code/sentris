@@ -49,7 +49,7 @@ impl McpServer {
                             },
                             "rotate": {
                                 "type": "boolean",
-                                "description": "If true, provision a rotated replacement credential instead of extracting the existing working key (default: false)"
+                                "description": "If true, NOT SUPPORTED yet: returns an error. Leave false; revoke the old key at the provider after remediation"
                             },
                             "dry_run": {
                                 "type": "boolean",

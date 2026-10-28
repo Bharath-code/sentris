@@ -177,7 +177,6 @@ impl McpServer {
                 {
                     "name": "remediate (alias: fix)",
                     "command": "sentris fix <path_or_rule_or_fingerprint> --all --yes --backend <env|vault|aws|doppler|1password|infisical> --json",
-                    "rotate_command": "sentris fix <path> --all --yes --rotate --backend <backend> --json",
                     "dry_run_command": "sentris fix <path> --all --dry-run --json",
                     "description": "Autonomously patches hardcoded literals in source code (.py, .ts, .js, .rs, .go, .java, .rb, .php, .sh, multi-line PEM) and injects secrets into the target backend."
                 },
@@ -238,7 +237,7 @@ impl McpServer {
         let skill_path = skill_dir.join("SKILL.md");
         let skill_md = r#"---
 name: sentris-security
-description: Autonomous secret scanning, code remediation, zero-downtime key rotation, Zone 3 git quarantine, and SOC 2 compliance via the Sentris CLI (`sentris --json`) and MCP server (`sentris mcp`). Use whenever scanning for leaked API keys/credentials, fixing hardcoded secrets, rotating keys into .env/Vault/AWS/Doppler/1Password/Infisical, checking pre-commit diffs, or verifying SOC 2 audit logs.
+description: Autonomous secret scanning, code remediation, secret extraction into backends, Zone 3 git quarantine, and SOC 2 compliance via the Sentris CLI (`sentris --json`) and MCP server (`sentris mcp`). Use whenever scanning for leaked API keys/credentials, fixing hardcoded secrets, rotating keys into .env/Vault/AWS/Doppler/1Password/Infisical, checking pre-commit diffs, or verifying SOC 2 audit logs.
 ---
 
 # Sentris — AI Agent Operating Skill
@@ -270,8 +269,7 @@ sentris fix <file_path> --yes --json
 # Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler
 sentris fix . --all --yes --backend 1password --json
 
-# Rotate the credential via provider API (Dual-Key zero-downtime rotation)
-sentris fix <file_path> --yes --rotate --backend env --json
+# Key rotation is not supported yet: after fixing, revoke the old key at the provider
 ```
 
 ### Atomic Byte-for-Byte Rollback

@@ -42,8 +42,13 @@ pub trait ProviderVerifier: Send + Sync {
     /// Checks live status via provider API
     fn verify_live(&self, secret: &str) -> Result<LiveStatus, SentrisError>;
 
-    /// Rotates the credential, provisioning a new replacement key
-    fn rotate(&self, old_secret: &str, dry_run: bool) -> Result<String, SentrisError>;
+    /// Provider-side rotation is not implemented for any provider yet; callers must treat the leaked key as still valid
+    fn rotate(&self, _old_secret: &str, _dry_run: bool) -> Result<String, SentrisError> {
+        Err(SentrisError::NotImplemented(format!(
+            "{} key rotation",
+            self.provider_name()
+        )))
+    }
 }
 
 pub struct VerifierRegistry {

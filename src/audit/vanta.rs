@@ -84,7 +84,7 @@ impl AuditLedger {
                     "secrets_remediated": secrets_remediated,
                     "quarantines_created": quarantines_created,
                     "baselines_recorded": baselines_recorded,
-                    "deprecation_policy": "24h Dual-Key Zero-Downtime Grace Window"
+                    "deprecation_policy": "Not automated: leaked keys must be revoked at the provider"
                 },
                 "ISO27001_A.8.24": {
                     "control_name": "Cryptographic Hash-Chain Audit Integrity",

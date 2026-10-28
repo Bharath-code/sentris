@@ -90,22 +90,6 @@ impl ProviderVerifier for AnthropicVerifier {
     fn verify_live(&self, token: &str) -> Result<LiveStatus, SentrisError> {
         self.verify_live_endpoint(token, Self::DEFAULT_ENDPOINT)
     }
-
-    fn rotate(&self, token: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            let simulated_suffix = hex::encode([
-                0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10, 0xef, 0xbe, 0xad, 0xde,
-            ]);
-            return Ok(format!("sk-ant-replacement-dryrun-{simulated_suffix}"));
-        }
-
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(token.as_bytes());
-        hasher.update(b"sentris_anthropic_rotation_salt_2026");
-        let hash = hex::encode(hasher.finalize());
-        Ok(format!("sk-ant-replacement-{}", &hash[..32]))
-    }
 }
 
 #[cfg(test)]
@@ -160,20 +144,6 @@ mod tests {
         assert_eq!(res, LiveStatus::Revoked);
     }
 
-    #[test]
-    fn test_anthropic_rotation_dry_run() {
-        let verifier = AnthropicVerifier::new();
-
-        // Dry run
-        let dry_run_key = verifier.rotate("sk-ant-api03-test-key", true).unwrap();
-        assert!(dry_run_key.starts_with("sk-ant-replacement-"));
-        assert!(dry_run_key.contains("dryrun"));
-
-        // Live rotation
-        let live_key = verifier.rotate("sk-ant-api03-test-key", false).unwrap();
-        assert!(live_key.starts_with("sk-ant-replacement-"));
-        assert!(!live_key.contains("dryrun"));
-    }
 
     #[test]
     fn test_anthropic_error_handling() {

@@ -63,27 +63,6 @@ impl ProviderVerifier for StripeVerifier {
             }
         }
     }
-
-    fn rotate(&self, _old_secret: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            // Generate simulated replacement restricted key in dry-run
-            let simulated_suffix = hex::encode([
-                0x42, 0x13, 0x37, 0xde, 0xad, 0xbe, 0xef, 0x01, 0x23, 0x45, 0x67, 0x89,
-            ]);
-            return Ok(format!("rk_live_simulated_{simulated_suffix}"));
-        }
-
-        // In real rotation: call Stripe API keys endpoint or provision restricted key
-        // For security safety, generate replacement key token
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(_old_secret.as_bytes());
-        hasher.update(b"sentris_rotation_salt_2026");
-        let hash = hex::encode(hasher.finalize());
-        let new_key = format!("rk_live_sec_{}", &hash[..24]);
-
-        Ok(new_key)
-    }
 }
 
 #[cfg(test)]
@@ -108,10 +87,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_stripe_rotation_dry_run() {
-        let verifier = StripeVerifier::new();
-        let new_key = verifier.rotate("sk_live_123", true).unwrap();
-        assert!(new_key.starts_with("rk_live_simulated_"));
-    }
 }

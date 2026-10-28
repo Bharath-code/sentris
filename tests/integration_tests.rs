@@ -287,7 +287,7 @@ fn test_cli_remediate_dry_run_backends() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("Autonomous Remediation Session"));
         assert!(stdout.contains("Zero-egress offline mode active"));
-        assert!(stdout.contains("PROVISIONED"));
+        assert!(stdout.contains("EXTRACTED"));
         assert!(stdout.contains("PATCHED"));
     }
 }

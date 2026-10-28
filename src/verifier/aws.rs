@@ -51,14 +51,6 @@ impl ProviderVerifier for AwsVerifier {
             Ok(LiveStatus::Revoked)
         }
     }
-
-    fn rotate(&self, _old_secret: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            return Ok("AKIA_DRY_RUN_REPLACEMENT_KEY_ID".to_string());
-        }
-
-        Ok("AKIA_PROVISIONED_REPLACEMENT_KEY".to_string())
-    }
 }
 
 #[cfg(test)]

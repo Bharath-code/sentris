@@ -199,7 +199,7 @@ impl WebhookReporter {
             "type": "section",
             "text": {
                 "type": "mrkdwn",
-                "text": "👉 *Recommended Action:*\nRun 'sentris remediate' to rotate safely with zero downtime"
+                "text": "👉 *Recommended Action:*\nRun 'sentris remediate' to move the secret out of source (then revoke the old key)"
             }
         }));
 
@@ -248,7 +248,7 @@ impl WebhookReporter {
         let embed_description = if finding_count == 0 {
             "Repository scan completed successfully. No hardcoded credentials detected.".to_string()
         } else {
-            "Hardcoded secrets detected during scan execution.\n\n🛡️ **Recommended Action:** Run 'sentris remediate' to rotate safely with zero downtime".to_string()
+            "Hardcoded secrets detected during scan execution.\n\n🛡️ **Recommended Action:** Run 'sentris remediate' to move the secret out of source (then revoke the old key)".to_string()
         };
 
         let mut fields = Vec::new();
@@ -306,7 +306,7 @@ impl WebhookReporter {
         // Recommended action field
         fields.push(json!({
             "name": "🛡️ Recommended Action",
-            "value": "Run 'sentris remediate' to rotate safely with zero downtime",
+            "value": "Run 'sentris remediate' to move the secret out of source (then revoke the old key)",
             "inline": false
         }));
 
@@ -316,7 +316,7 @@ impl WebhookReporter {
             "color": branding.discord_color,
             "fields": fields,
             "footer": {
-                "text": "Sentris Security Scanner • Zero-Downtime Secret Remediation"
+                "text": "Sentris Security Scanner • Secret Remediation"
             },
             "timestamp": if report.timestamp.is_empty() {
                 "2026-10-07T00:00:00Z".to_string()

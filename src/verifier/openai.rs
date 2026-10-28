@@ -98,22 +98,6 @@ impl ProviderVerifier for OpenAiVerifier {
     fn verify_live(&self, token: &str) -> Result<LiveStatus, SentrisError> {
         self.verify_live_endpoint(token, Self::DEFAULT_ENDPOINT)
     }
-
-    fn rotate(&self, token: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            let simulated_suffix = hex::encode([
-                0xa1, 0xb2, 0xc3, 0xd4, 0xe5, 0xf6, 0x01, 0x23, 0x45, 0x67, 0x89, 0xab,
-            ]);
-            return Ok(format!("sk-proj-replacement-dryrun-{simulated_suffix}"));
-        }
-
-        use sha2::{Digest, Sha256};
-        let mut hasher = Sha256::new();
-        hasher.update(token.as_bytes());
-        hasher.update(b"sentris_openai_rotation_salt_2026");
-        let hash = hex::encode(hasher.finalize());
-        Ok(format!("sk-proj-replacement-{}", &hash[..32]))
-    }
 }
 
 #[cfg(test)]
@@ -180,20 +164,6 @@ mod tests {
         assert_eq!(res, LiveStatus::Revoked);
     }
 
-    #[test]
-    fn test_openai_rotation_dry_run() {
-        let verifier = OpenAiVerifier::new();
-
-        // Dry run
-        let dry_run_key = verifier.rotate("sk-proj-test-key", true).unwrap();
-        assert!(dry_run_key.starts_with("sk-proj-replacement-"));
-        assert!(dry_run_key.contains("dryrun"));
-
-        // Live rotation
-        let live_key = verifier.rotate("sk-proj-test-key", false).unwrap();
-        assert!(live_key.starts_with("sk-proj-replacement-"));
-        assert!(!live_key.contains("dryrun"));
-    }
 
     #[test]
     fn test_openai_error_handling() {
