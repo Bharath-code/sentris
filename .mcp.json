@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "sentris": {
+      "args": [
+        "mcp"
+      ],
+      "command": "sentris",
+      "description": "High-performance zero-knowledge secret scanner & autonomous safe remediator"
+    }
+  }
+}

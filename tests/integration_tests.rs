@@ -162,9 +162,12 @@ fn test_cli_false_positive_suppression() {
     assert!(!output_str.contains("AKIAIOSFODNN7EXAMPLE"));
     assert!(!output_str.contains("AKIAI44QH8DHBEXAMPLE"));
     assert!(!output_str.contains("your-api-key-here"));
-    assert!(!output_str.contains("STRIPE_SECRET_KEY"));
-    assert!(!output_str.contains("AWS_SECRET_KEY"));
+    assert!(!output_str.contains("${STRIPE_SECRET_KEY}"));
+    assert!(!output_str.contains("{{AWS_SECRET_KEY}}"));
     assert!(!output_str.contains("sk_test_"));
+    // Verify enriched AI agent fields are present on findings
+    assert!(output_str.contains("recommended_env_var"));
+    assert!(output_str.contains("remediate_command"));
 }
 
 #[test]
@@ -585,4 +588,44 @@ fn test_cli_sync_with_mock_credentials() {
     assert!(output.status.success());
     let stdout = String::from_utf8_lossy(&output.stdout);
     assert!(stdout.contains("Sentris Pro Cloud") || stdout.contains("Scan ID"));
+}
+
+#[test]
+fn test_cli_agent_manifest_and_json_mode() {
+    let bin = get_sentris_bin();
+
+    // 1. Test `sentris agent` schema manifest
+    let agent_out = Command::new(&bin)
+        .args(["agent"])
+        .output()
+        .expect("Failed to execute sentris agent");
+    assert!(agent_out.status.success());
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&agent_out.stdout).expect("Valid JSON manifest");
+    assert_eq!(manifest["tool"], "sentris");
+    assert!(manifest["cli_commands"].is_array());
+    assert!(manifest["mcp_tools"].is_array());
+
+    // 2. Test `sentris scan <path> --json` (and `--agent` alias)
+    let scan_out = Command::new(&bin)
+        .args(["scan", "tests/fixtures/sample_leak.ts", "--json"])
+        .output()
+        .expect("Failed to execute sentris scan --json");
+    let scan_json: serde_json::Value =
+        serde_json::from_slice(&scan_out.stdout).expect("Valid JSON scan output");
+    assert!(scan_json["findings"][0]["recommended_env_var"].is_string());
+    assert!(scan_json["findings"][0]["remediate_command"].is_string());
+    assert!(scan_json["findings"][0]["context_kind"].is_string());
+
+    // 3. Test `sentris team --json`
+    let team_out = Command::new(&bin)
+        .args(["team", "--json"])
+        .output()
+        .expect("Failed to execute sentris team --json");
+    assert!(team_out.status.success());
+    let team_json: serde_json::Value =
+        serde_json::from_slice(&team_out.stdout).expect("Valid JSON team output");
+    assert_eq!(team_json["ok"], true);
+    assert_eq!(team_json["command"], "team");
+    assert_eq!(team_json["zero_knowledge_bytes_ingested"], 0);
 }

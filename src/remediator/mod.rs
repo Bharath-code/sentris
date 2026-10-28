@@ -139,6 +139,32 @@ impl Remediator {
         offline: bool,
         rotate: bool,
     ) -> Result<String, SentrisError> {
+        let quiet = std::env::var("SENTRIS_AGENT")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
+        self.remediate_finding_with_options(
+            finding,
+            raw_secret,
+            dry_run,
+            backend_name,
+            offline,
+            rotate,
+            quiet,
+        )
+    }
+
+    /// Executes the 7-step autonomous remediation workflow with an explicit `quiet` flag for MCP & JSON agent mode
+    #[allow(clippy::too_many_arguments)]
+    pub fn remediate_finding_with_options(
+        &self,
+        finding: &Finding,
+        raw_secret: &str,
+        dry_run: bool,
+        backend_name: Option<&str>,
+        offline: bool,
+        rotate: bool,
+        quiet: bool,
+    ) -> Result<String, SentrisError> {
         let session_id = format!("rm_{}", &finding.fingerprint[..8]);
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
         let provider_name = match matched_verifier {
@@ -146,22 +172,24 @@ impl Remediator {
             None => "Generic Provider",
         };
 
-        println!();
-        println!(
-            "{} {}",
-            "⚡ Sentris Autonomous Remediation Session:".cyan().bold(),
-            session_id.bold()
-        );
-        println!(
-            "Target: {} (line {}) | Rule: {}",
-            finding.file_path.bold(),
-            finding.line_number,
-            finding.rule_id.yellow()
-        );
-        println!();
+        if !quiet {
+            println!();
+            println!(
+                "{} {}",
+                "⚡ Sentris Autonomous Remediation Session:".cyan().bold(),
+                session_id.bold()
+            );
+            println!(
+                "Target: {} (line {}) | Rule: {}",
+                finding.file_path.bold(),
+                finding.line_number,
+                finding.rule_id.yellow()
+            );
+            println!();
+        }
 
         // Step 1: Verification with terminal spinner
-        let spinner = if std::io::stdout().is_terminal() && !offline {
+        let spinner = if !quiet && std::io::stdout().is_terminal() && !offline {
             let pb = ProgressBar::new_spinner();
             pb.set_style(
                 ProgressStyle::default_spinner()
@@ -189,34 +217,38 @@ impl Remediator {
             sp.finish_and_clear();
         }
 
-        print!(
-            "  [1/7] 🔍 Verifying key status via {} API... ",
-            provider_name
-        );
+        if !quiet {
+            print!(
+                "  [1/7] 🔍 Verifying key status via {} API... ",
+                provider_name
+            );
 
-        match &live_status {
-            LiveStatus::Active { scopes } => {
-                println!(
-                    "{} (Scopes: {})",
-                    "ACTIVE & LIVE".red().bold(),
-                    scopes.join(", ")
-                );
+            match &live_status {
+                LiveStatus::Active { scopes } => {
+                    println!(
+                        "{} (Scopes: {})",
+                        "ACTIVE & LIVE".red().bold(),
+                        scopes.join(", ")
+                    );
+                }
+                LiveStatus::Revoked => {
+                    println!("{}", "ALREADY REVOKED".dimmed());
+                }
+                LiveStatus::Unverified(reason) => {
+                    println!("{} ({})", "UNVERIFIED".yellow(), reason);
+                }
             }
-            LiveStatus::Revoked => {
-                println!("{}", "ALREADY REVOKED".dimmed());
-            }
-            LiveStatus::Unverified(reason) => {
-                println!("{} ({})", "UNVERIFIED".yellow(), reason);
-            }
+
+            // Step 2: Atomic Git Backup Branch
+            print!("  [2/7] 🛡️  Creating atomic git backup branch... ");
         }
-
-        // Step 2: Atomic Git Backup Branch
-        print!("  [2/7] 🛡️  Creating atomic git backup branch... ");
         let backup_branch = Self::create_backup_branch()?;
-        println!("{} ({})", "SAVED".green(), backup_branch.dimmed());
+        if !quiet {
+            println!("{} ({})", "SAVED".green(), backup_branch.dimmed());
 
-        // Step 3: Provision Replacement Key or Extract Working Credential
-        print!("  [3/7] 🔑 Provisioning replacement API credential... ");
+            // Step 3: Provision Replacement Key or Extract Working Credential
+            print!("  [3/7] 🔑 Provisioning replacement API credential... ");
+        }
         let mut new_key = if !rotate && !dry_run {
             // Safe Local Extraction default: preserve the working credential when moving to .env/vault
             // so the developer's local application never breaks.
@@ -230,35 +262,41 @@ impl Remediator {
         };
         let masked_new_key = Finding::mask_secret(&new_key);
 
-        if !rotate && !dry_run {
-            println!(
-                "{} ({} • extracted working key; pass --rotate to roll via API)",
-                "PROVISIONED".green(),
-                masked_new_key.cyan()
-            );
-        } else {
-            println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
+        if !quiet {
+            if !rotate && !dry_run {
+                println!(
+                    "{} ({} • extracted working key; pass --rotate to roll via API)",
+                    "PROVISIONED".green(),
+                    masked_new_key.cyan()
+                );
+            } else {
+                println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
+            }
         }
 
         // Step 4: Inject into selected secret backend and verify gitignore
         let backend_choice = backend_name.unwrap_or("env");
         let backend_driver = backend::SecretBackendFactory::from_name(backend_choice)?;
-        print!(
-            "  [4/7] 🔒 Securing credential into {} backend... ",
-            backend_driver.backend_name().cyan()
-        );
+        if !quiet {
+            print!(
+                "  [4/7] 🔒 Securing credential into {} backend... ",
+                backend_driver.backend_name().cyan()
+            );
+        }
         let env_var_name = Self::env_var_name_for_rule(&finding.rule_id);
 
         backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
         Self::zeroize_secret_string(&mut new_key);
-        println!(
-            "{} ({}=*** • RAM buffer zeroized)",
-            "INJECTED".green(),
-            env_var_name
-        );
+        if !quiet {
+            println!(
+                "{} ({}=*** • RAM buffer zeroized)",
+                "INJECTED".green(),
+                env_var_name
+            );
 
-        // Step 5: Replace hardcoded secret in target source file
-        print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");
+            // Step 5: Replace hardcoded secret in target source file
+            print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");
+        }
         let (original_line, replacement_line) = if !dry_run {
             CodeReplacer::replace_secret(
                 &finding.file_path,
@@ -283,21 +321,23 @@ impl Remediator {
             );
             (orig, repl)
         };
-        println!("{}", "PATCHED".green());
-        let masked_orig = original_line.replace(raw_secret, &Finding::mask_secret(raw_secret));
-        println!("        {} {}", "-".red().bold(), masked_orig.trim().red());
-        println!(
-            "        {} {}",
-            "+".green().bold(),
-            replacement_line.trim().green()
-        );
+        if !quiet {
+            println!("{}", "PATCHED".green());
+            let masked_orig = original_line.replace(raw_secret, &Finding::mask_secret(raw_secret));
+            println!("        {} {}", "-".red().bold(), masked_orig.trim().red());
+            println!(
+                "        {} {}",
+                "+".green().bold(),
+                replacement_line.trim().green()
+            );
 
-        // Step 6: Dual-Key Graceful Deprecation (Zero Prod Downtime)
-        print!("  [6/7] ⏳ Queuing old credential for safe deprecation... ");
-        println!("{}", "24H GRACE WINDOW ACTIVE (0s downtime)".green().bold());
+            // Step 6: Dual-Key Graceful Deprecation (Zero Prod Downtime)
+            print!("  [6/7] ⏳ Queuing old credential for safe deprecation... ");
+            println!("{}", "24H GRACE WINDOW ACTIVE (0s downtime)".green().bold());
 
-        // Step 7: Record transaction in Rollback Ledger
-        print!("  [7/7] 📋 Logging transaction to rollback ledger... ");
+            // Step 7: Record transaction in Rollback Ledger
+            print!("  [7/7] 📋 Logging transaction to rollback ledger... ");
+        }
         if !dry_run {
             let mut ledger = RollbackLedger::load()?;
             ledger.record_transaction(RollbackEntry {
@@ -312,22 +352,24 @@ impl Remediator {
                 secret_fingerprint: finding.fingerprint.clone(),
             })?;
         }
-        println!("{}", "RECORDED".green());
+        if !quiet {
+            println!("{}", "RECORDED".green());
 
-        println!();
-        println!(
-            "{}",
-            "🎉 Remediation completed successfully in 12s with zero production downtime!"
-                .bold()
-                .green()
-        );
-        println!(
-            "To undo at any time, run: {}",
-            format!("sentris rollback --session {}", session_id)
-                .bold()
-                .cyan()
-        );
-        println!();
+            println!();
+            println!(
+                "{}",
+                "🎉 Remediation completed successfully in 12s with zero production downtime!"
+                    .bold()
+                    .green()
+            );
+            println!(
+                "To undo at any time, run: {}",
+                format!("sentris rollback --session {}", session_id)
+                    .bold()
+                    .cyan()
+            );
+            println!();
+        }
 
         Ok(session_id)
     }

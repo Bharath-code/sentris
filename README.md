@@ -272,10 +272,31 @@ sentris rollback
 
 ---
 
-### 6. Native AI Agent MCP Server & Real-Time IDE LSP
+### 6. Native AI Agent CLI Mode (`--json`), MCP Server & Real-Time IDE LSP
 
-#### Model Context Protocol (`sentris mcp`) — 6 Built-In Tools
-Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, and `sentris_team_blast_radius` over `stdio`:
+#### Universal Headless AI Agent CLI (`--json` / `--agent` / `SENTRIS_AGENT=1`)
+Any AI coding agent (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex/Agents, LangGraph, CrewAI, Aider) can invoke Sentris deterministically without ANSI escape codes, interactive prompts, or terminal spinners:
+```bash
+# 1. Emit complete machine-readable AI Agent CLI & MCP Tool Schema Manifest
+sentris agent
+
+# 2. Scaffold .mcp.json and .agents/skills/sentris-security/SKILL.md in the workspace
+sentris agent --setup
+
+# 3. Scan any path or staged diff in Agent Mode (each finding includes recommended_env_var & remediate_command)
+sentris scan . --json
+sentris scan --staged --json
+
+# 4. Non-interactive autonomous remediation, rollback, quarantine, audit & blast-radius in pure JSON
+sentris fix src/billing.ts --json
+sentris fix . --all --backend 1password --json
+sentris rollback --json
+sentris audit --verify --export-vanta vanta-evidence.json --json
+sentris team --json
+```
+
+#### Model Context Protocol (`sentris mcp`) — 6 Tools, 3 Resources & 2 Prompts
+Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
 ```bash
 # Print ready-to-paste mcpServers JSON for Claude Code, Cursor, Windsurf & Antigravity
 sentris mcp --print-config

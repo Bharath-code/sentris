@@ -58,7 +58,7 @@ impl ContextKind {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Finding {
     pub rule_id: String,
     pub description: String,
@@ -71,6 +71,35 @@ pub struct Finding {
     pub fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_hash: Option<String>,
+}
+
+impl Serialize for Finding {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let field_count = if self.commit_hash.is_some() { 14 } else { 13 };
+        let mut state = serializer.serialize_struct("Finding", field_count)?;
+        state.serialize_field("rule_id", &self.rule_id)?;
+        state.serialize_field("description", &self.description)?;
+        state.serialize_field("severity", &self.severity)?;
+        state.serialize_field("file_path", &self.file_path)?;
+        state.serialize_field("line_number", &self.line_number)?;
+        state.serialize_field("column", &self.column)?;
+        state.serialize_field("redacted_match", &self.redacted_match)?;
+        state.serialize_field("entropy", &self.entropy)?;
+        state.serialize_field("fingerprint", &self.fingerprint)?;
+        if let Some(ref ch) = self.commit_hash {
+            state.serialize_field("commit_hash", ch)?;
+        }
+        state.serialize_field("context_kind", &self.context_kind())?;
+        let env_var = crate::remediator::Remediator::env_var_name_for_rule(&self.rule_id);
+        state.serialize_field("recommended_env_var", env_var)?;
+        let remediate_cmd = format!("sentris fix {} --yes --json", self.file_path);
+        state.serialize_field("remediate_command", &remediate_cmd)?;
+        state.end()
+    }
 }
 
 impl Finding {

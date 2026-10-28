@@ -32,6 +32,7 @@ use crate::scanner::Scanner;
 
 fn main() {
     let cli = Cli::parse();
+    let is_agent_mode = cli.is_agent_mode();
 
     match cli.command {
         Commands::Scan {
@@ -195,7 +196,14 @@ fn main() {
                 let _ = ledger.save();
             }
 
-            match format {
+            let agent_mode = is_agent_mode;
+            let effective_format = if agent_mode && matches!(format, OutputFormat::Text) {
+                OutputFormat::Json
+            } else {
+                format
+            };
+
+            match effective_format {
                 OutputFormat::Text => {
                     Reporter::print_terminal_report(&report, cli.quiet, cli.no_color);
                     if std::env::var_os("GITHUB_ACTIONS").is_some() {
@@ -240,7 +248,11 @@ fn main() {
                 },
             }
 
-            if verify && !report.findings.is_empty() && !cli.quiet && matches!(format, OutputFormat::Text) {
+            if verify
+                && !report.findings.is_empty()
+                && !cli.quiet
+                && matches!(effective_format, OutputFormat::Text)
+            {
                 if cli.offline {
                     println!(
                         "{}",
@@ -525,13 +537,30 @@ fn main() {
                 }
             };
 
+            let agent_mode = is_agent_mode;
+            let effective_yes = yes || agent_mode;
+
             if report.findings.is_empty() {
-                println!(
-                    "{}",
-                    "✔ No findings detected to remediate. Target is clean!"
-                        .green()
-                        .bold()
-                );
+                if agent_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "ok": true,
+                            "command": "remediate",
+                            "status": "clean",
+                            "remediated_count": 0,
+                            "sessions": []
+                        }))
+                        .unwrap_or_default()
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        "✔ No findings detected to remediate. Target is clean!"
+                            .green()
+                            .bold()
+                    );
+                }
                 return;
             }
 
@@ -572,7 +601,7 @@ fn main() {
             }
 
             // Interactive confirmation gate (Stripe CLI / Terraform standard)
-            if !dry_run && !yes {
+            if !dry_run && !effective_yes {
                 use std::io::IsTerminal;
                 if !std::io::stdin().is_terminal() {
                     eprintln!(
@@ -638,6 +667,7 @@ fn main() {
             }
 
             let remediator = Remediator::new();
+            let mut completed_sessions = Vec::new();
             for finding in &targets {
                 let content = match fs::read_to_string(&finding.file_path) {
                     Ok(c) => c,
@@ -676,19 +706,27 @@ fn main() {
                             .to_string()
                     });
 
-                let result = remediator.remediate_finding_with_mode(
+                let result = remediator.remediate_finding_with_options(
                     finding,
                     raw_secret_owned.as_str(),
                     dry_run,
                     Some(&backend),
                     cli.offline,
                     rotate,
+                    cli.quiet || agent_mode,
                 );
                 // Cryptographically zeroize raw secret from RAM immediately after remediation
                 Remediator::zeroize_secret_string(&mut raw_secret_owned);
 
                 match result {
                     Ok(session_id) => {
+                        completed_sessions.push(serde_json::json!({
+                            "session_id": session_id,
+                            "file_path": finding.file_path,
+                            "line_number": finding.line_number,
+                            "rule_id": finding.rule_id,
+                            "env_var_injected": Remediator::env_var_name_for_rule(&finding.rule_id),
+                        }));
                         if let Ok(mut ledger) =
                             AuditLedger::load_or_init(".sentris/audit_ledger.json")
                         {
@@ -714,7 +752,25 @@ fn main() {
                 }
             }
 
-            if !all && report.findings.len() > 1 {
+            if agent_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "ok": true,
+                        "command": "remediate",
+                        "backend": backend,
+                        "dry_run": dry_run,
+                        "rotate": rotate,
+                        "remediated_count": completed_sessions.len(),
+                        "sessions": completed_sessions,
+                        "next_agent_actions": [
+                            "sentris scan . --json",
+                            "sentris rollback --json"
+                        ]
+                    }))
+                    .unwrap_or_default()
+                );
+            } else if !all && report.findings.len() > 1 {
                 println!(
                     "{} {} additional secret(s) remain in target. Run with {} to batch-remediate all findings at once.",
                     "ℹ️ ".cyan(),
@@ -725,6 +781,7 @@ fn main() {
         }
 
         Commands::Rollback { session } => {
+            let agent_mode = is_agent_mode;
             let mut ledger = match RollbackLedger::load() {
                 Ok(l) => l,
                 Err(err) => {
@@ -738,10 +795,22 @@ fn main() {
             };
 
             if ledger.transactions.is_empty() {
-                println!(
-                    "{}",
-                    "No active remediation sessions found in rollback ledger.".yellow()
-                );
+                if agent_mode {
+                    println!(
+                        "{}",
+                        serde_json::to_string_pretty(&serde_json::json!({
+                            "ok": true,
+                            "command": "rollback",
+                            "status": "no_sessions"
+                        }))
+                        .unwrap_or_default()
+                    );
+                } else {
+                    println!(
+                        "{}",
+                        "No active remediation sessions found in rollback ledger.".yellow()
+                    );
+                }
                 return;
             }
 
@@ -754,7 +823,22 @@ fn main() {
             };
 
             match ledger.revert(&target_session) {
-                Ok(msg) => println!("{}", msg.green().bold()),
+                Ok(msg) => {
+                    if agent_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "ok": true,
+                                "command": "rollback",
+                                "session_id": target_session,
+                                "message": msg
+                            }))
+                            .unwrap_or_default()
+                        );
+                    } else {
+                        println!("{}", msg.green().bold());
+                    }
+                }
                 Err(err) => {
                     eprintln!("{} Rollback failed: {}", "ERROR:".red().bold(), err);
                     process::exit(1);
@@ -814,32 +898,50 @@ fn main() {
                 None,
             ) {
                 Ok(report) => {
-                    println!();
-                    println!(
-                        "{} {}",
-                        "🛡️  Sentris Zone 3 Quarantine Created:".cyan().bold(),
-                        report.session_id.bold()
-                    );
-                    println!(
-                        "Target File: {}:{}",
-                        report.target_file.bold(),
-                        report.line_number
-                    );
-                    println!("Rule ID:     {}", report.rule_id.yellow());
-                    if let Some(hash) = &report.commit_hash {
-                        println!("Commit:      {}", hash.dimmed());
+                    if is_agent_mode {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "ok": true,
+                                "command": "quarantine",
+                                "session_id": report.session_id,
+                                "target_file": report.target_file,
+                                "line_number": report.line_number,
+                                "rule_id": report.rule_id,
+                                "commit_hash": report.commit_hash,
+                                "branch_name": report.branch_name,
+                                "playbook_path": report.playbook_path
+                            }))
+                            .unwrap_or_default()
+                        );
+                    } else {
+                        println!();
+                        println!(
+                            "{} {}",
+                            "🛡️  Sentris Zone 3 Quarantine Created:".cyan().bold(),
+                            report.session_id.bold()
+                        );
+                        println!(
+                            "Target File: {}:{}",
+                            report.target_file.bold(),
+                            report.line_number
+                        );
+                        println!("Rule ID:     {}", report.rule_id.yellow());
+                        if let Some(hash) = &report.commit_hash {
+                            println!("Commit:      {}", hash.dimmed());
+                        }
+                        println!("Branch:      {}", report.branch_name.green().bold());
+                        println!(
+                            "Playbook:    {}",
+                            report.playbook_path.display().to_string().cyan()
+                        );
+                        println!();
+                        println!("{}", "⚠️  Safety Notice:".yellow().bold());
+                        println!("Never run 'git push --force' without team coordination.");
+                        println!("Review the step-by-step scrub guide at:");
+                        println!("  👉 {}", report.playbook_path.display().to_string().bold());
+                        println!();
                     }
-                    println!("Branch:      {}", report.branch_name.green().bold());
-                    println!(
-                        "Playbook:    {}",
-                        report.playbook_path.display().to_string().cyan()
-                    );
-                    println!();
-                    println!("{}", "⚠️  Safety Notice:".yellow().bold());
-                    println!("Never run 'git push --force' without team coordination.");
-                    println!("Review the step-by-step scrub guide at:");
-                    println!("  👉 {}", report.playbook_path.display().to_string().bold());
-                    println!();
                     if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json")
                     {
                         let _ = ledger.record_event(
@@ -1068,11 +1170,22 @@ fn main() {
             verify,
             export_vanta,
         } => {
-            let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
+            let is_agent = is_agent_mode;
+            let no_color = is_agent || cli.no_color || std::env::var_os("NO_COLOR").is_some();
             let audit_ledger = match AuditLedger::load_or_init(&ledger) {
                 Ok(l) => l,
                 Err(err) => {
-                    if no_color {
+                    if is_agent {
+                        println!(
+                            "{}",
+                            serde_json::json!({
+                                "ok": false,
+                                "command": "audit",
+                                "ledger_path": ledger,
+                                "error": err.to_string()
+                            })
+                        );
+                    } else if no_color {
                         eprintln!(
                             "ERROR: Failed to load audit ledger at {}: {}",
                             ledger.display(),
@@ -1090,38 +1203,23 @@ fn main() {
                 }
             };
 
-            println!();
-            if no_color {
-                println!("🔒 SOC 2 Cryptographic Audit Ledger: {}", ledger.display());
-                println!("   Total Records: {}", audit_ledger.records.len());
-            } else {
-                println!(
-                    "{} {}",
-                    "🔒 SOC 2 Cryptographic Audit Ledger:".cyan().bold(),
-                    ledger.display().to_string().bold()
-                );
-                println!(
-                    "   Total Records: {}",
-                    audit_ledger.records.len().to_string().cyan()
-                );
-            }
-
-            if verify {
+            let chain_verified = if verify {
                 match audit_ledger.verify_integrity() {
-                    Ok(true) => {
-                        if no_color {
-                            println!(
-                                "   Chain Integrity: PASS (HMAC-SHA256 verified, 0 broken links)"
-                            );
-                        } else {
-                            println!(
-                                "   Chain Integrity: {} (HMAC-SHA256 verified, 0 broken links)",
-                                "PASS".green().bold()
-                            );
-                        }
-                    }
+                    Ok(true) => Some(true),
                     Ok(false) => {
-                        if no_color {
+                        if is_agent {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "ok": false,
+                                    "command": "audit",
+                                    "ledger_path": ledger,
+                                    "records_count": audit_ledger.records.len(),
+                                    "chain_integrity_verified": false,
+                                    "error": "Tamper detected or HMAC-SHA256 hash mismatch"
+                                })
+                            );
+                        } else if no_color {
                             eprintln!(
                                 "   Chain Integrity: FAIL (Tamper detected or hash mismatch!)"
                             );
@@ -1134,7 +1232,17 @@ fn main() {
                         process::exit(1);
                     }
                     Err(err) => {
-                        if no_color {
+                        if is_agent {
+                            println!(
+                                "{}",
+                                serde_json::json!({
+                                    "ok": false,
+                                    "command": "audit",
+                                    "ledger_path": ledger,
+                                    "error": err.to_string()
+                                })
+                            );
+                        } else if no_color {
                             eprintln!("   Chain Integrity: ERROR ({err})");
                         } else {
                             eprintln!("   Chain Integrity: {} ({err})", "ERROR".red().bold());
@@ -1142,81 +1250,167 @@ fn main() {
                         process::exit(1);
                     }
                 }
-            }
+            } else {
+                None
+            };
 
-            if !cli.quiet && !audit_ledger.records.is_empty() {
-                println!();
-                println!("   Recent Audit Events:");
-                for record in audit_ledger.records.iter().rev().take(5) {
-                    let hash_prefix = if record.entry_hash.len() >= 8 {
-                        &record.entry_hash[..8]
-                    } else {
-                        &record.entry_hash
-                    };
-                    println!(
-                        "   • [#{}] {:?} (Hash: {hash_prefix}...)",
-                        record.index, record.action,
-                    );
-                }
-            }
-
-            if let Some(vanta_path) = export_vanta {
-                match audit_ledger.export_vanta_evidence_pack(&vanta_path) {
-                    Ok((scans, files, remediations, quarantines)) => {
-                        if no_color {
+            let vanta_export_stats = if let Some(ref vanta_path) = export_vanta {
+                match audit_ledger.export_vanta_evidence_pack(vanta_path) {
+                    Ok((scans, files, remediations, quarantines)) => Some(serde_json::json!({
+                        "path": vanta_path,
+                        "scans": scans,
+                        "files_inspected": files,
+                        "remediations": remediations,
+                        "quarantines": quarantines
+                    })),
+                    Err(err) => {
+                        if is_agent {
                             println!(
-                                "\n   ✔ Exported 1-Click Vanta/Drata SOC 2 Evidence Pack: {}",
-                                vanta_path.display()
-                            );
-                            println!(
-                                "      ├─ SOC 2 CC6.1 (Continuous Secret Scanning):    PASS ({scans} scans, {files} files inspected)"
-                            );
-                            println!(
-                                "      ├─ SOC 2 CC6.7 (Zero-Knowledge Transmission):   PASS (0 bytes plaintext exfiltrated)"
-                            );
-                            println!(
-                                "      ├─ SOC 2 CC6.8 (Timely Credential Remediation): PASS ({remediations} remediated, {quarantines} quarantined)"
-                            );
-                            println!(
-                                "      └─ ISO 27001 A.8.24 (Cryptographic Hash Chain): PASS (HMAC-SHA256 verified)"
+                                "{}",
+                                serde_json::json!({
+                                    "ok": false,
+                                    "command": "audit",
+                                    "ledger_path": ledger,
+                                    "error": format!("Failed to export Vanta compliance pack: {err}")
+                                })
                             );
                         } else {
-                            println!(
-                                "\n   {} {}",
-                                "✔ Exported 1-Click Vanta/Drata SOC 2 Evidence Pack:"
-                                    .green()
-                                    .bold(),
-                                vanta_path.display().to_string().cyan().bold()
-                            );
-                            println!(
-                                "      ├─ SOC 2 CC6.1 (Continuous Secret Scanning):    {} ({scans} scans, {files} files inspected)",
-                                "PASS".green().bold()
-                            );
-                            println!(
-                                "      ├─ SOC 2 CC6.7 (Zero-Knowledge Transmission):   {} (0 bytes plaintext exfiltrated)",
-                                "PASS".green().bold()
-                            );
-                            println!(
-                                "      ├─ SOC 2 CC6.8 (Timely Credential Remediation): {} ({remediations} remediated, {quarantines} quarantined)",
-                                "PASS".green().bold()
-                            );
-                            println!(
-                                "      └─ ISO 27001 A.8.24 (Cryptographic Hash Chain): {} (HMAC-SHA256 verified)",
-                                "PASS".green().bold()
+                            eprintln!(
+                                "ERROR: Failed to export Vanta compliance pack to {}: {}",
+                                vanta_path.display(),
+                                err
                             );
                         }
-                    }
-                    Err(err) => {
-                        eprintln!(
-                            "ERROR: Failed to export Vanta compliance pack to {}: {}",
-                            vanta_path.display(),
-                            err
-                        );
                         process::exit(1);
                     }
                 }
+            } else {
+                None
+            };
+
+            if is_agent {
+                let recent_events: Vec<serde_json::Value> = audit_ledger
+                    .records
+                    .iter()
+                    .rev()
+                    .take(10)
+                    .map(|r| {
+                        serde_json::json!({
+                            "index": r.index,
+                            "timestamp": r.timestamp,
+                            "action": r.action,
+                            "entry_hash": r.entry_hash,
+                            "previous_hash": r.previous_hash
+                        })
+                    })
+                    .collect();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "ok": true,
+                        "command": "audit",
+                        "ledger_path": ledger,
+                        "records_count": audit_ledger.records.len(),
+                        "chain_integrity_verified": chain_verified,
+                        "vanta_export": vanta_export_stats,
+                        "recent_events": recent_events
+                    }))
+                    .unwrap_or_default()
+                );
+            } else {
+                println!();
+                if no_color {
+                    println!("🔒 SOC 2 Cryptographic Audit Ledger: {}", ledger.display());
+                    println!("   Total Records: {}", audit_ledger.records.len());
+                } else {
+                    println!(
+                        "{} {}",
+                        "🔒 SOC 2 Cryptographic Audit Ledger:".cyan().bold(),
+                        ledger.display().to_string().bold()
+                    );
+                    println!(
+                        "   Total Records: {}",
+                        audit_ledger.records.len().to_string().cyan()
+                    );
+                }
+
+                if chain_verified == Some(true) {
+                    if no_color {
+                        println!("   Chain Integrity: PASS (HMAC-SHA256 verified, 0 broken links)");
+                    } else {
+                        println!(
+                            "   Chain Integrity: {} (HMAC-SHA256 verified, 0 broken links)",
+                            "PASS".green().bold()
+                        );
+                    }
+                }
+
+                if !cli.quiet && !audit_ledger.records.is_empty() {
+                    println!();
+                    println!("   Recent Audit Events:");
+                    for record in audit_ledger.records.iter().rev().take(5) {
+                        let hash_prefix = if record.entry_hash.len() >= 8 {
+                            &record.entry_hash[..8]
+                        } else {
+                            &record.entry_hash
+                        };
+                        println!(
+                            "   • [#{}] {:?} (Hash: {hash_prefix}...)",
+                            record.index, record.action,
+                        );
+                    }
+                }
+
+                if let (Some(vanta_path), Some(stats)) = (&export_vanta, &vanta_export_stats) {
+                    let scans = stats["scans"].as_u64().unwrap_or(0);
+                    let files = stats["files_inspected"].as_u64().unwrap_or(0);
+                    let remediations = stats["remediations"].as_u64().unwrap_or(0);
+                    let quarantines = stats["quarantines"].as_u64().unwrap_or(0);
+                    if no_color {
+                        println!(
+                            "\n   ✔ Exported 1-Click Vanta/Drata SOC 2 Evidence Pack: {}",
+                            vanta_path.display()
+                        );
+                        println!(
+                            "      ├─ SOC 2 CC6.1 (Continuous Secret Scanning):    PASS ({scans} scans, {files} files inspected)"
+                        );
+                        println!(
+                            "      ├─ SOC 2 CC6.7 (Zero-Knowledge Transmission):   PASS (0 bytes plaintext exfiltrated)"
+                        );
+                        println!(
+                            "      ├─ SOC 2 CC6.8 (Timely Credential Remediation): PASS ({remediations} remediated, {quarantines} quarantined)"
+                        );
+                        println!(
+                            "      └─ ISO 27001 A.8.24 (Cryptographic Hash Chain): PASS (HMAC-SHA256 verified)"
+                        );
+                    } else {
+                        println!(
+                            "\n   {} {}",
+                            "✔ Exported 1-Click Vanta/Drata SOC 2 Evidence Pack:"
+                                .green()
+                                .bold(),
+                            vanta_path.display().to_string().cyan().bold()
+                        );
+                        println!(
+                            "      ├─ SOC 2 CC6.1 (Continuous Secret Scanning):    {} ({scans} scans, {files} files inspected)",
+                            "PASS".green().bold()
+                        );
+                        println!(
+                            "      ├─ SOC 2 CC6.7 (Zero-Knowledge Transmission):   {} (0 bytes plaintext exfiltrated)",
+                            "PASS".green().bold()
+                        );
+                        println!(
+                            "      ├─ SOC 2 CC6.8 (Timely Credential Remediation): {} ({remediations} remediated, {quarantines} quarantined)",
+                            "PASS".green().bold()
+                        );
+                        println!(
+                            "      └─ ISO 27001 A.8.24 (Cryptographic Hash Chain): {} (HMAC-SHA256 verified)",
+                            "PASS".green().bold()
+                        );
+                    }
+                }
+                println!();
             }
-            println!();
         }
 
         Commands::MigrateGitleaks {
@@ -1477,27 +1671,38 @@ fn main() {
 
         Commands::Team => {
             let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
-            match Credentials::load_default() {
-                Ok(creds) => {
-                    let team = TeamInfo::from_credentials(&creds);
-                    println!("{}", team.render_terminal(no_color));
-                }
-                Err(_) => {
-                    let sample_creds = Credentials {
-                        api_key: "sp_preview_token".to_string(),
-                        server_url: "https://api.sentris.dev".to_string(),
-                        org_id: "org_sample_team".to_string(),
-                        org_name: "Sentris Pro Workspace (Preview)".to_string(),
-                        tier: "Pro ($8/seat)".to_string(),
-                        seat_limit: 20,
-                        seats_used: 14,
-                        user_email: "dev@sentris.dev".to_string(),
-                        expires_at: None,
-                    };
-                    let team = TeamInfo::from_credentials(&sample_creds);
-                    println!("{}", team.render_terminal(no_color));
-                    println!("{}", "\nℹ️  To link your real team workspace, run `sentris auth login --token <TOKEN>`.".dimmed());
-                }
+            let creds = Credentials::load_default().unwrap_or_else(|_| Credentials {
+                api_key: "sp_preview_token".to_string(),
+                server_url: "https://api.sentris.dev".to_string(),
+                org_id: "org_sample_team".to_string(),
+                org_name: "Sentris Pro Workspace (Preview)".to_string(),
+                tier: "Pro ($8/seat)".to_string(),
+                seat_limit: 20,
+                seats_used: 14,
+                user_email: "dev@sentris.dev".to_string(),
+                expires_at: None,
+            });
+            let team = TeamInfo::from_credentials(&creds);
+            if is_agent_mode {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "ok": true,
+                        "command": "team",
+                        "org_id": team.org_id,
+                        "org_name": team.org_name,
+                        "tier": team.tier,
+                        "seats_used": team.seats_used,
+                        "seat_limit": team.seat_limit,
+                        "unit_price_usd": team.unit_price_usd,
+                        "monthly_cost_usd": team.seats_used * team.unit_price_usd,
+                        "zero_knowledge_bytes_ingested": 0,
+                        "blast_radius_insights": team.blast_radius_insights
+                    }))
+                    .unwrap_or_default()
+                );
+            } else {
+                println!("{}", team.render_terminal(no_color));
             }
         }
 
@@ -1516,6 +1721,36 @@ fn main() {
             if let Err(err) = crate::lsp::LspServer::run_stdio_loop() {
                 eprintln!("{} LSP server error: {}", "ERROR:".red().bold(), err);
                 process::exit(1);
+            }
+        }
+
+        Commands::Agent { setup, path } => {
+            if setup {
+                match crate::mcp::McpServer::setup_workspace_for_agents(&path) {
+                    Ok(files) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "ok": true,
+                                "command": "agent_setup",
+                                "workspace": path.display().to_string(),
+                                "files_written": files,
+                                "message": "Workspace configured for AI coding agents (.mcp.json + .agents/skills/sentris-security/SKILL.md)."
+                            }))
+                            .unwrap_or_default()
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!("{} Agent setup failed: {}", "ERROR:".red().bold(), err);
+                        process::exit(1);
+                    }
+                }
+            } else {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&crate::mcp::McpServer::generate_agent_manifest())
+                        .unwrap_or_default()
+                );
             }
         }
     }

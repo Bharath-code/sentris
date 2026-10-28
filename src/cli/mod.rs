@@ -26,6 +26,20 @@ pub struct Cli {
     /// Zero-egress offline mode: suppress all network requests, live provider API checks, and webhook alerts
     #[arg(long, global = true, default_value_t = false)]
     pub offline: bool,
+
+    /// Machine-readable AI Agent mode: emit structured JSON on stdout across all subcommands, disable ANSI/spinners, and auto-approve non-interactive actions (also activated via SENTRIS_AGENT=1)
+    #[arg(long, visible_alias = "agent", global = true, default_value_t = false)]
+    pub json: bool,
+}
+
+impl Cli {
+    /// Returns true if the CLI was invoked in AI Agent / structured JSON mode (`--json`, `--agent`, or `SENTRIS_AGENT=1`).
+    pub fn is_agent_mode(&self) -> bool {
+        self.json
+            || std::env::var("SENTRIS_AGENT")
+                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+                .unwrap_or(false)
+    }
 }
 
 #[derive(Subcommand, Debug)]
@@ -229,6 +243,18 @@ pub enum Commands {
 
     /// Start Language Server Protocol (LSP 3.17) server over stdio for real-time IDE diagnostics and Quick Fix code actions
     Lsp,
+
+    /// Emit AI Agent tool schemas, CLI capability manifest, or auto-configure workspace MCP & SKILL.md for coding agents
+    #[command(visible_alias = "ai")]
+    Agent {
+        /// Write .mcp.json and .agents/skills/sentris-security/SKILL.md into the workspace so AI agents auto-discover Sentris
+        #[arg(long, default_value_t = false)]
+        setup: bool,
+
+        /// Target workspace directory for --setup (defaults to current directory)
+        #[arg(long, default_value = ".")]
+        path: PathBuf,
+    },
 }
 
 #[derive(Subcommand, Debug)]

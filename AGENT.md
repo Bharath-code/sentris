@@ -1,9 +1,9 @@
 # AGENT.md — Sentris Systems Architecture, AI Agent (MCP/LSP) & Engineering Handbook
 
-> **Target Audience:** AI Coding Agents (Claude Code, Cursor, Antigravity, Windsurf) & Systems Engineers.  
+> **Target Audience:** AI Coding Agents (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex/Agents, LangGraph, CrewAI, Aider) & Systems Engineers.  
 > **Project:** Sentris (`sentris`)  
 > **Binary Footprint:** `3.8 MB` stripped static Rust binary (`rustls`, zero C/C++/Python/Node runtime dependencies)  
-> **Test Suite Status:** **152 / 152 Passing** (`128` unit + `23` CLI integration + `1` throughput SLA benchmark, `0` Clippy warnings)
+> **Test Suite Status:** **154 / 154 Passing** (`129` unit + `24` CLI integration + `1` throughput SLA benchmark, `0` Clippy warnings)
 
 ---
 
@@ -111,19 +111,44 @@ sentris/
 
 ---
 
-## 3. AI Agent (MCP) & IDE (LSP) Protocol Reference
+## 3. AI Agent CLI Mode (`--json` / `--agent` / `SENTRIS_AGENT=1`), MCP & LSP Reference
+
+### 3.0 Universal Headless Agent CLI Mode (`--json` / `--agent` / `SENTRIS_AGENT=1`)
+Any AI coding agent (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex, LangGraph, CrewAI, Aider) can consume Sentris directly over CLI without human terminal formatting or interactive prompts:
+
+- **Global Flag & Env Auto-Detection:** Pass `--json` (or `--agent`) on **any** subcommand, or set `SENTRIS_AGENT=1` in the agent's environment:
+  - Suppresses all ANSI colors, progress spinners, and interactive `[y/N]` confirmation prompts (`--yes` auto-enabled so agents never hang on `stdin`).
+  - Emits pure, deterministic, schema-stable JSON on `stdout` with actionable `next_agent_actions`.
+- **Self-Describing `Finding` Objects:** Every serialized `Finding` JSON object automatically includes:
+  - `context_kind`: `"PRODUCTION"` or `"TEST_FIXTURE"`
+  - `recommended_env_var`: e.g. `"STRIPE_SECRET_KEY"`
+  - `remediate_command`: e.g. `"sentris fix <file_path> --yes --json"`
+- **`sentris agent` (alias `sentris ai`) Subcommand:**
+  - `sentris agent`: Emits the complete machine-readable AI Agent CLI & Tool Schema Manifest (`schema_version`, `agent_invocation_rules`, `cli_commands`, `mcp_tools`, `mcp_resources`, `mcp_prompts`).
+  - `sentris agent --setup`: Scaffolds `.mcp.json` and `.agents/skills/sentris-security/SKILL.md` in the repository root so any AI coding agent opening the workspace auto-discovers Sentris.
 
 ### 3.1 Model Context Protocol (`sentris mcp`)
-Run `sentris mcp --print-config` to generate the `mcpServers` block for Claude Code, Cursor, Windsurf, or Antigravity. `sentris mcp` speaks JSON-RPC 2.0 over `stdio` and exposes **6 tools**:
+Run `sentris mcp --print-config` (or `sentris agent --setup`) to generate the `mcpServers` block for Claude Code, Cursor, Windsurf, or Antigravity. `sentris mcp` speaks JSON-RPC 2.0 over `stdio` and exposes **6 Tools**, **3 Resources**, and **2 Prompts**:
 
 | MCP Tool Name | Arguments | What It Does |
 | :--- | :--- | :--- |
-| `sentris_scan_path` | `{ "path"?: string }` | Scans a file or directory in `<25ms` and returns redacted findings with `recommended_env_var`. |
+| `sentris_scan_path` | `{ "path"?: string }` | Scans a file or directory in `<25ms` and returns redacted findings with `recommended_env_var` and `remediate_command`. |
 | `sentris_scan_staged` | `{}` | Scans staged git index diff hunks (`git diff --cached -U0`) before committing. |
-| `sentris_remediate_finding` | `{ "file_path": string, "backend"?: string, "rotate"?: bool, "dry_run"?: bool }` | Extracts the secret to `env`/`vault`/`aws`/`doppler`/`1password`/`infisical`, updates `.env.example`, and patches the source code. |
+| `sentris_remediate_finding` | `{ "file_path": string, "backend"?: string, "rotate"?: bool, "dry_run"?: bool }` | Quietly extracts the secret to `env`/`vault`/`aws`/`doppler`/`1password`/`infisical`, updates `.env.example`, and patches the source code without polluting `stdout`. |
 | `sentris_rollback_session` | `{ "session_id"?: string }` | Reverts a remediation session from `.sentris/rollback_ledger.json` byte-for-byte. |
 | `sentris_audit_verify` | `{ "ledger_path"?: string }` | Verifies the RFC 2104 HMAC-SHA256 cryptographic hash chain in `.sentris/audit_ledger.json`. |
 | `sentris_team_blast_radius` | `{}` | Returns the Zero-Knowledge Multi-Repo Blast Radius correlation table (`zk_<sha256>` across repos). |
+
+| MCP Resource URI | MIME Type | Purpose |
+| :--- | :--- | :--- |
+| `sentris://agent/manifest` | `application/json` | Full CLI & MCP tool schema manifest for autonomous AI agents. |
+| `sentris://audit/ledger` | `application/json` | Live tamper-evident RFC 2104 HMAC-SHA256 SOC 2 audit ledger summary. |
+| `sentris://team/blast-radius` | `application/json` | Zero-Knowledge `zk_<sha256>` cross-repository credential correlation. |
+
+| MCP Prompt Name | Arguments | Purpose |
+| :--- | :--- | :--- |
+| `remediate-repo-secrets` | `{ "path"?: string }` | Autonomous workflow prompt to scan, extract secrets to `.env`, and verify the SOC 2 audit ledger. |
+| `pre-commit-security-gate` | `{}` | Pre-commit staged diff security verification gate for AI coding agents. |
 
 ### 3.2 Language Server Protocol (`sentris lsp`)
 `sentris lsp` implements LSP 3.17 over `stdio` (`Content-Length` headers or raw JSON lines):
