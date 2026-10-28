@@ -54,7 +54,7 @@ function Pricing() {
             </label>
             <p className="mt-2 text-right font-mono text-sm text-muted tabular-nums">${seats * per}/mo</p>
             <ul className="mt-5 space-y-2.5 text-sm text-muted">
-              {['Everything in CLI', 'Vault, AWS, Doppler, 1Password, Infisical backends', 'Provider-API key rotation with dual-key grace', 'Zero-knowledge cloud dashboard', 'Cross-repo blast radius'].map(tick)}
+              {['Everything in CLI', 'Vault, AWS Secrets Manager and Doppler backends', 'Zero-knowledge cloud dashboard', 'Cross-repo blast radius'].map(tick)}
             </ul>
           </Plan>
 
@@ -63,7 +63,7 @@ function Pricing() {
               Talk to the founder
             </a>
             <ul className="mt-6 space-y-2.5 text-sm text-muted">
-              {['Everything in Pro', 'Air-gapped Docker / Kubernetes', 'SAML SSO', 'Vanta SOC 2 evidence export'].map(tick)}
+              {['Everything in Pro', 'Self-hosted deployment (talk to us)', 'SSO and audit export (roadmap)'].map(tick)}
             </ul>
           </Plan>
         </div>

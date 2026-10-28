@@ -1,0 +1,256 @@
+# Sentris Hardening & Best-in-Class Plan
+
+Source: security audits of `src/` (Rust CLI) and `web/` + `cloud/` (2026-10-29), plus a recall spot-check against gitleaks. Findings marked ✔ were re-verified by reading the code.
+
+Status 2026-10-29: Phases 0 and 1 complete (commits on feat/web-rebuild). Open follow-ups from implementation are listed under "Known gaps" at the end.
+
+Legend: ⬜ todo · 🟡 in progress · ✅ done · 👤 needs you · Size: S <2h, M half-day, L 1 day+
+Rule for every task: no task is done until its AC passes, `cargo test` + `cargo clippy -- -D warnings` (Rust) or `npm run typecheck && npm test` (web) are green, and one commit per task.
+
+## Phase map
+
+| Phase | Goal | Blocks launch? | Est. |
+|---|---|---|---|
+| 0 | Stop shipping false claims & dead dangerous code | yes | 0.5d |
+| 1 | Rust CLI: make remediation safe & honest | yes | 2d |
+| 2 | Web/cloud: abuse resistance, headers, billing robustness | yes | 1.5d |
+| 3 | Detection recall & reproducible benchmark | yes (credibility) | 2d |
+| 4 | Distribution & launch readiness | yes | 1d + 👤 |
+| 5 | Performance, retention, maintainability | no | 1.5d |
+| 6 | Product moat (post-validation) | no | ongoing |
+
+Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 after 2.
+
+---
+
+## Phase 0: Honesty & dead code
+
+### T0.1 ✅ Confirm and delete legacy `cloud/` (S) ✔
+- Run `wrangler deployments list --name sentris-zk-cloud`; if anything is live, `wrangler delete` it.
+- `git rm -r cloud/`; remove references in README/docs/CI.
+- **AC:** `grep -r "sentris_edge_pepper\|cloud/src/worker" .` returns nothing · `wrangler deployments list` shows no `sentris-zk-cloud` · CI still green.
+
+### T0.2 ✅ Align claims with reality (S)
+- Edit README, `web/src/lib/site.ts`, `web/public/llms.txt`, hero terminal copy.
+- Remove/relabel: "zero downtime rotation", "24H grace window", "SOC 2 in 10 seconds", "only tool", unverified benchmark numbers, `--safe-rotate`, "6 backends" (list only what works live).
+- Mark unfinished items "roadmap".
+- **AC:** every CLI command/flag in copy exists in `sentris --help` (script: extract flags from copy, assert each appears in help output) · every numeric claim links to a reproducible script (see T3.4) or is removed · no copy says "rotate" unless T1.1 ships real rotation.
+
+---
+
+## Phase 1: Rust CLI safety
+
+### T1.1 ✅ Disable fake rotation (S) ✔
+- `verifier/{aws,github,slack,anthropic,stripe,openai}.rs`: `rotate()` returns `Err(NotImplemented)`; delete invented strings (`AKIA_PROVISIONED_REPLACEMENT_KEY`, `ghp_rotated_…`).
+- `remediator/mod.rs`: remove "GRACE WINDOW" text; `--rotate` prints "not yet supported, key still valid, revoke it at <provider URL>".
+- **AC:** test: `remediate --rotate` on every provider exits non-zero, leaves the source file byte-identical, writes nothing to any backend · `grep -rn "PROVISIONED\|dual_key\|GRACE" src` empty.
+
+### T1.2 ✅ Mock backends opt-in and labelled (M) ✔
+- Default to real backend; mock only with `SENTRIS_MOCK_BACKEND=1`. If real backend unavailable (no `VAULT_ADDR`, CLI missing) → hard error, never silent mock.
+- Result struct + MCP payload gain `mock: bool`; CLI output prints `[MOCK – secret NOT stored]`.
+- Extract one shared mock-ledger helper (dedupe 5 copies).
+- Mock/ledger files created `0600`; `.sentris/` (whole dir) appended to `.gitignore` for every backend.
+- **AC:** test per backend: no env set → error, no source patch · mock env set → result has `mock:true`, files mode 0600 (unix) · `.gitignore` contains `.sentris/` after any remediate · code diff removes ≥4 duplicated mock blocks.
+
+### T1.3 ✅ Keep secrets out of argv and messages (M) ✔
+- aws: `--secret-string file://<0600 tempfile>` (delete after) · doppler/op/infisical: value via stdin or JSON template on stdin.
+- `format_cli_command` and all dry-run/mock/error strings must never contain the secret (mask).
+- **AC:** test with a fake `aws`/`doppler`/`op` shim on `PATH` that records `argv` + stdin: argv never contains the secret, stdin/tempfile does · grep all result/log strings in a remediate run for the secret → 0 hits · temp file removed on success and on error.
+
+### T1.4 ✅ Fix Vault KV v2 overwrite (S) ✔
+- Read current version, merge key, write with `cas` (or PATCH).
+- **AC:** mock Vault test: remediate two different secrets at the same path → both keys present; concurrent write (cas mismatch) → retries once then errors.
+
+### T1.5 ✅ MCP confinement and consent (M) ✔
+- Resolve workspace root once (cwd or `--workspace`); `canonicalize` every tool path; reject outside root and symlinks.
+- Writes (`remediate`, `rollback`) default `dry_run=true`; real write requires `confirm: "<token from dry-run>"`.
+- Cap JSON-RPC line length (e.g. 1 MiB).
+- **AC:** tests: `scan_path "/"`, `../..`, symlink-to-outside → error · remediate without token → dry-run only, file unchanged · oversized line → error response, server survives · `agent` manifest documents the token flow.
+
+### T1.6 ✅ Rollback ledger integrity (M) ✔
+- Ledger moved out of repo (`$XDG_STATE_HOME/sentris/<repo-hash>/`) or HMAC'd with the T1.9 key.
+- On load: verify HMAC; verify `file_path` is inside workspace; verify current line equals `replacement_line` before restoring; store full original block (multi-line PEM); preserve line endings; replace by line index not `content.replace`.
+- **AC:** tests: tampered ledger → refuse · ledger pointing at `~/.zshrc` → refuse · user edited the line after remediation → refuse with diff · PEM round-trip is byte-identical · CRLF file round-trips byte-identical (property test over random content).
+
+### T1.7 ✅ Atomic, non-corrupting source patching (M) ✔
+- Write temp file in same dir → `fsync` → `rename`; preserve mode and line endings; refuse symlink targets.
+- Error if the target line no longer contains the secret or replacement equals original; ledger written only after successful patch.
+- **AC:** test: kill-simulation (fail between write and rename) leaves original intact · CRLF file patched stays CRLF · stale line → error, no ledger entry · symlink target rejected.
+
+### T1.8 ✅ No silent env-var clobber; correct MCP PEM handling (M) ✔
+- Unique env name per finding (rule + fingerprint suffix) unless user passes `--env-name`; if name exists with a different value → refuse.
+- MCP remediate shares the CLI extraction path; fail unless extracted secret hash == `finding.fingerprint`; handle the specific finding id, not `first()`.
+- **AC:** tests: existing `STRIPE_SECRET_KEY=prod` in `.env` untouched after remediating a different key · two unknown-rule findings → two distinct vars · MCP and CLI produce identical output on a PEM fixture · wrong-secret extraction → error.
+
+### T1.9 ✅ Audit ledger: real tamper evidence (M) ✔
+- Key: 32 random bytes in `$XDG_STATE_HOME/sentris/audit.key` (0600), not derived from user/path.
+- Store head hash separately (`audit.head`); `verify` fails on truncation/empty-with-head; constant-time compare; atomic save.
+- Docs: state plainly what it does and doesn't prove (needs external anchor for SOC 2 claims).
+- **AC:** tests: edit any entry → verify fails · truncate tail → fails · delete ledger but keep head → fails · moving repo dir still verifies · key file mode 0600.
+
+### T1.10 ✅ Cloud client honesty (M) ✔
+- Parse URL; require `https` (http only for loopback + `SENTRIS_ALLOW_INSECURE=1`); remove substring "mock/localhost" offline mode (use explicit `SENTRIS_OFFLINE=1`).
+- Transport/HTTP errors → non-zero exit, never "synced". Remove fabricated seats/org/insights; add `GET /api/v1/me` in web and use it (closes B7).
+- Default `--server` = production URL.
+- **AC:** tests: `https://mock.evil.tld` is not treated as offline · `http://example.com` rejected · 500/timeout → exit≠0 with message · `auth login` shows real org from `/me` · fresh install `auth login --token` w/o `--server` syncs to prod (B7 AC).
+
+### T1.11 ✅ LSP/MCP input bounds and UTF-16 ranges (S) ✔
+- Cap `Content-Length` (8 MiB) → error response; replace `panic=abort` risk paths (`[..8]` slices) with `get(..)`.
+- Convert code-action ranges to UTF-16 units.
+- **AC:** test: `Content-Length: 99999999999` → server returns error and stays alive · non-ASCII line quick-fix edits the right range · fuzz-ish test: 1k random framed inputs, no abort.
+
+### T1.12 ✅ Scanner evasion & repo-controlled config (M) ✔
+- Skip only the repo-root `.git`; scan `.sentris/`; anchor `ignore_paths` (glob, non-empty, no bare `/`).
+- In CI mode, read config from base branch/`--config` path; warn when the scanned tree's config *adds* ignores.
+- **AC:** tests: secret in `sub/.git/x` and `.sentris/x` detected · `ignore_paths=[""]` or `["/"]` rejected · `--config` outside the tree honored · PR that edits ignores prints a warning.
+
+### T1.13 ✅ Smaller hardening (S)
+- Reject git ref args starting with `-`; use `--end-of-options`; `create_backup_branch` failure is an error (not `"local-working-tree"`).
+- Webhook URL redacted in all messages; https only; no error-body echo.
+- Credentials: never fall back into the repo when `$HOME` unset; check perms on load.
+- Verifier mock-token prefixes compiled only under `cfg(test)`.
+- Fingerprints in JSON/SARIF/MCP output truncated or keyed.
+- Use the `zeroize` crate; remove the "RAM zeroized" claim unless true.
+- **AC:** one test per bullet; `grep -rn "ghp_test_mock_\|sk-ant-mock-" src` only under `cfg(test)`.
+
+---
+
+## Phase 2: Web & cloud
+
+### T2.1 ⬜ Rate limiting + quotas (M) ✔
+- Workers Rate Limiting binding: ingest keyed by key-hash (and IP pre-auth), auth routes by IP.
+- Per-org limits in code: ≤20 active keys, ≤N scans/day, ≤M findings/day (free: low; pro: higher). 429 with `Retry-After`.
+- Better Auth `rateLimit.storage = "database"` (in-memory is useless on Workers).
+- **AC:** test: 61st request/min → 429 · org over daily finding cap → 429 · 21st key creation → error · auth sign-in flood → 429 · load test shows bad-key flood does ≤1 D1 read per request and none for malformed bearers.
+
+### T2.2 ⬜ Beta flag safety + billing config (S) ✔
+- `BETA_FREE_SYNC` becomes `BETA_FREE_SYNC_UNTIL=<ISO date>`; expired → paywall on. Log once when active.
+- Startup assertion: `BETTER_AUTH_SECRET` ≥32 chars; production refuses placeholder `pdt_REPLACE_ME`.
+- 👤 Real `DODO_PRO_PRODUCT_ID` + API key + webhook key (B2).
+- **AC:** unit tests for `canIngest` with flag before/after date, expired period, cancelled (closes B6) · app fails fast with placeholder product ID in `live_mode`.
+
+### T2.3 ⬜ Security headers + CSP (M) ✔
+- `public/_headers` (or Start middleware): HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors 'none'`, CSP (hash the inline theme script).
+- **AC:** `curl -I` on `/`, `/app`, `/api/v1/scans` shows all headers · browser console shows zero CSP violations on `/`, `/pricing`, `/login`, `/app` (Playwright) · securityheaders.com grade ≥ A.
+
+### T2.4 ⬜ CSRF/cookie hardening (S) ✔
+- Better Auth `advanced.defaultCookieAttributes` (`httpOnly`, `secure`, `sameSite: lax|strict`); `authed` middleware rejects POST whose `Origin` ≠ `APP_URL`.
+- Encrypt stored OAuth tokens (`account.encryptOAuthTokens`) or don't persist them.
+- **AC:** test: POST server function with foreign `Origin` → 403 · session cookie flags verified in response · DB inspection shows tokens not plaintext.
+
+### T2.5 ⬜ Webhook robustness (M) ✔
+- Null-check `customer`, `next_billing_date`; wrap update in try/catch: unique-violation / malformed → 200 + log (no infinite retry); transient DB error → 5xx.
+- Idempotency: ignore replayed `webhook-id` (small table or KV).
+- **AC:** fixture tests: malformed payload → 200 + logged, org unchanged · duplicate `webhook-id` → applied once · subscription already attached to another org → 200 + alert log · out-of-order and same-timestamp cases still pass.
+
+### T2.6 ⬜ Ingest correctness (M) ✔
+- `UNIQUE(org_id, cli_scan_id)` → upsert/ignore replays (idempotent re-sync).
+- Fix `blastRadius` severity: rank-based max (`critical>high>medium>low`), not text max; `json_group_array(distinct repo)` instead of comma split.
+- Chunk `db.batch` (≤50 stmts, scan row first, then findings) with partial-failure cleanup; bound `files_scanned`, `line_number`, `entropy` (`.max`, `.finite()`).
+- Throttle `last_used_at` (only if older than 60 s).
+- **AC:** tests: same `scan_id` uploaded twice → one scan row, no duplicate findings · repo name with comma handled · fingerprint seen as `medium` and `critical` reports `critical` · 5000-finding upload succeeds · `Infinity` entropy → 400.
+
+### T2.7 ⬜ Web CI (S) ✔
+- Add job: `npm ci`, `typecheck`, `test`, `vite build`; cache; path-filtered to `web/`.
+- **AC:** PR touching `web/` runs the job; breaking a type fails CI.
+
+---
+
+## Phase 3: Detection quality (the actual product)
+
+### T3.1 ⬜ Recall gap closure (L) ✔ (evidence: 1 of 5 vs gitleaks 3 of 5)
+- Add rules: AWS secret access key (context-keyed `aws_secret…=` + 40 base64), generic `password|passwd|secret|token|api_key = "<high-entropy>"` with entropy + stopword filter, Stripe live/restricted keys (investigate why my `sk_live_51…` sample was suppressed: likely sequence-FP filter), plus top-30 cloud/SaaS formats from gitleaks' ruleset.
+- **AC:** corpus test (T3.2) shows recall ≥ gitleaks on its own rule fixtures; the 5-line sample above yields 5/5.
+
+### T3.2 ⬜ Labeled corpus (M)
+- `tests/corpus/`: ≥200 true-positive and ≥200 hard negatives (UUIDs, hashes, lockfile integrity strings, base64 images, docs examples); CI test computes precision/recall per rule.
+- **AC:** `cargo test corpus` prints P/R table; CI fails if any rule's precision < 0.9 or overall recall regresses > 2 pts.
+
+### T3.3 ⬜ Git history scan parity (M)
+- Verify `scan --since` + full-history mode vs gitleaks `detect` on a repo with a secret added then deleted.
+- **AC:** secret in a deleted commit is found with commit/author/date; documented in README.
+
+### T3.4 ⬜ Reproducible benchmark (M)
+- `bench/run.sh`: pinned versions of gitleaks/trufflehog/kingfisher, same corpus + a public repo (e.g. 5k-file checkout), reports time, RSS, precision, recall; output committed with date and hardware.
+- Replace `site.benchmark` numbers with generated JSON.
+- **AC:** a stranger can run one command and reproduce within ±20 %; site numbers come from the JSON, not hand-typed.
+
+---
+
+## Phase 4: Distribution & launch
+
+### T4.1 👤 Make repo public; set license/security policy (S)
+- `SECURITY.md` (disclosure address), issue templates, `CHANGELOG.md`.
+- **AC:** `github.com/Bharath-code/sentris` loads while logged out; `Cargo.toml` `repository` URL matches the real repo (currently `sentris-security/sentris`).
+
+### T4.2 ⬜ Release pipeline (M)
+- Tag → `release.yml` builds macOS/Linux/Windows binaries, SHA-256 sums, SBOM, cosign/GitHub attestations; `cargo audit` + `cargo deny` in CI.
+- **AC:** `v0.1.0` release has 3+ binaries + checksums · installing from the release on a clean VM and running `sentris scan` works · CI fails on a known-vulnerable dep.
+
+### T4.3 👤 Install channels (M)
+- `cargo publish`, Homebrew tap, `curl | sh` installer verifying the checksum.
+- **AC:** the exact command on the landing page works on a clean macOS and Ubuntu machine.
+
+### T4.4 👤 Domain + Dodo live mode (S)
+- Buy domain, set `APP_URL`, GitHub OAuth callback, Dodo webhook URL; complete B2/B3 QA checklist including the IDOR check; switch `DODO_ENV`.
+- **AC:** full B3 checklist passes on the production domain; test-card → Pro within 10 s; cancel → Free.
+
+### T4.5 ⬜ Launch assets (M)
+- Rewrite `docs/HACKER-NEWS-LAUNCH.md` against verified claims only; 90-second demo (HyperFrames) showing scan → remediate → rollback on a real `.env`.
+- **AC:** every claim in the post links to a test or benchmark; a colleague reproduces the demo from the README in <5 min.
+
+---
+
+## Phase 5: Performance & maintainability
+
+### T5.1 ⬜ D1 indexes & rollups (M)
+- Indexes: `finding(org_id, severity)`, `api_key(org_id)`, `finding(org_id, created_at)`; dashboard severity counts from a per-scan rollup instead of scanning all findings.
+- **AC:** `EXPLAIN QUERY PLAN` shows index use on dashboard queries · `/app` overview < 150 ms server time with 100k findings seeded.
+
+### T5.2 ⬜ Retention + pagination (M)
+- Cron trigger: delete findings older than plan retention (free 30 d, pro 90 d); `getScan` paginated with "N more" indicator; overview limits documented.
+- **AC:** seeded old rows removed by the job (test) · scan with 1,200 findings pageable · retention stated on pricing page.
+
+### T5.3 ⬜ Dedupe & structure (M)
+- Backend trait + shared helpers; remove `unwrap`/slice panics on external data; split any file >400 lines (`cli/handlers/*`, `reporter/webhook/mod.rs`).
+- **AC:** no function >50 lines or >5 branches in touched files (clippy cognitive-complexity lint on); `cargo clippy -- -D warnings -W clippy::unwrap_used` passes outside tests.
+
+### T5.4 ⬜ Observability (S)
+- Structured logs for webhook outcomes, 401/402/429 counts; Workers observability alert on 5xx rate.
+- **AC:** forced bad webhook appears in logs with reason; alert configured.
+
+---
+
+## Phase 6: Moat (after 10 real users)
+- Real rotation for one provider end-to-end (start with GitHub PAT or AWS key) with grace period.
+- One production-grade backend (Vault *or* AWS) with integration test against a real/dev instance.
+- GitHub App / PR bot: block + auto-comment + one-click remediate PR.
+- Team features: invites, SSO (needed for the $2k tier), seat enforcement, audit export with external anchoring.
+- Agent-native: signed MCP manifest, remediation telemetry (success/rollback rate).
+- **AC:** per-item AC written when scheduled, based on interviews; no item starts without ≥3 users asking for it.
+
+---
+
+## Definition of done (whole plan)
+- [ ] Zero P0/P1 findings open; re-run both security audits → no HIGH.
+- [ ] `cargo test`, clippy `-D warnings`, `cargo audit`, web typecheck/test/build all green in CI.
+- [ ] Corpus P/R ≥ gitleaks; benchmark reproducible by a third party.
+- [ ] Landing-page install command works on clean machines.
+- [ ] Full B3 QA checklist passes in production.
+- [ ] No claim in README/site/llms.txt without a test, benchmark, or "roadmap" label.
+
+## Recommended execution order
+T0.1 → T0.2 → T1.1 → T1.2 → T1.3 → T1.5 → T1.6 → T1.7 → (T2.1, T2.2, T2.3 in parallel) → T1.8–T1.13 → T2.4–T2.7 → T3.* → T4.* → T5.*
+
+## Known gaps after Phases 0–1 (honest list)
+
+- Vault / AWS / Doppler live paths are unit-tested with shims and a fake Vault HTTP server, **not** against real services (no CLIs/instances available here). Doppler stdin input and AWS `file://` follow documented behaviour but are unverified live.
+- 1Password and Infisical have no stdin/file path implemented; live writes are refused unless `SENTRIS_ALLOW_ARGV_SECRETS=1`.
+- `GET /api/v1/me` is built and typechecked but **not deployed**; until it is, `sentris auth login` against production fails (by design: it no longer invents an org). Deploy web before releasing the CLI.
+- Existing CLI users must re-run `sentris auth login`; old rollback ledgers (no MAC) and audit ledgers need regenerating.
+- Audit ledger copied to another machine verifies as "not anchored" (chain valid, truncation undetectable there).
+- Inline `nosec` / `sentris-ignore` markers still suppress findings anywhere on a line (documented gitleaks-compatible behaviour).
+- `zeroize` crate not adopted; the "RAM zeroized" claim was removed instead.
+- Cargo.toml `repository` URL still differs from the real GitHub repo (T4.1).
+- 37 stray `sentris/backup-*` local git branches exist from earlier test runs (dry-run used to create them); safe to delete.
+- Test runs write a small key file under `$HOME/.sentris/state` unless `SENTRIS_STATE_DIR` is set.

@@ -16,7 +16,7 @@ export const site = {
     { name: 'Gitleaks', ms: 195, ram: 65 },
     { name: 'TruffleHog', ms: 640, ram: 210 },
   ],
-  backends: ['.env', 'Vault', 'AWS Secrets Manager', 'Doppler', '1Password', 'Infisical'],
+  backends: ['.env', 'Vault', 'AWS Secrets Manager', 'Doppler'],
 } as const
 
 export const loginCommand = (server: string, key = '<your-key>') =>

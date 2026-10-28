@@ -2,7 +2,7 @@
 
 <div align="center">
 
-**The Autonomous Secret Remediation Engine — Detect in `12ms`, Fix in 1 Command, Prove SOC 2 in 10 Seconds**
+**Secret scanner that also fixes the code: detect, move the key out of source, roll back byte-for-byte**
 
 [![CI](https://github.com/Bharath-code/sentris/actions/workflows/ci.yml/badge.svg)](https://github.com/Bharath-code/sentris/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
@@ -20,11 +20,25 @@
 ```
 
 **Finding a secret is only 20% of the problem.**  
-Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `Infisical` without breaking your app, and proving SOC 2 compliance is the other **80%**—and **Sentris is the only tool built to own that 80%.**
+Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `Infisical` without breaking your app, and keeping an audit trail is the other **80%**—Sentris is built to own that 80%. See *Status* below for what works today.
 
 [Quickstart](#-quickstart) • [The 5 Holy Sh\*t Moments](#-the-5-holy-sht-moments) • [14-Dimension Matrix](#-14-dimension-competitive-matrix) • [Full Benchmark Dossier](docs/BENCHMARKS-AND-ARCHITECTURE.md) • [Autonomous Remediation](#5-autonomous-remediation-multi-secret-batch-mode--6-secret-backends) • [AI Agent MCP & IDE LSP](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp) • [SOC 2 & Zero-Knowledge Cloud](#7-10-second-vanta-soc-2-drop--zero-knowledge-multi-repo-blast-radius)
 
 </div>
+
+---
+
+## Status (read this first)
+
+| Area | Today |
+|---|---|
+| Scanning (CLI, pre-commit, git history, SARIF, MCP, LSP) | Working. Recall is still being measured against gitleaks; run `sentris scan` on your own corpus before relying on it. |
+| Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, signed rollback ledger. |
+| Remediation into Vault / AWS Secrets Manager / Doppler | Implemented, not yet integration-tested against live services. 1Password and Infisical are opt-in (`SENTRIS_ALLOW_ARGV_SECRETS=1`). |
+| **Provider key rotation (`--rotate`)** | **Not implemented.** The leaked key stays valid until you revoke it at the provider. |
+| Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
+| Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
+| Benchmarks | Numbers in this README come from the author's machine; a reproducible script is planned. |
 
 ---
 
@@ -77,12 +91,12 @@ Target: src/billing.ts (line 6) | Rule: stripe-secret-key
 
   [1/7] 🔍 Verifying key status via Stripe API... ACTIVE & LIVE (Scopes: read_write, charges, customers)
   [2/7] 🛡️  Creating atomic git backup branch... SAVED (sentris/backup-1793196000)
-  [3/7] 🔑 Provisioning replacement API credential... PROVISIONED (sk_liv...cdef • extracted working key; pass --rotate to roll via API)
-  [4/7] 🔒 Securing credential into Env backend... INJECTED (STRIPE_SECRET_KEY=*** • RAM buffer zeroized)
+  [3/7] 🔑 Provisioning replacement API credential... EXTRACTED (sk_liv...cdef • extracted working key, not rotated)
+  [4/7] 🔒 Securing credential into Env backend... INJECTED (STRIPE_SECRET_KEY=***)
   [5/7] 📝 Replacing hardcoded literal in source code... PATCHED
         - const stripeApiKey = "sk_live_51AbcDefGhIjKlMnOpQrStUvWxYz123456";
         + const stripeApiKey = process.env.STRIPE_SECRET_KEY;
-  [6/7] ⏳ Queuing compromised key for 24h grace deprecation... SCHEDULED (Zero production downtime)
+  [6/7] ⚠️  Leaked key NOT revoked: still valid until you rotate it at the provider
   [7/7] 🧾 Recording transaction in rollback ledger... COMMITTED (.sentris/rollback_ledger.json)
 ```
 In **under 1 second**, `.env` is populated, `.gitignore` is hardened, `.env.example` is synced with a safe empty `STRIPE_SECRET_KEY=` contract for teammates, the source file is patched, and **your local app keeps running without a single restart error.**
@@ -252,17 +266,16 @@ repos:
 sentris remediate src/billing.ts --dry-run
 
 # Safe Local Extraction (default): moves working key to .env, syncs .env.example,
-# hardens .gitignore, scrubs RAM buffer, and patches source code so local dev never breaks
+# hardens .gitignore, and patches source code so local dev never breaks
 sentris remediate src/billing.ts --yes
 
 # Batch-remediate ALL secrets across a file or directory in one atomic pass
 sentris remediate . --all --yes
 
-# Rotate compromised key via provider API (24h dual-key grace window) + Enterprise Backends:
-# Supported backends: env, vault, aws, doppler, 1password, infisical
-sentris remediate src/billing.ts --rotate --backend 1password --yes
-sentris remediate src/billing.ts --rotate --backend infisical --yes
-sentris remediate src/billing.ts --rotate --backend vault --yes
+# Secret store backends: env (default), vault, aws, doppler.
+# 1password and infisical pass the value as a CLI argument and need SENTRIS_ALLOW_ARGV_SECRETS=1.
+# Provider-side key rotation (--rotate) is NOT implemented yet and exits with an error.
+sentris remediate src/billing.ts --backend vault --yes
 ```
 
 #### 1-Click Atomic Rollback
@@ -410,7 +423,7 @@ Every regex candidate in our False Positive Gauntlet was evaluated against `Fals
 ### 4. Autonomous Remediation across All 6 Secret Backends, Multi-Line PEM & Rollback
 
 - **All 6 Secret Store Backends Verified (`exit_code: 0`)**:
-  - `env` (`246.07 ms`), `vault` (`241.29 ms`), `aws` (`250.75 ms`), `doppler` (`241.56 ms`), `1password` (`275.30 ms`), and `infisical` (`256.56 ms`). Set `SENTRIS_LIVE_BACKEND=1` to execute real CLI subprocesses (`vault`, `aws secretsmanager`, `doppler`, `op`, `infisical`).
+  - `env` (`246.07 ms`), `vault` (`241.29 ms`), `aws` (`250.75 ms`), `doppler` (`241.56 ms`), `1password` (`275.30 ms`), and `infisical` (`256.56 ms`). These timings were measured against the built-in simulation; real backends run by default and `SENTRIS_MOCK_BACKEND=1` selects the simulation.
 - **Live Code Patching + Multi-Line RSA PEM Block Replacement (`263.14 ms`)**:
   - Rewrote Python `STRIPE_SECRET_KEY = "sk_live_..."` → `os.environ.get("STRIPE_SECRET_KEY")`.
   - Collapsed the 4-line `-----BEGIN RSA PRIVATE KEY-----...-----END RSA PRIVATE KEY-----` block in `src/infra/deploy.sh` into `export TLS_PRIVATE_KEY="${PRIVATE_KEY_PEM}"` and injected the escaped single-line PEM into `.env` (`multiline_pem_rewritten_in_bash: true`).
@@ -422,7 +435,7 @@ Every regex candidate in our False Positive Gauntlet was evaluated against `Fals
 
 ---
 
-## ☁️ Cloudflare Zero-Knowledge Edge (`cloud/`) & Web Platform (`web/`)
+## ☁️ Web Platform (`web/`)
 
 Sentris includes a complete Cloudflare Worker + Cloudflare D1 (serverless SQLite) + KV backend and a TanStack + React Bits web console wired to **Dodo Payments** (Merchant of Record for global USD & India INR/UPI billing):
 

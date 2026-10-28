@@ -53,7 +53,7 @@ function Hero() {
           </h1>
           <p data-rise className="mt-6 max-w-[34rem] text-lg text-pretty text-muted">
             Other scanners stop at an alert. Sentris finds hardcoded secrets in milliseconds, moves them into your
-            secret store, patches the code and rotates the key&nbsp;— in one command, without breaking prod.
+            secret store and patches the code&nbsp;— in one command, with a byte-exact rollback if you change your mind.
           </p>
           <div data-rise className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
             <ButtonLink to="/login" variant="ember">Start 14-day Pro trial</ButtonLink>
@@ -130,8 +130,8 @@ const zones = [
   {
     k: '03',
     title: 'Already pushed',
-    body: 'Never rewrites shared history behind your back. Opens a quarantine branch, rotates the key with a 24-hour dual-key window, and hands you a purge playbook.',
-    code: 'sentris fix <finding> --rotate',
+    body: 'Never rewrites shared history behind your back. Opens a quarantine branch and hands you a purge playbook. Revoke the old key at your provider: automatic rotation is on the roadmap.',
+    code: 'sentris quarantine <finding>',
   },
 ]
 

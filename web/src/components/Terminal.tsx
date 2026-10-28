@@ -8,7 +8,7 @@ const steps: [string, string, 'ok' | 'warn' | 'muted'][] = [
   ['Atomic backup branch', 'sentris/backup-1793196000', 'muted'],
   ['Secured into .env backend', 'STRIPE_SECRET_KEY=***', 'ok'],
   ['Patched source', '1 file · 1 line', 'ok'],
-  ['Old key: 24h grace deprecation', 'zero downtime', 'ok'],
+  ['Old key', 'still valid — revoke at provider', 'warn'],
   ['Rollback ledger', 'rm_27c44354', 'muted'],
 ]
 const tone = { ok: 'text-ok', warn: 'text-warn', muted: 'text-zinc-500' }
