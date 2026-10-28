@@ -75,6 +75,10 @@ pub enum Commands {
         /// Synchronize zero-knowledge salted HMAC-SHA256 findings to Sentris Pro Cloud
         #[arg(long, default_value_t = false)]
         cloud: bool,
+
+        /// Verify detected credentials against live provider APIs and map identity/permission scopes
+        #[arg(long, default_value_t = false)]
+        verify: bool,
     },
 
     /// Install the Sentris pre-commit hook into .git/hooks/pre-commit

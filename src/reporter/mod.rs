@@ -9,7 +9,7 @@ use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 use owo_colors::OwoColorize;
 
-use crate::model::{ScanReport, Severity};
+use crate::model::{ContextKind, ScanReport, Severity};
 
 pub struct Reporter;
 
@@ -124,14 +124,19 @@ impl Reporter {
                 Severity::Low => ("LOW", Color::Blue),
             };
 
+            let ctx_badge = if finding.context_kind() == ContextKind::TestFixture {
+                " [TEST]"
+            } else {
+                ""
+            };
             let loc_str = if let Some(h) = &finding.commit_hash {
                 let short_hash = &h[..7.min(h.len())];
                 format!(
-                    "{}:{} ({})",
-                    finding.file_path, finding.line_number, short_hash
+                    "{}:{} ({}){}",
+                    finding.file_path, finding.line_number, short_hash, ctx_badge
                 )
             } else {
-                format!("{}:{}", finding.file_path, finding.line_number)
+                format!("{}:{}{}", finding.file_path, finding.line_number, ctx_badge)
             };
             let entropy_str = format!("{:.2}", finding.entropy);
 

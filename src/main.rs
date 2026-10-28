@@ -45,6 +45,7 @@ fn main() {
             record_baseline,
             min_severity,
             cloud,
+            verify,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -236,6 +237,101 @@ fn main() {
                         process::exit(1);
                     }
                 },
+            }
+
+            if verify && !report.findings.is_empty() && !cli.quiet {
+                if cli.offline {
+                    println!(
+                        "{}",
+                        "ℹ️  Zero-egress offline mode active: Live provider API verification suppressed."
+                            .yellow()
+                    );
+                } else {
+                    let registry = crate::verifier::VerifierRegistry::new();
+                    println!(
+                        "{}",
+                        "🔍 Live Provider Identity & Blast Radius Verification:"
+                            .cyan()
+                            .bold()
+                    );
+                    for f in &report.findings {
+                        let env_tier = match f.context_kind() {
+                            crate::model::ContextKind::Production => "Production Code",
+                            crate::model::ContextKind::TestFixture => "Test/Fixture",
+                        };
+                        if let Some(verifier) = registry.find_verifier(&f.rule_id) {
+                            let status = if let Ok(content) = fs::read_to_string(&f.file_path) {
+                                let lines: Vec<&str> = content.lines().collect();
+                                if f.line_number > 0 && f.line_number <= lines.len() {
+                                    let target_line = lines[f.line_number - 1];
+                                    let mut raw_secret = scanner
+                                        .extract_raw_secret(target_line, &f.rule_id)
+                                        .unwrap_or_default();
+                                    let res = verifier.verify_live(&raw_secret).unwrap_or(
+                                        crate::verifier::LiveStatus::Unverified(
+                                            "Verification failed".to_string(),
+                                        ),
+                                    );
+                                    Remediator::zeroize_secret_string(&mut raw_secret);
+                                    res
+                                } else {
+                                    crate::verifier::LiveStatus::Unverified(
+                                        "Line out of range".to_string(),
+                                    )
+                                }
+                            } else {
+                                crate::verifier::LiveStatus::Unverified(
+                                    "Historical/unstaged blob".to_string(),
+                                )
+                            };
+
+                            match status {
+                                crate::verifier::LiveStatus::Active { scopes } => {
+                                    println!(
+                                        "   • {}:{} ({} • {}): {} [Scopes: {}]",
+                                        f.file_path.bold(),
+                                        f.line_number,
+                                        verifier.provider_name().cyan(),
+                                        env_tier,
+                                        "ACTIVE & LIVE".red().bold(),
+                                        scopes.join(", ").yellow()
+                                    );
+                                }
+                                crate::verifier::LiveStatus::Revoked => {
+                                    println!(
+                                        "   • {}:{} ({} • {}): {}",
+                                        f.file_path.bold(),
+                                        f.line_number,
+                                        verifier.provider_name().cyan(),
+                                        env_tier,
+                                        "REVOKED / INACTIVE".dimmed()
+                                    );
+                                }
+                                crate::verifier::LiveStatus::Unverified(reason) => {
+                                    println!(
+                                        "   • {}:{} ({} • {}): {} ({})",
+                                        f.file_path.bold(),
+                                        f.line_number,
+                                        verifier.provider_name().cyan(),
+                                        env_tier,
+                                        "UNVERIFIED".yellow(),
+                                        reason.dimmed()
+                                    );
+                                }
+                            }
+                        } else {
+                            println!(
+                                "   • {}:{} ({} • {}): {}",
+                                f.file_path.bold(),
+                                f.line_number,
+                                f.rule_id.cyan(),
+                                env_tier,
+                                "Pattern-Verified (High Entropy)".yellow()
+                            );
+                        }
+                    }
+                    println!();
+                }
             }
 
             if let Some(webhook_url) = webhook {
