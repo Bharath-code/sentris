@@ -8,6 +8,18 @@ use crate::cloud::{build_cloud_payload, upload_scan, Credentials, TeamInfo};
 use crate::git::GitManager;
 use crate::scanner::Scanner;
 
+/// Read the team secret from stdin so it never appears in argv or shell history.
+fn read_team_secret_from_stdin() -> String {
+    use std::io::{BufRead, IsTerminal, Write};
+    if std::io::stdin().is_terminal() {
+        eprint!("Paste team secret: ");
+        let _ = std::io::stderr().flush();
+    }
+    let mut line = String::new();
+    let _ = std::io::stdin().lock().read_line(&mut line);
+    line.trim().to_string()
+}
+
 pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
     let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
     match subcommand {
@@ -19,7 +31,14 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
             Ok(mut creds) => {
                 let path = Credentials::default_credentials_path();
                 // Precedence: explicit flag > secret already on this machine > new secret
-                let (secret, generated) = match team_secret.as_deref().map(validate_team_secret) {
+                let provided = match team_secret.as_deref() {
+                    Some("-") => Some(read_team_secret_from_stdin()),
+                    Some(v) => Some(v.to_string()),
+                    None => std::env::var("SENTRIS_TEAM_SECRET")
+                        .ok()
+                        .filter(|v| !v.is_empty()),
+                };
+                let (secret, generated) = match provided.as_deref().map(validate_team_secret) {
                     Some(Ok(s)) => (s, false),
                     Some(Err(err)) => {
                         eprintln!("{} {}", "ERROR:".red().bold(), err);
@@ -59,8 +78,9 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
                         );
                         println!("   Credentials stored: {}", path.display());
                         if generated {
-                            println!("   New team secret (share privately with teammates; Sentris never sees it):");
-                            println!("     sentris auth login --token <THEIR_KEY> --team-secret {secret}");
+                            println!("   New team secret (store in your password manager; Sentris never sees it):");
+                            println!("     {secret}");
+                            println!("   Teammates join with `sentris auth login --token <THEIR_KEY> --team-secret -` and paste it.");
                         }
                     } else {
                         println!(
@@ -82,10 +102,14 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
                         );
                         if generated {
                             println!(
-                                "   {} share privately with teammates; Sentris never sees it:",
+                                "   {} store in your password manager; Sentris never sees it:",
                                 "New team secret —".yellow().bold()
                             );
-                            println!("     sentris auth login --token <THEIR_KEY> --team-secret {secret}");
+                            println!("     {}", secret.bold());
+                            println!(
+                                "   Teammates join with {} and paste it.",
+                                "sentris auth login --token <THEIR_KEY> --team-secret -".cyan()
+                            );
                         }
                     }
                 }

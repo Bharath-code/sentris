@@ -324,7 +324,7 @@ sentris audit --verify --export-vanta vanta-evidence.json
 # First machine prints a 256-bit team secret; it keys every fingerprint and never leaves your machines.
 sentris auth login --token sp_live_9f8e7d6c5b4a3210deadbeef
 # Teammates join the same fingerprint space (share the secret privately, e.g. via your password manager):
-sentris auth login --token <their key> --team-secret <64-hex secret>
+sentris auth login --token <their key> --team-secret -   # paste at the prompt; or set SENTRIS_TEAM_SECRET
 
 # View team seats, run-rate, and Zero-Knowledge Multi-Repo Blast Radius Insight table
 sentris team

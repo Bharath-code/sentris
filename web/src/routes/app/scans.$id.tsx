@@ -25,17 +25,16 @@ function ScanDetail() {
           {new Date(scan.createdAt).toLocaleString()}
         </p>
       </div>
-      <Panel title={`${findings.length} finding${findings.length === 1 ? '' : 's'}`} hint="Previews are redacted on the developer's machine before upload.">
+      <Panel title={`${findings.length} finding${findings.length === 1 ? '' : 's'}`} hint="No key characters are ever uploaded. Run sentris scan locally to see the match.">
         {findings.length === 0 ? (
           <p className="text-sm text-ok">Clean scan. Nothing leaked.</p>
         ) : (
-          <Table head={['Severity', 'Rule', 'Location', 'Preview']}>
+          <Table head={['Severity', 'Rule', 'Location']}>
             {findings.map((f) => (
               <tr key={f.id}>
                 <td><Severity level={f.severity} /></td>
                 <td>{f.ruleId}</td>
                 <td className="font-mono text-xs text-muted">{f.filePath}:{f.line}</td>
-                <td className="font-mono text-xs text-faint">{f.preview}</td>
               </tr>
             ))}
           </Table>

@@ -14,7 +14,7 @@ const Finding = z.object({
   file_path: z.string().max(1024),
   line_number: z.number().int().nonnegative(),
   entropy: z.number(),
-  redacted_preview: z.string().max(256),
+  redacted_preview: z.string().max(256).optional(),
 })
 const Payload = z.object({
   scan_id: z.string().max(64),
@@ -72,7 +72,8 @@ export async function handleScanUpload(request: Request): Promise<Response> {
     filePath: f.file_path,
     line: f.line_number,
     entropy: f.entropy,
-    preview: f.redacted_preview,
+    // Never store key characters, even from older CLIs that still send a partial preview
+    preview: '[redacted]',
   }))
 
   // D1 caps bound parameters per statement at 100; findings have 11 columns

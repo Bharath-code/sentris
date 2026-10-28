@@ -270,7 +270,8 @@ pub enum AuthSubcommand {
         #[arg(long)]
         server: Option<String>,
 
-        /// Join an existing team: the 64-hex team secret printed by your first teammate's login.
+        /// Join an existing team with the 64-hex team secret from your first teammate's login.
+        /// Pass `-` to paste it at a prompt (keeps it out of shell history), or set SENTRIS_TEAM_SECRET.
         /// Omit on the first machine to generate one. Never sent to Sentris Cloud.
         #[arg(long)]
         team_secret: Option<String>,

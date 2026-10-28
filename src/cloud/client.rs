@@ -4,6 +4,9 @@ use crate::model::ScanReport;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Uploaded in place of `redacted_match`: even a prefix + last 4 chars is partial key material.
+pub const CLOUD_PREVIEW_MASK: &str = "[redacted]";
+
 /// Zero-knowledge finding payload transmitted to Sentris Pro Cloud
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CloudFindingPayload {
@@ -191,7 +194,7 @@ pub fn build_cloud_payload(
             file_path: f.file_path.clone(),
             line_number: f.line_number,
             entropy: f.entropy,
-            redacted_preview: f.redacted_match.clone(),
+            redacted_preview: CLOUD_PREVIEW_MASK.to_string(),
             zone: "Zone 1 (Staged / Working Tree)".to_string(),
         })
         .collect();
@@ -379,7 +382,9 @@ mod tests {
         assert!(item.fingerprint.starts_with("zk_"));
 
         let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains("sk_live_51...f89a"));
+        assert!(!json.contains("sk_live_51...f89a"));
+        assert!(!json.contains("f89a"));
+        assert_eq!(item.redacted_preview, CLOUD_PREVIEW_MASK);
         assert!(!json.contains("raw_unmasked"));
         // The unsalted secret hash must never leave the machine
         assert!(!json.contains("hash_a1b2c3d4e5f6"));

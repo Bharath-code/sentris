@@ -78,17 +78,35 @@ impl Credentials {
 
     /// Save credentials securely to a specific file path (creating parent directories as needed)
     pub fn save_to_path(&self, path: &Path) -> Result<(), SentrisError> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| SentrisError::Cloud(format!("Failed to serialize credentials: {e}")))?;
-        fs::write(path, json)?;
-        // Holds the API key and team secret: owner read/write only
+        // Holds the API key and team secret: created owner-only, never briefly world-readable
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(path, fs::Permissions::from_mode(0o600))?;
+            use std::io::Write;
+            use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+            if let Some(parent) = path.parent() {
+                fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(parent)?;
+            }
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)?;
+            // mode() only applies on create; tighten files left by older versions
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+            file.write_all(json.as_bytes())?;
+        }
+        #[cfg(not(unix))]
+        {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, json)?;
         }
         Ok(())
     }
