@@ -33,6 +33,19 @@ pub struct CloudScanPayload {
     pub findings: Vec<CloudFindingPayload>,
 }
 
+/// Zero-knowledge cross-repository credential reuse & blast-radius insight.
+/// Correlates identical salted HMAC-SHA256 fingerprints (`zk_<hash>`) across
+/// multiple repositories without ever ingesting source code or raw secrets.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct MultiRepoBlastRadiusInsight {
+    pub zk_fingerprint: String,
+    pub rule_id: String,
+    pub severity: String,
+    pub redacted_preview: String,
+    pub affected_repos: Vec<String>,
+    pub total_occurrences: usize,
+}
+
 /// Response returned by Sentris Pro Cloud upon successful ingestion
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CloudUploadResponse {
@@ -41,6 +54,99 @@ pub struct CloudUploadResponse {
     pub dashboard_url: String,
     pub new_findings_count: usize,
     pub message: String,
+    #[serde(default)]
+    pub blast_radius_insights: Vec<MultiRepoBlastRadiusInsight>,
+}
+
+/// Correlates zero-knowledge scan payloads across multiple repositories to detect
+/// duplicate leaked credentials (shared blast radius) without plaintext access.
+pub fn correlate_multi_repo_blast_radius(
+    payloads: &[CloudScanPayload],
+) -> Vec<MultiRepoBlastRadiusInsight> {
+    use std::collections::BTreeMap;
+
+    // Map zk_fingerprint -> (rule_id, severity, preview, sorted unique repos, total count)
+    let mut map: BTreeMap<String, (String, String, String, Vec<String>, usize)> = BTreeMap::new();
+
+    for payload in payloads {
+        for finding in &payload.findings {
+            let entry = map.entry(finding.fingerprint.clone()).or_insert_with(|| {
+                (
+                    finding.rule_id.clone(),
+                    finding.severity.clone(),
+                    finding.redacted_preview.clone(),
+                    Vec::new(),
+                    0,
+                )
+            });
+            if !entry.3.contains(&payload.repo_name) {
+                entry.3.push(payload.repo_name.clone());
+            }
+            entry.4 += 1;
+        }
+    }
+
+    let mut insights: Vec<MultiRepoBlastRadiusInsight> = map
+        .into_iter()
+        .map(
+            |(zk_fingerprint, (rule_id, severity, redacted_preview, affected_repos, total))| {
+                MultiRepoBlastRadiusInsight {
+                    zk_fingerprint,
+                    rule_id,
+                    severity,
+                    redacted_preview,
+                    affected_repos,
+                    total_occurrences: total,
+                }
+            },
+        )
+        .collect();
+
+    // Sort by number of affected repositories descending
+    insights.sort_by(|a, b| {
+        b.affected_repos
+            .len()
+            .cmp(&a.affected_repos.len())
+            .then_with(|| b.total_occurrences.cmp(&a.total_occurrences))
+    });
+
+    insights
+}
+
+/// Records a scan payload into the local zero-knowledge multi-repo correlation ledger
+/// (`.sentris/multi_repo_blast_radius.json`) and returns cross-repo blast radius insights.
+pub fn record_and_correlate_local_blast_radius(
+    payload: &CloudScanPayload,
+) -> Vec<MultiRepoBlastRadiusInsight> {
+    let ledger_path = std::path::Path::new(".sentris").join("multi_repo_blast_radius.json");
+    if let Some(parent) = ledger_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+
+    let mut payloads: Vec<CloudScanPayload> = if ledger_path.exists() {
+        std::fs::read_to_string(&ledger_path)
+            .ok()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
+    // Replace existing entry for same repo_name or push new
+    if let Some(existing) = payloads
+        .iter_mut()
+        .find(|p| p.repo_name == payload.repo_name)
+    {
+        *existing = payload.clone();
+    } else {
+        payloads.push(payload.clone());
+    }
+
+    if let Ok(serialized) = serde_json::to_string_pretty(&payloads) {
+        let _ = std::fs::write(&ledger_path, serialized);
+    }
+
+    correlate_multi_repo_blast_radius(&payloads)
 }
 
 /// Compute a zero-knowledge salted SHA-256 fingerprint from a finding fingerprint
@@ -118,6 +224,8 @@ pub fn upload_scan(
 
     let url = format!("{}/api/v1/scans", creds.server_url.trim_end_matches('/'));
 
+    let blast_radius_insights = record_and_correlate_local_blast_radius(payload);
+
     // Check if test/mock mode or non-reachable endpoint
     if creds.server_url.contains("mock") || creds.server_url.contains("localhost") {
         return Ok(CloudUploadResponse {
@@ -129,6 +237,7 @@ pub fn upload_scan(
                 "Successfully synchronized {} zero-knowledge finding(s) with Sentris Pro Cloud.",
                 payload.findings.len()
             ),
+            blast_radius_insights,
         });
     }
 
@@ -172,6 +281,7 @@ pub fn upload_scan(
                     payload.findings.len(),
                     err.kind()
                 ),
+                blast_radius_insights,
             })
         }
     }
@@ -286,5 +396,63 @@ mod tests {
 
         let err = upload_scan(&payload, &creds, true).unwrap_err();
         assert!(err.to_string().contains("Zero-egress offline mode active"));
+    }
+
+    #[test]
+    fn test_zero_knowledge_multi_repo_blast_radius_correlation() {
+        let creds = Credentials {
+            api_key: "sp_live_test".to_string(),
+            server_url: "https://mock.sentris.dev".to_string(),
+            org_id: "org_acme_cyber".to_string(),
+            org_name: "Acme Cyber".to_string(),
+            tier: "Pro ($8/seat)".to_string(),
+            seat_limit: 50,
+            seats_used: 24,
+            user_email: "ciso@acme.corp".to_string(),
+            expires_at: None,
+        };
+
+        let shared_pg_finding = Finding {
+            rule_id: "postgres-connection-uri".to_string(),
+            description: "PostgreSQL URI".to_string(),
+            severity: Severity::Critical,
+            file_path: "infra/db.go".to_string(),
+            line_number: 3,
+            column: 1,
+            redacted_match: "postgr...prod".to_string(),
+            entropy: 4.53,
+            fingerprint: "94a3ab2d2b40bf154ebe81310bb8e0f21f511a0d3d54c743a2668f5fd9226ccc"
+                .to_string(),
+            commit_hash: None,
+        };
+
+        let report = ScanReport {
+            timestamp: "2026-10-28T12:00:00Z".to_string(),
+            version: "0.1.0".to_string(),
+            stats: ScanStats {
+                files_scanned: 12,
+                files_ignored: 0,
+                bytes_scanned: 4096,
+                duration_ms: 5,
+                findings_count: 1,
+            },
+            findings: vec![shared_pg_finding],
+        };
+
+        let repos = ["billing-svc", "auth-worker", "analytics-etl", "admin-api"];
+        let payloads: Vec<CloudScanPayload> = repos
+            .iter()
+            .map(|repo| build_cloud_payload(&report, &creds, Some(repo), Some("main"), None))
+            .collect();
+
+        let insights = correlate_multi_repo_blast_radius(&payloads);
+        assert_eq!(insights.len(), 1);
+        assert_eq!(insights[0].rule_id, "postgres-connection-uri");
+        assert_eq!(insights[0].affected_repos.len(), 4);
+        assert_eq!(
+            insights[0].affected_repos,
+            vec!["billing-svc", "auth-worker", "analytics-etl", "admin-api"]
+        );
+        assert!(insights[0].zk_fingerprint.starts_with("zk_"));
     }
 }

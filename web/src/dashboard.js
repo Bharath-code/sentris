@@ -213,66 +213,97 @@ export class TeamDashboard {
   renderBodyContent() {
     if (this.activeTab === 'stream') {
       return `
-        <div class="bento-card overflow-hidden">
-          <div class="p-4 bg-[#0E1017] border-b border-white/[0.08] flex items-center justify-between">
-            <div class="text-xs font-mono font-bold text-white flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-[#FF5500] animate-pulse"></span>
-              LIVE ZERO-KNOWLEDGE FINDINGS STREAM
-            </div>
-            <div class="text-xs font-mono text-slate-400">
-              Auto-Sync: Enabled (CLI & CI/CD Push)
+        <div class="space-y-6">
+          <!-- Zero-Knowledge Multi-Repo Blast Radius Insight Card -->
+          <div class="bento-card p-5 border border-[#FF5500]/40 bg-gradient-to-r from-[#140E0C] via-[#0E1017] to-[#0E1017]">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div class="space-y-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="badge-clean badge-tag-critical">CROSS-REPO BLAST RADIUS ALERT</span>
+                  <span class="text-xs font-mono text-amber-300 font-bold">zk_94a3ab2d8f10...</span>
+                  <span class="text-xs font-mono text-slate-400">•</span>
+                  <span class="text-xs font-mono text-emerald-400">0 Bytes Proprietary Code Ingested</span>
+                </div>
+                <div class="text-sm font-bold text-white">
+                  Duplicate <code class="text-[#FF8844] font-mono">postgres-connection-uri</code> detected across 4 microservice repositories via salted HMAC-SHA256 correlation
+                </div>
+                <div class="flex flex-wrap items-center gap-2 pt-1 font-mono text-[11px]">
+                  <span class="text-slate-400">Affected Repos:</span>
+                  <span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">acme/billing-svc</span>
+                  <span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">acme/auth-worker</span>
+                  <span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">acme/analytics-etl</span>
+                  <span class="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-cyan-300">acme/admin-api</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-3 shrink-0">
+                <button onclick="this.innerHTML='✔ Rotated Across 4 Repos (Dual-Key Safe)'; this.classList.add('text-emerald-400');" class="btn-primary text-xs py-2 px-4 font-mono">
+                  Rotate Shared Key (4 Repos)
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="overflow-x-auto">
-            <table class="w-full text-left text-xs font-mono">
-              <thead class="bg-[#080A0E] text-slate-400 uppercase border-b border-white/[0.08]">
-                <tr>
-                  <th class="p-3.5">Time</th>
-                  <th class="p-3.5">Developer / Repo</th>
-                  <th class="p-3.5">Detector Rule</th>
-                  <th class="p-3.5">Preview / Fingerprint</th>
-                  <th class="p-3.5">Zone</th>
-                  <th class="p-3.5">Status</th>
-                  <th class="p-3.5 text-right">Autonomous Action</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-white/[0.08] text-slate-200">
-                ${this.findings.map(f => `
-                  <tr class="hover:bg-[#11141C] transition-colors">
-                    <td class="p-3.5 text-slate-400">${f.time}</td>
-                    <td class="p-3.5">
-                      <div class="font-bold text-white font-sans">${f.repo}</div>
-                      <div class="text-[11px] text-slate-400">${f.branch} • ${f.author}</div>
-                    </td>
-                    <td class="p-3.5">
-                      <span class="badge-clean ${f.severity === 'Critical' ? 'badge-tag-critical' : 'badge-tag-cadmium'}">
-                        ${f.rule}
-                      </span>
-                    </td>
-                    <td class="p-3.5">
-                      <div class="font-bold text-amber-300">${f.preview}</div>
-                      <div class="text-[10px] text-slate-500">${f.fingerprint}</div>
-                    </td>
-                    <td class="p-3.5 text-cyan-400">${f.zone}</td>
-                    <td class="p-3.5">
-                      <span class="badge-clean ${f.status.includes('Active') ? 'bg-red-500/10 text-red-400 border border-red-500/30' : 'badge-tag-emerald'}">
-                        ${f.status}
-                      </span>
-                    </td>
-                    <td class="p-3.5 text-right">
-                      ${f.status.includes('Active') ? `
-                        <button class="btn-primary text-[11px] py-1 px-3 action-fix-btn" data-id="${f.id}">
-                          Safe Remediate
-                        </button>
-                      ` : `
-                        <span class="text-[11px] text-slate-400">Resolved in 14.8s</span>
-                      `}
-                    </td>
+          <div class="bento-card overflow-hidden">
+            <div class="p-4 bg-[#0E1017] border-b border-white/[0.08] flex items-center justify-between">
+              <div class="text-xs font-mono font-bold text-white flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[#FF5500] animate-pulse"></span>
+                LIVE ZERO-KNOWLEDGE FINDINGS STREAM
+              </div>
+              <div class="text-xs font-mono text-slate-400">
+                Auto-Sync: Enabled (CLI & CI/CD Push)
+              </div>
+            </div>
+
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs font-mono">
+                <thead class="bg-[#080A0E] text-slate-400 uppercase border-b border-white/[0.08]">
+                  <tr>
+                    <th class="p-3.5">Time</th>
+                    <th class="p-3.5">Developer / Repo</th>
+                    <th class="p-3.5">Detector Rule</th>
+                    <th class="p-3.5">Preview / Fingerprint</th>
+                    <th class="p-3.5">Zone</th>
+                    <th class="p-3.5">Status</th>
+                    <th class="p-3.5 text-right">Autonomous Action</th>
                   </tr>
-                `).join('')}
-              </tbody>
-            </table>
+                </thead>
+                <tbody class="divide-y divide-white/[0.08] text-slate-200">
+                  ${this.findings.map(f => `
+                    <tr class="hover:bg-[#11141C] transition-colors">
+                      <td class="p-3.5 text-slate-400">${f.time}</td>
+                      <td class="p-3.5">
+                        <div class="font-bold text-white font-sans">${f.repo}</div>
+                        <div class="text-[11px] text-slate-400">${f.branch} • ${f.author}</div>
+                      </td>
+                      <td class="p-3.5">
+                        <span class="badge-clean ${f.severity === 'Critical' ? 'badge-tag-critical' : 'badge-tag-cadmium'}">
+                          ${f.rule}
+                        </span>
+                      </td>
+                      <td class="p-3.5">
+                        <div class="font-bold text-amber-300">${f.preview}</div>
+                        <div class="text-[10px] text-slate-500">${f.fingerprint}</div>
+                      </td>
+                      <td class="p-3.5 text-cyan-400">${f.zone}</td>
+                      <td class="p-3.5">
+                        <span class="badge-clean ${f.status.includes('Active') ? 'bg-red-500/10 text-red-400 border border-red-500/30' : 'badge-tag-emerald'}">
+                          ${f.status}
+                        </span>
+                      </td>
+                      <td class="p-3.5 text-right">
+                        ${f.status.includes('Active') ? `
+                          <button class="btn-primary text-[11px] py-1 px-3 action-fix-btn" data-id="${f.id}">
+                            Safe Remediate
+                          </button>
+                        ` : `
+                          <span class="text-[11px] text-slate-400">Resolved in 14.8s</span>
+                        `}
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       `;

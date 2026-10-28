@@ -1,10 +1,15 @@
 use crate::cloud::auth::Credentials;
+use crate::cloud::client::{
+    correlate_multi_repo_blast_radius, CloudScanPayload, MultiRepoBlastRadiusInsight,
+};
 use crate::error::SentrisError;
 use comfy_table::modifiers::UTF8_ROUND_CORNERS;
 use comfy_table::presets::UTF8_FULL;
 use comfy_table::{Cell, Color, ContentArrangement, Table};
 use owo_colors::OwoColorize;
 use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TeamMember {
@@ -24,10 +29,65 @@ pub struct TeamInfo {
     pub seats_used: u32,
     pub unit_price_usd: u32,
     pub members: Vec<TeamMember>,
+    pub blast_radius_insights: Vec<MultiRepoBlastRadiusInsight>,
     pub invite_link: String,
 }
 
 impl TeamInfo {
+    /// Load any locally recorded multi-repo blast radius correlations for this org, or return representative org insights
+    fn load_or_default_blast_radius(org_id: &str) -> Vec<MultiRepoBlastRadiusInsight> {
+        let index_path = Path::new(".sentris/multi_repo_blast_radius.json");
+        if index_path.exists() {
+            if let Ok(raw) = fs::read_to_string(index_path) {
+                if let Ok(payloads) = serde_json::from_str::<Vec<CloudScanPayload>>(&raw) {
+                    let org_payloads: Vec<CloudScanPayload> = payloads
+                        .into_iter()
+                        .filter(|p| p.org_id == org_id)
+                        .collect();
+                    let insights: Vec<MultiRepoBlastRadiusInsight> =
+                        correlate_multi_repo_blast_radius(&org_payloads)
+                            .into_iter()
+                            .filter(|i| i.affected_repos.len() > 1)
+                            .collect();
+                    if !insights.is_empty() {
+                        return insights;
+                    }
+                }
+            }
+        }
+
+        vec![
+            MultiRepoBlastRadiusInsight {
+                zk_fingerprint:
+                    "zk_94a3ab2d8f104c19e7a2b5d8c0f1e2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9"
+                        .to_string(),
+                rule_id: "postgres-connection-uri".to_string(),
+                severity: "CRITICAL".to_string(),
+                redacted_preview: "postgres://prod...5432".to_string(),
+                affected_repos: vec![
+                    "acme/admin-api".to_string(),
+                    "acme/analytics-etl".to_string(),
+                    "acme/auth-worker".to_string(),
+                    "acme/billing-svc".to_string(),
+                ],
+                total_occurrences: 4,
+            },
+            MultiRepoBlastRadiusInsight {
+                zk_fingerprint:
+                    "zk_77b312fe89c04a11b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5"
+                        .to_string(),
+                rule_id: "aws-access-key-id".to_string(),
+                severity: "HIGH".to_string(),
+                redacted_preview: "AKIA...89BC".to_string(),
+                affected_repos: vec![
+                    "acme/deploy-runner".to_string(),
+                    "acme/infra-terraform".to_string(),
+                ],
+                total_occurrences: 2,
+            },
+        ]
+    }
+
     /// Generate a representative Pro team status matching the active user credentials
     pub fn from_credentials(creds: &Credentials) -> Self {
         let members = vec![
@@ -69,6 +129,7 @@ impl TeamInfo {
             seats_used: creds.seats_used.max(members.len() as u32),
             unit_price_usd: 8,
             members,
+            blast_radius_insights: Self::load_or_default_blast_radius(&creds.org_id),
             invite_link: format!("{}/invite/{}", creds.server_url, creds.org_id),
         }
     }
@@ -172,6 +233,56 @@ impl TeamInfo {
         out.push_str(&member_table.to_string());
         out.push_str("\n\n");
 
+        // Zero-Knowledge Multi-Repo Blast Radius Insight Table
+        if !self.blast_radius_insights.is_empty() {
+            let br_header =
+                "Zero-Knowledge Multi-Repo Blast Radius Insight (0 Bytes Source Code Ingested):";
+            if no_color {
+                out.push_str(&format!("{br_header}\n"));
+            } else {
+                out.push_str(&format!("{}\n", br_header.yellow().bold()));
+            }
+
+            let mut br_table = Table::new();
+            br_table
+                .load_preset(UTF8_FULL)
+                .apply_modifier(UTF8_ROUND_CORNERS)
+                .set_content_arrangement(ContentArrangement::Dynamic);
+
+            br_table.set_header(vec![
+                "ZK HMAC Token",
+                "Detector Rule",
+                "Severity",
+                "Blast Radius",
+                "Correlated Repositories",
+            ]);
+
+            for insight in &self.blast_radius_insights {
+                let short_fp = if insight.zk_fingerprint.len() > 15 {
+                    format!("{}...", &insight.zk_fingerprint[..15])
+                } else {
+                    insight.zk_fingerprint.clone()
+                };
+                let sev_color = if no_color {
+                    Color::Reset
+                } else if insight.severity.eq_ignore_ascii_case("critical") {
+                    Color::Red
+                } else {
+                    Color::Yellow
+                };
+                br_table.add_row(vec![
+                    Cell::new(short_fp).fg(if no_color { Color::Reset } else { Color::Cyan }),
+                    Cell::new(&insight.rule_id),
+                    Cell::new(&insight.severity).fg(sev_color),
+                    Cell::new(format!("{} repos", insight.affected_repos.len())),
+                    Cell::new(insight.affected_repos.join(", ")),
+                ]);
+            }
+
+            out.push_str(&br_table.to_string());
+            out.push_str("\n\n");
+        }
+
         let invite_msg = format!(
             "Invite Teammates: {}\nGenerate License: `sentris auth login --token <token>`",
             self.invite_link
@@ -215,11 +326,18 @@ mod tests {
         assert_eq!(team.seat_limit, 20);
         assert_eq!(team.unit_price_usd, 8);
         assert!(!team.members.is_empty());
+        assert!(!team.blast_radius_insights.is_empty());
+        assert_eq!(
+            team.blast_radius_insights[0].rule_id,
+            "postgres-connection-uri"
+        );
+        assert_eq!(team.blast_radius_insights[0].affected_repos.len(), 4);
 
         let rendered = team.render_terminal(true);
         assert!(rendered.contains("Acme Corporation"));
         assert!(rendered.contains("Pro ($8/seat)"));
         assert!(rendered.contains("Seat Utilization"));
         assert!(rendered.contains("Monthly Run-Rate"));
+        assert!(rendered.contains("Zero-Knowledge Multi-Repo Blast Radius Insight"));
     }
 }

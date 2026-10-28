@@ -308,6 +308,34 @@ fn main() {
                                             res.message.green()
                                         );
                                         println!("   Dashboard: {}", res.dashboard_url.underline());
+                                        let multi_repo: Vec<_> = res
+                                            .blast_radius_insights
+                                            .iter()
+                                            .filter(|i| i.affected_repos.len() > 1)
+                                            .collect();
+                                        if !multi_repo.is_empty() {
+                                            println!(
+                                                "   {}",
+                                                "⚡ Zero-Knowledge Multi-Repo Blast Radius Insight (0 Bytes Source Ingested):"
+                                                    .yellow()
+                                                    .bold()
+                                            );
+                                            for insight in multi_repo {
+                                                let short_fp = if insight.zk_fingerprint.len() > 15
+                                                {
+                                                    &insight.zk_fingerprint[..15]
+                                                } else {
+                                                    &insight.zk_fingerprint
+                                                };
+                                                println!(
+                                                    "      • {}... ({}) reused across {} repos: [{}]",
+                                                    short_fp.cyan(),
+                                                    insight.rule_id.red().bold(),
+                                                    insight.affected_repos.len(),
+                                                    insight.affected_repos.join(", ").yellow()
+                                                );
+                                            }
+                                        }
                                     }
                                 }
                                 Err(err) => {
@@ -1305,6 +1333,33 @@ fn main() {
                         println!("   Scan ID: {}", res.scan_id.bold());
                         println!("   Findings Synced: {}", payload.findings.len());
                         println!("   Dashboard: {}", res.dashboard_url.underline());
+                        let multi_repo: Vec<_> = res
+                            .blast_radius_insights
+                            .iter()
+                            .filter(|i| i.affected_repos.len() > 1)
+                            .collect();
+                        if !multi_repo.is_empty() {
+                            println!(
+                                "   {}",
+                                "⚡ Zero-Knowledge Multi-Repo Blast Radius Insight (0 Bytes Source Ingested):"
+                                    .yellow()
+                                    .bold()
+                            );
+                            for insight in multi_repo {
+                                let short_fp = if insight.zk_fingerprint.len() > 15 {
+                                    &insight.zk_fingerprint[..15]
+                                } else {
+                                    &insight.zk_fingerprint
+                                };
+                                println!(
+                                    "      • {}... ({}) reused across {} repos: [{}]",
+                                    short_fp.cyan(),
+                                    insight.rule_id.red().bold(),
+                                    insight.affected_repos.len(),
+                                    insight.affected_repos.join(", ").yellow()
+                                );
+                            }
+                        }
                     }
                 }
                 Err(err) => {
