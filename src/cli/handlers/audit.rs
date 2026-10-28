@@ -291,7 +291,7 @@ pub fn handle_audit(cli: &Cli, ledger: PathBuf, verify: bool, export_vanta: Opti
         println!("   Recent Audit Events:");
         for record in audit_ledger.records.iter().rev().take(5) {
             let hash_prefix = if record.entry_hash.len() >= 8 {
-                &record.entry_hash[..8]
+                crate::model::short(&record.entry_hash, 8)
             } else {
                 &record.entry_hash
             };

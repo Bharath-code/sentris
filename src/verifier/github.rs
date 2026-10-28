@@ -38,7 +38,7 @@ impl ProviderVerifier for GithubVerifier {
         let trimmed = secret.trim();
 
         // Unit test mock token support
-        if trimmed.starts_with("ghp_test_mock_") {
+        if super::mock_tokens_enabled() && trimmed.starts_with("ghp_test_mock_") {
             return Ok(LiveStatus::Active {
                 scopes: vec![
                     "repo".to_string(),

@@ -418,7 +418,7 @@ fn sync_cloud_report(cli: &Cli, report: &ScanReport) {
                             );
                             for insight in multi_repo {
                                 let short_fp = if insight.zk_fingerprint.len() > 15 {
-                                    &insight.zk_fingerprint[..15]
+                                    crate::model::short(&insight.zk_fingerprint, 15)
                                 } else {
                                     &insight.zk_fingerprint
                                 };

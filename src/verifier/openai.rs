@@ -19,9 +19,10 @@ impl OpenAiVerifier {
         let trimmed = token.trim();
 
         // Unit test mock token support
-        if trimmed.starts_with("sk-mock-")
-            || trimmed.starts_with("sk-test-")
-            || trimmed.starts_with("sk-live-mock-")
+        if super::mock_tokens_enabled()
+            && (trimmed.starts_with("sk-mock-")
+                || trimmed.starts_with("sk-test-")
+                || trimmed.starts_with("sk-live-mock-"))
         {
             return Ok(LiveStatus::Active {
                 scopes: vec!["models:read".to_string(), "chat:write".to_string()],

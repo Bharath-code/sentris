@@ -19,7 +19,9 @@ impl AnthropicVerifier {
         let trimmed = token.trim();
 
         // Unit test mock token support
-        if trimmed.starts_with("sk-ant-mock-") || trimmed.starts_with("sk-ant-test-") {
+        if super::mock_tokens_enabled()
+            && (trimmed.starts_with("sk-ant-mock-") || trimmed.starts_with("sk-ant-test-"))
+        {
             return Ok(LiveStatus::Active {
                 scopes: vec!["claude-3".to_string(), "messages:write".to_string()],
             });

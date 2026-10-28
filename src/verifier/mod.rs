@@ -25,6 +25,14 @@ pub enum LiveStatus {
     Unverified(String),
 }
 
+/// Canned "Active" answers for fake tokens exist for tests only; in a real build a planted token must not read as verified.
+pub(crate) fn mock_tokens_enabled() -> bool {
+    cfg!(test)
+        || std::env::var("SENTRIS_VERIFIER_MOCK")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+}
+
 pub trait ProviderVerifier: Send + Sync {
     /// Returns the provider name (e.g. "Stripe", "AWS", "GitHub", "Slack", "OpenAI", "Anthropic")
     fn provider_name(&self) -> &'static str;

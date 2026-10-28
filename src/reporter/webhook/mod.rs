@@ -344,8 +344,15 @@ impl WebhookReporter {
             ));
         }
 
-        let is_discord =
-            trimmed_url.contains("discord.com") || trimmed_url.contains("discordapp.com");
+        let rest = trimmed_url.strip_prefix("https://").ok_or_else(|| {
+            SentrisError::Webhook("Webhook URL must start with https://".to_string())
+        })?;
+        let host = rest.split(['/', '?', '#']).next().unwrap_or("");
+        // The URL path is the credential, so messages only ever show the host
+        let shown = format!("https://{host}/…");
+        let is_discord = ["discord.com", "discordapp.com"]
+            .iter()
+            .any(|d| host == *d || host.ends_with(&format!(".{d}")));
         let provider = if is_discord { "Discord" } else { "Slack" };
 
         let payload = if is_discord {
@@ -358,7 +365,7 @@ impl WebhookReporter {
             return Ok(format!(
                 "[DRY RUN] Webhook alert card simulated successfully for {} ({}) - {} findings",
                 provider,
-                trimmed_url,
+                shown,
                 report.findings.len()
             ));
         }
@@ -375,26 +382,20 @@ impl WebhookReporter {
                 if (200..=299).contains(&status) {
                     Ok(format!(
                         "Successfully posted incident card to {} ({}) with HTTP {}",
-                        provider, trimmed_url, status
+                        provider, shown, status
                     ))
                 } else {
-                    let body = res.into_string().unwrap_or_default();
                     Err(SentrisError::Webhook(format!(
-                        "Webhook endpoint responded with HTTP {}: {}",
-                        status, body
+                        "Webhook endpoint {shown} responded with HTTP {status}"
                     )))
                 }
             }
-            Err(ureq::Error::Status(status, res)) => {
-                let body = res.into_string().unwrap_or_default();
-                Err(SentrisError::Webhook(format!(
-                    "Webhook endpoint responded with HTTP {}: {}",
-                    status, body
-                )))
-            }
+            Err(ureq::Error::Status(status, _)) => Err(SentrisError::Webhook(format!(
+                "Webhook endpoint {shown} responded with HTTP {status}"
+            ))),
             Err(ureq::Error::Transport(err)) => Err(SentrisError::Webhook(format!(
-                "Network transport error (offline or unreachable host): {}",
-                err
+                "Network transport error reaching {shown} (offline or unreachable host): {}",
+                err.kind()
             ))),
         }
     }

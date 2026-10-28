@@ -104,6 +104,11 @@ impl Serialize for Finding {
     }
 }
 
+/// First `n` bytes of `s` (or all of it), never panicking on short or non-ASCII input.
+pub fn short(s: &str, n: usize) -> &str {
+    s.get(..n).unwrap_or(s)
+}
+
 impl Finding {
     /// Returns the syntactic file context classification (Production vs TestFixture)
     pub fn context_kind(&self) -> ContextKind {
@@ -117,11 +122,10 @@ impl Finding {
         } else {
             let prefix_len = if len >= 16 { 6 } else { 4 };
             let suffix_len = 4;
-            format!(
-                "{}...{}",
-                &secret[..prefix_len],
-                &secret[len - suffix_len..]
-            )
+            match (secret.get(..prefix_len), secret.get(len - suffix_len..)) {
+                (Some(head), Some(tail)) => format!("{head}...{tail}"),
+                _ => "********".to_string(),
+            }
         }
     }
 }

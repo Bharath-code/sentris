@@ -42,6 +42,11 @@ impl GitManager {
         detector: &crate::detector::DetectorEngine,
         since_ref: &str,
     ) -> Result<(Vec<crate::model::Finding>, usize, u64), SentrisError> {
+        if since_ref.starts_with('-') {
+            return Err(SentrisError::Scan(format!(
+                "Invalid git ref '{since_ref}': must not start with '-'"
+            )));
+        }
         let range = if since_ref.contains("..") {
             since_ref.to_string()
         } else {

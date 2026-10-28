@@ -113,7 +113,12 @@ impl Remediator {
         backend: &str,
     ) -> String {
         let base = Self::env_var_name_for_rule(&finding.rule_id);
-        let suffixed = || format!("{base}_{}", finding.fingerprint[..8].to_ascii_uppercase());
+        let suffixed = || {
+            format!(
+                "{base}_{}",
+                crate::model::short(&finding.fingerprint, 8).to_ascii_uppercase()
+            )
+        };
         if matches!(base, "API_SECRET_KEY" | "APP_SECRET_KEY") {
             return suffixed();
         }
@@ -136,16 +141,25 @@ impl Remediator {
         let timestamp = chrono_compact_timestamp();
         let branch_name = format!("sentris/backup-{timestamp}");
 
-        let output = Command::new("git").args(["branch", &branch_name]).output();
+        let git_ok = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
 
-        if let Ok(out) = output {
-            if out.status.success() {
-                return Ok(branch_name);
-            }
+        // No repo, or a repo without commits, has nothing to branch from: the rollback ledger is the only undo
+        if !git_ok(&["rev-parse", "--verify", "--quiet", "HEAD"]) {
+            return Ok("local-working-tree".to_string());
         }
-
-        // If not in a git repo or branch fails, continue safely with local session tracking
-        Ok("local-working-tree".to_string())
+        if git_ok(&["branch", &branch_name]) {
+            Ok(branch_name)
+        } else {
+            Err(SentrisError::Scan(format!(
+                "Could not create git backup branch '{branch_name}'; refusing to modify files without a backup"
+            )))
+        }
     }
 
     /// Executes the 7-step safe dual-key autonomous remediation workflow (defaulting to Safe Local Extraction)
@@ -202,7 +216,7 @@ impl Remediator {
                     .to_string(),
             ));
         }
-        let session_id = format!("rm_{}", &finding.fingerprint[..8]);
+        let session_id = format!("rm_{}", crate::model::short(&finding.fingerprint, 8));
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
         let provider_name = match matched_verifier {
             Some(v) => v.provider_name(),
@@ -279,7 +293,11 @@ impl Remediator {
             // Step 2: Atomic Git Backup Branch
             print!("  [2/7] 🛡️  Creating atomic git backup branch... ");
         }
-        let backup_branch = Self::create_backup_branch()?;
+        let backup_branch = if dry_run {
+            "dry-run (no branch created)".to_string()
+        } else {
+            Self::create_backup_branch()?
+        };
         if !quiet {
             println!("{} ({})", "SAVED".green(), backup_branch.dimmed());
 
@@ -316,11 +334,7 @@ impl Remediator {
         }
         Self::zeroize_secret_string(&mut new_key);
         if !quiet {
-            println!(
-                "{} ({}=*** • RAM buffer zeroized)",
-                "INJECTED".green(),
-                env_var_name
-            );
+            println!("{} ({}=***)", "INJECTED".green(), env_var_name);
 
             // Step 5: Replace hardcoded secret in target source file
             print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");

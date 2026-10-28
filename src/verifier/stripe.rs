@@ -30,7 +30,7 @@ impl ProviderVerifier for StripeVerifier {
 
     fn verify_live(&self, secret: &str) -> Result<LiveStatus, SentrisError> {
         // If it's a known test mock secret in unit tests, return without actual network calls
-        if secret.starts_with("sk_live_test_mock_") {
+        if super::mock_tokens_enabled() && secret.starts_with("sk_live_test_mock_") {
             return Ok(LiveStatus::Active {
                 scopes: vec!["charges:write".to_string(), "customers:read".to_string()],
             });
