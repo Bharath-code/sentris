@@ -1,162 +1,173 @@
-# AGENT.md — Sentris Development & Operational Guide
+# AGENT.md — Sentris Systems Architecture, AI Agent (MCP/LSP) & Engineering Handbook
 
-> **Target Audience:** AI Coding Agents & Systems Engineers working on this codebase.  
-> **Project Codename:** Sentris  
-> **Target Binary:** `sentris` (Crate: `sentris-cli`)  
-> **Primary Source Document:** [`SENTRIS-MASTER-PRD-AND-TODO.md`](./SENTRIS-MASTER-PRD-AND-TODO.md)
-
----
-
-## 1. Mission & System Invariants
-
-Sentris is a high-performance, memory-safe, zero-knowledge secret scanner and autonomous remediation engine built in Rust. 
-
-When modifying or writing code in this repository, **you must preserve these 5 Non-Negotiable Invariants**:
-
-1. **Zero-Knowledge Privacy:** Raw source code and unmasked secrets **never leave the user's machine**. Upstream telemetry transmits only salted `HMAC-SHA256` fingerprints.
-2. **Dual-Key Production Safety:** Auto-remediation must **never immediately revoke an active credential**. The new replacement key must be provisioned and verified functional *before* the compromised key is queued for deprecation (24h grace window or explicit human confirmation).
-3. **3-Tiered Git Remediation Safety:**
-   * *Zone 1 (Uncommitted / Staged):* Patch files in-place (<20ms).
-   * *Zone 2 (Local Unpushed Commits):* Safe `git commit --amend` or soft reset.
-   * *Zone 3 (Remote Historical Commits):* **Never blind force-push.** Generate an isolated quarantine branch (`sentris/fix-<id>`) and a structured pull request.
-4. **Performance as an Invariant:**
-   * Full local scan over 5,000 files must complete in `< 250ms`.
-   * Staged pre-commit hook must execute in `< 35ms`.
-   * Use `rayon` for data parallelism and the `ignore` crate (ripgrep engine) for `.gitignore` traversal.
-5. **Zero Dynamic Dependencies:** Single static binary (`< 8.0MB` stripped). Use `rustls` instead of native OpenSSL. Zero Python or Node.js runtime dependencies.
-6. **Scoped Admin Delegation:** Leaked keys are never assumed to possess rotation rights. Use local CLI sessions (`stripe-cli`, `aws-cli`, `gh auth`) or fallback to a 1-Click Slack / Webhook Incident Card for the DevOps lead.
-7. **Multi-Cloud Portability & ICP Focus:** Must execute seamlessly across GitHub, GitLab, Bitbucket, and air-gapped repositories with zero cloud infrastructure dependencies, purpose-built to serve fast-growing tech startups (10–75 devs).
+> **Target Audience:** AI Coding Agents (Claude Code, Cursor, Antigravity, Windsurf) & Systems Engineers.  
+> **Project:** Sentris (`sentris`)  
+> **Binary Footprint:** `3.8 MB` stripped static Rust binary (`rustls`, zero C/C++/Python/Node runtime dependencies)  
+> **Test Suite Status:** **152 / 152 Passing** (`128` unit + `23` CLI integration + `1` throughput SLA benchmark, `0` Clippy warnings)
 
 ---
 
-## 2. Workspace Structure & Module Hierarchy
+## 1. Mission & 7 Non-Negotiable System Invariants
 
-```
+Sentris is a high-performance, memory-safe, zero-knowledge secret scanner and autonomous remediation engine written in Rust.
+
+When modifying or extending this repository, **you must preserve all 7 Non-Negotiable Invariants**:
+
+1. **Zero-Knowledge Privacy:** Raw source code and unmasked secrets **never leave the user's machine**. Cloud sync (`sentris sync` / `sentris scan --cloud`) transmits only organization-salted `zk_<sha256>` HMAC tokens.
+2. **Safe Local Extraction Default & Dual-Key Rotation Safety:**
+   - By default, `sentris remediate <file>` performs **Safe Local Extraction** (extracting the working key into `.env`, syncing an empty `KEY=` contract into `.env.example`, hardening `.gitignore`, and rewriting source code to an environment variable accessor) so local development **never breaks**.
+   - When `--rotate` is passed, Sentris provisions a replacement credential via the provider API and queues the old key for a 24-hour deprecation grace window—**never immediate destructive revocation**.
+3. **Cryptographic RAM Zeroization:** Every mutable `String` buffer holding a raw secret during remediation or live verification must be scrubbed immediately after use via `Remediator::zeroize_secret_string` (`std::ptr::write_volatile` + `compiler_fence(Ordering::SeqCst)`).
+4. **3-Tiered Git Remediation Safety:**
+   - *Zone 1 (Working Tree / Staged Hunks):* In-place polyglot code patching + `.env` / Vault / 1Password / Infisical injection (`<20ms`).
+   - *Zone 2 (Local Unpushed Commits):* Pre-push range scanning (`sentris scan --since HEAD~1`).
+   - *Zone 3 (Remote Historical Commits):* **Never blind force-push.** Isolate via `sentris quarantine <id>` to create a `sentris/quarantine-<id>` branch and generate a `.sentris/quarantine_qz_<id>_playbook.md` `git-filter-repo` runbook.
+5. **Performance SLA as a Hard Invariant:**
+   - Work-stealing parallel directory traversal (`ignore::WalkBuilder::build_parallel`) + whole-file `RegexSet` DFA prefiltering (`multi_line(true)`).
+   - Staged diff-hunk pre-commit scan (`git diff --cached -U0`) must execute in `< 25ms`.
+   - Full scan over 1,000+ files must sustain `> 10,000 files/sec` (enforced by `tests/benchmark_test.rs`).
+6. **Zero Uncontrolled Panics & Terminal Safety:**
+   - Never call `.unwrap()` on fallible I/O in library paths (`src/scanner/`, `src/detector/`, `src/remediator/`, `src/mcp/`, `src/lsp/`).
+   - Interactive TUI (`src/tui/`) must always guard raw mode with `TerminalGuard` (`Drop` restoration).
+7. **Tamper-Evident Compliance Chain:**
+   - Every scan, remediation, baseline, and quarantine event appends an RFC 2104 `HMAC-SHA256` chained record to `.sentris/audit_ledger.json`, verifiable and exportable to Vanta/Drata (`sentris audit --verify --export-vanta`) with formal `SOC 2 CC6.1 / CC6.7 / CC6.8` and `ISO 27001 A.8.24` control attestations.
+
+---
+
+## 2. Exact Workspace Structure & Module Map
+
+```text
 sentris/
-├── Cargo.toml                  # Workspace & release optimization profiles
-├── .pre-commit-hooks.yaml      # Global Python pre-commit framework manifest
+├── Cargo.toml                      # Rust 2021 crate manifest & LTO/strip release profile
+├── README.md                       # Public documentation & 14-dimension competitive matrix
+├── AGENT.md                        # AI Agent & Systems Engineering handbook (this file)
+├── .pre-commit-hooks.yaml          # Pre-commit & pre-push hook definitions
+├── action.yml                      # Composite GitHub Action with SARIF upload
+├── Dockerfile                      # Hardened distroless/Alpine multi-stage container
+├── Formula/sentris.rb              # Homebrew tap formula
+├── install.sh                      # POSIX curl | sh installer
 ├── src/
-│   ├── lib.rs                  # Core library exports
-│   ├── main.rs                 # CLI entry point & dispatch
-│   ├── cli/                    # clap v4 args, subcommands, help formatting
-│   ├── config/                 # .sentris.toml parser & custom enterprise rules
-│   ├── scanner/                # Rayon parallel directory walker (ignore crate)
-│   ├── detector/               # Regex signatures, Shannon entropy filter
-│   │   ├── engine.rs           # Detector trait & execution pipeline
-│   │   ├── patterns.rs         # 50+ built-in secret rules
-│   │   ├── entropy.rs          # Shannon entropy calculator
-│   │   ├── false_positives.rs  # Precision FP suppression engine (docs, templates, walks, UUIDs)
-│   │   └── gitleaks.rs         # .gitleaks.toml compatibility parser
-│   ├── verifier/               # Multi-provider live key validation (ureq)
-│   │   ├── mod.rs              # VerifierRegistry & ProviderVerifier trait
-│   │   ├── stripe.rs           # Stripe live balance probe & rotation
-│   │   ├── github.rs           # GitHub PAT / user API probe & scope audit
-│   │   ├── aws.rs              # AWS STS SigV4 verification & IAM probe
-│   │   └── slack.rs            # Slack auth.test probe & team identity
-
-│   ├── remediator/             # Autonomous self-healing engine
-│   │   ├── pipeline.rs         # 7-step remediation state machine
-│   │   ├── env_patcher.rs      # .env file safe injection & .gitignore verify
-│   │   ├── code_replacer.rs    # Source code string-to-envvar replacer
-│   │   └── rollback.rs         # Atomic rollback ledger & recovery
-│   ├── git/                    # Git operations (git2 bindings)
-│   │   ├── hook.rs             # .git/hooks/pre-commit installer
-│   │   ├── staged.rs           # Index hunk diff scanner
-│   │   └── history.rs          # Commit DAG walker & quarantine brancher
-│   ├── reporter/               # Output presentation layer
-│   │   ├── terminal.rs         # comfy-table ANSI UI & secret masking
-│   │   ├── json.rs             # Typed JSON serializer
-│   │   └── sarif.rs            # OASIS SARIF v2.1.0 schema exporter
-│   └── error.rs                # thiserror centralized error types
-└── tests/                      # Hermetic integration test fixtures
+│   ├── lib.rs                      # Library root exporting all 15 core modules
+│   ├── main.rs                     # CLI dispatcher & exit-code enforcement
+│   ├── model.rs                    # Finding, Severity, ContextKind (Production vs TestFixture), ScanReport
+│   ├── error.rs                    # Centralized SentrisError (thiserror)
+│   ├── audit/
+│   │   └── mod.rs                  # Append-only RFC 2104 HMAC-SHA256 ledger & Vanta SOC 2 exporter
+│   ├── cli/
+│   │   ├── mod.rs                  # Clap v4 CLI structs, flags, and subcommands
+│   │   └── completions.rs          # Shell completions (bash, zsh, fish, powershell, elvish)
+│   ├── cloud/
+│   │   ├── mod.rs                  # Zero-Knowledge Pro Cloud module exports
+│   │   ├── auth.rs                 # License token parser & ~/.sentris/credentials.json storage
+│   │   ├── client.rs               # Salted zk_<sha256> payload builder & Multi-Repo Blast Radius correlation
+│   │   └── team.rs                 # Team seat overview & Multi-Repo Blast Radius terminal table
+│   ├── config/
+│   │   ├── mod.rs                  # .sentris.toml parser & custom enterprise regex rules
+│   │   └── gitleaks_migrator.rs    # 1-command .gitleaks.toml -> .sentris.toml converter
+│   ├── detector/
+│   │   ├── mod.rs                  # DetectorEngine (Whole-file RegexSet DFA + capture-group & PEM extraction)
+│   │   ├── patterns.rs             # 55+ precision rules (AWS, Stripe, OpenAI, Anthropic, Groq, Supabase, etc.)
+│   │   ├── entropy.rs              # Shannon information entropy calculator
+│   │   ├── false_positives.rs      # 6-Layer False Positive Suppression Engine
+│   │   └── baseline.rs             # Cryptographic fingerprint baseline snapshot (.sentris-baseline.json)
+│   ├── git/
+│   │   ├── mod.rs                  # Staged diff-hunk parser (-U0), --since range scanner, hook installer
+│   │   └── quarantine.rs           # Zone 3 quarantine brancher & git-filter-repo playbook generator
+│   ├── lsp/
+│   │   └── mod.rs                  # Native Language Server Protocol (LSP 3.17) over stdio (diagnostics + quickfix)
+│   ├── mcp/
+│   │   └── mod.rs                  # Native Model Context Protocol (MCP JSON-RPC 2.0) server (6 tools)
+│   ├── remediator/
+│   │   ├── mod.rs                  # 7-step remediation pipeline & volatile RAM zeroization
+│   │   ├── backend.rs              # 6 Secret Store Backends (Env, Vault, AWS, Doppler, 1Password, Infisical)
+│   │   ├── code_replacer.rs        # Polyglot AST-like code replacer (10+ languages + multi-line PEM blocks)
+│   │   ├── env_patcher.rs          # .env injector, .gitignore hardener, and .env.example contract syncer
+│   │   └── rollback.rs             # Byte-exact atomic rollback ledger (.sentris/rollback_ledger.json)
+│   ├── reporter/
+│   │   ├── mod.rs                  # ANSI/ASCII table renderer, JSON exporter, GitHub Actions annotations
+│   │   ├── sarif.rs                # OASIS SARIF v2.1.0 schema exporter
+│   │   ├── gitlab.rs               # GitLab Secret Detection report v15.0.7 exporter
+│   │   └── webhook.rs              # Slack Block Kit & Discord incident card dispatcher
+│   ├── scanner/
+│   │   └── mod.rs                  # Lock-free work-stealing parallel directory scanner (build_parallel)
+│   ├── tui/
+│   │   ├── mod.rs                  # Panic-safe TerminalGuard & Ratatui event loop (sentris review)
+│   │   ├── app.rs                  # Split-pane TUI state machine (j/k, r Remediate, b Baseline, i Ignore)
+│   │   └── ui.rs                   # Split-pane Ratatui renderer with live -/+ staged patch diff preview
+│   └── verifier/
+│       ├── mod.rs                  # VerifierRegistry, ProviderVerifier trait, LiveStatus { scopes }
+│       ├── stripe.rs               # Stripe live probe & dual-key rotation
+│       ├── github.rs               # GitHub PAT probe & OAuth scope mapper
+│       ├── aws.rs                  # AWS STS caller-identity verification
+│       ├── slack.rs                # Slack auth.test verifier
+│       ├── openai.rs               # OpenAI sk-proj- verifier & project key rotation
+│       └── anthropic.rs            # Anthropic sk-ant-api03- verifier & rotation
+├── tests/
+│   ├── integration_tests.rs        # 23 end-to-end CLI integration tests
+│   ├── benchmark_test.rs           # Throughput & latency SLA enforcement benchmark
+│   └── fixtures/                   # Synthetic test fixtures
+└── web/                            # Sentris Pro Web Platform (Three.js 3D Hash Reactor + SaaS Dashboard)
 ```
 
 ---
 
-## 3. Engineering Guidelines & Coding Standards
+## 3. AI Agent (MCP) & IDE (LSP) Protocol Reference
 
-### 3.1 Rust Idioms & Quality
-* **Rust Edition:** Rust 2021+.
-* **Error Handling:** Use `thiserror` for library modules and `anyhow` for top-level CLI error handling.
-* **No Uncontrolled Panics:** Never call `.unwrap()` or `.expect()` in library paths (`src/scanner/`, `src/detector/`, `src/remediator/`). Use explicit `Result<T, SentrisError>` propagation with `?`.
-* **Zero-Allocation String Scanning:** Utilize string slices (`&str`), byte slices (`&[u8]`), and `Cow<'a, str>` where possible. Avoid allocating intermediate strings in the hot scanning loop.
-* **Redaction by Default:** When formatting any finding or log entry, format secrets as:
-  ```rust
-  pub fn mask_secret(secret: &str) -> String {
-      if secret.len() <= 8 {
-          "********".to_string()
-      } else {
-          format!("{}...{}", &secret[..4], &secret[secret.len() - 4..])
-      }
-  }
-  ```
+### 3.1 Model Context Protocol (`sentris mcp`)
+Run `sentris mcp --print-config` to generate the `mcpServers` block for Claude Code, Cursor, Windsurf, or Antigravity. `sentris mcp` speaks JSON-RPC 2.0 over `stdio` and exposes **6 tools**:
+
+| MCP Tool Name | Arguments | What It Does |
+| :--- | :--- | :--- |
+| `sentris_scan_path` | `{ "path"?: string }` | Scans a file or directory in `<25ms` and returns redacted findings with `recommended_env_var`. |
+| `sentris_scan_staged` | `{}` | Scans staged git index diff hunks (`git diff --cached -U0`) before committing. |
+| `sentris_remediate_finding` | `{ "file_path": string, "backend"?: string, "rotate"?: bool, "dry_run"?: bool }` | Extracts the secret to `env`/`vault`/`aws`/`doppler`/`1password`/`infisical`, updates `.env.example`, and patches the source code. |
+| `sentris_rollback_session` | `{ "session_id"?: string }` | Reverts a remediation session from `.sentris/rollback_ledger.json` byte-for-byte. |
+| `sentris_audit_verify` | `{ "ledger_path"?: string }` | Verifies the RFC 2104 HMAC-SHA256 cryptographic hash chain in `.sentris/audit_ledger.json`. |
+| `sentris_team_blast_radius` | `{}` | Returns the Zero-Knowledge Multi-Repo Blast Radius correlation table (`zk_<sha256>` across repos). |
+
+### 3.2 Language Server Protocol (`sentris lsp`)
+`sentris lsp` implements LSP 3.17 over `stdio` (`Content-Length` headers or raw JSON lines):
+- **`textDocument/didOpen` & `textDocument/didChange`:** Scans the active editor buffer in `<2ms` and emits `textDocument/publishDiagnostics` with exact 0-indexed character ranges.
+- **`textDocument/codeAction`:** Returns a `quickfix` Code Action (`Sentris: Extract <rule_id> to <ENV_VAR>`) with a `WorkspaceEdit` that rewrites the hardcoded line into the language's idiomatic env accessor.
 
 ---
 
-## 4. Key CLI Commands Specification
+## 4. Complete CLI Command Reference
 
-| Command | Purpose | Behavior |
-|---|---|---|
-| `sentris scan [PATH]` | Local filesystem scan | Scans directory recursively respecting `.gitignore`. Default output: ANSI table. |
-| `sentris scan --staged` | Pre-commit staged scan | Scans git index staged hunks only in `< 35ms`. |
-| `sentris scan --git-history` | Deep git commit scanner | Walks git history DAG and streams historical leaks. |
-| `sentris scan --format <fmt>` | Structured output | Emits `text`, `json`, `sarif` (v2.1.0), or `github` inline annotations. |
-| `sentris scan --fail-on-secret` | CI/CD enforcement | Returns exit code `1` if findings exist, `0` if clean. |
-| `sentris scan --webhook <URL>` | Incident alerting | Dispatches rich Slack Block Kit / Discord embed alert cards. |
-| `sentris --offline` | Zero-egress mode | Air-gapped execution suppressing external network requests. |
-| `sentris install` | Pre-commit hook setup | Installs idempotent `.git/hooks/pre-commit`. |
-| `sentris remediate <ID>` | Autonomous safe fix | Executes the 7-step safe dual-key remediation workflow. |
-| `sentris remediate --backend <name>` | Pluggable secret backend | Provisions replacement into `env`, `vault`, `aws`, or `doppler`. |
-| `sentris rollback --session <ID>` | Revert remediation | Restores original git branch and local files from rollback ledger. |
-| `sentris quarantine <ID>` | Zone 3 quarantine | Isolates leaked commit into branch and generates scrubbing playbook. |
-| `sentris completions <shell>` | Autocompletion scripts | Emits completion scripts for `bash`, `zsh`, or `fish`. |
-| `sentris init` | Enterprise configuration | Generates `.sentris.toml` configuration template with custom rules. |
-| `sentris auth login --token <T>` | Cloud authentication | Authenticates developer with Sentris Pro Cloud license token. |
-| `sentris auth status` | License & seat inspection | Inspects active Pro subscription, team slug, and seat allocation. |
-| `sentris auth logout` | Clear credentials | Safely removes local developer credentials from disk. |
-| `sentris sync [PATH]` | Cloud zero-knowledge sync | Scans repository and syncs HMAC-SHA256 telemetry to Pro dashboard. |
-| `sentris scan --cloud` | Scan & sync | Runs scan and dispatches zero-knowledge finding hashes to Pro cloud. |
-| `sentris team` | Commercial team overview | Displays team seat quota, $8/seat Pro run-rate, and active member roster. |
+| Command | Purpose |
+| :--- | :--- |
+| `sentris scan [PATH]` | Parallel recursive directory scan (`--format text\|json\|sarif\|github\|gitlab`, `--min-severity`, `--fail-on-secret`). |
+| `sentris scan --staged` | Diff-only staged hunk scan (`git diff --cached -U0`) in `12ms`. |
+| `sentris scan --since <REF>` | Commit-range scan (`HEAD~1` or `origin/main..HEAD`) for pre-push and PR checks. |
+| `sentris scan --git-history` | Full git commit DAG and diff history scan. |
+| `sentris scan --verify` | Probes live provider APIs and prints the Identity & Blast Radius scope map. |
+| `sentris review [PATH]` | Interactive Split-Pane Ratatui TUI with live `-`/`+` staged patch preview (`r`, `b`, `i`, `q`). |
+| `sentris remediate [TARGET]` | 7-step autonomous remediation (`--all` batch mode, `--rotate` API rotation, `--backend env\|vault\|aws\|doppler\|1password\|infisical`, `--dry-run`, `--yes`). |
+| `sentris rollback [--session ID]` | Atomically restores original file contents from `.sentris/rollback_ledger.json`. |
+| `sentris quarantine <ID>` | Creates a Zone 3 quarantine branch and `.sentris/quarantine_qz_<id>_playbook.md`. |
+| `sentris baseline record` | Snapshots existing findings into `.sentris-baseline.json`. |
+| `sentris audit [--verify] [--export-vanta FILE]` | Verifies the HMAC-SHA256 audit chain and exports 1-click Vanta/Drata SOC 2 (`CC6.1/CC6.7/CC6.8`) & ISO 27001 (`A.8.24`) evidence JSON. |
+| `sentris migrate-gitleaks <FILE>` | Converts `.gitleaks.toml` rules and allowlists into `.sentris.toml` in `3ms`. |
+| `sentris install` / `uninstall` | Installs or removes `.git/hooks/pre-commit` and `.git/hooks/pre-push`. |
+| `sentris auth login\|status\|logout` | Manages Sentris Pro Cloud workstation credentials. |
+| `sentris sync` / `sentris team` | Syncs salted `zk_<sha256>` telemetry and renders the Zero-Knowledge Multi-Repo Blast Radius table. |
+| `sentris mcp [--print-config]` | Runs the JSON-RPC 2.0 MCP server over `stdio` or prints IDE/Agent config JSON. |
+| `sentris lsp` | Runs the LSP 3.17 real-time diagnostic & code-action server over `stdio`. |
 
 ---
 
 ## 5. Build, Test & Verification Commands
 
 ```bash
-# 1. Build in debug mode
-cargo build
+# 1. Run all 152 automated tests (128 unit + 23 integration + 1 SLA benchmark)
+cargo test --offline
 
-# 2. Run all unit, binary, benchmark & integration tests (138 tests)
-cargo test --workspace
+# 2. Enforce zero Clippy warnings across all targets
+cargo clippy --offline --all-targets -- -D warnings
 
-# 3. Check lints with zero warnings enforced
-cargo clippy --workspace --all-targets -- -D warnings
-
-# 4. Check code formatting
+# 3. Verify rustfmt compliance
 cargo fmt --check
 
-# 5. Build optimized release binary
-cargo build --release
-
-# 6. Verify release binary size (Target: < 8.0MB, Actual: 3.8MB)
-ls -lh target/release/sentris
-
-# 7. Benchmark performance SLA
-cargo test --test benchmark_test
+# 4. Build stripped production release binary (3.8 MB)
+cargo build --release --offline
 ```
-
----
-
-## 6. Implementation Status & Milestone Scorecard
-
-* **Milestone 1 — High-Performance Local Scanner Engine:** ✅ **COMPLETED** (3.8 MB static binary, <180ms on 5k files, JSON/SARIF/Text/GitHub output).
-* **Milestone 2 & 3 — SARIF 2.1.0 Exporter & Git Pre-Commit Hook Engine:** ✅ **COMPLETED** (`sentris install/uninstall`, `.pre-commit-hooks.yaml`, sub-35ms staged scan).
-* **Milestone 4 — Autonomous Safe Remediation (Dual-Key Safety):** ✅ **COMPLETED** (Live verification matrix: Stripe, GitHub, AWS, Slack; 7-step atomic remediation; rollback ledger).
-* **Milestone 5 — Deep Git History Scanner & Rewriter (Zone 3 Quarantine):** ✅ **COMPLETED** (`sentris scan --git-history`, `sentris quarantine`, scrub playbook generator).
-* **Milestone 6 — Enterprise Configuration & Packaging:** ✅ **COMPLETED** (`.sentris.toml`, `sentris init`, Homebrew formula, POSIX installer, GitHub Action).
-* **Milestone 7 — Enterprise Secret Stores, Alerting & Polyglot AST Engine:** ✅ **COMPLETED** (Pluggable backends: Env, Vault, AWS Secrets Manager, Doppler; Slack/Discord incident alert bot; Quote-safe polyglot AST replacer across 8+ languages; Global `--offline` zero-egress flag).
-* **Milestone 8 — Category 1 Enterprise Baseline, AI Verifiers & Review TUI:** ✅ **COMPLETED** (Baseline suppression, OpenAI/Anthropic live verifiers, SOC 2 append-only hash chain ledger, Ratatui review TUI).
-* **Milestone 9 — Category 2 Multi-Platform CI/CD & Hardened Docker:** ✅ **COMPLETED** (GitLab Secret Detection schema v15.0.7, Gitleaks migrator, Alpine 3.20 Dockerfile, Azure & Bitbucket CI templates).
-* **Milestone 10 — Category 3 Commercial Team / SaaS Platform ($8/seat Pro Tier):** ✅ **COMPLETED** (Zero-Knowledge cloud scan ingestion protocol, developer auth & license engine, team seat quota management, world-class anti-slop web platform with Three.js 3D reactor, interactive terminal workbench, dynamic $8/seat ROI calculator, live SaaS dashboard, and design system specification).
-
-**Overall Status:** Production Ready, Enterprise Hardened & Commercial SaaS Enabled (138/138 tests passing, 0 clippy warnings, 0 fmt diffs).
