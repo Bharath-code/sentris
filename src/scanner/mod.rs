@@ -223,6 +223,30 @@ impl Scanner {
             findings,
         })
     }
+
+    /// Scans git commits since a given commit ref or branch range (e.g. `HEAD~1` or `origin/main..HEAD`).
+    pub fn scan_git_since(&self, since_ref: &str) -> Result<ScanReport, SentrisError> {
+        let start_time = Instant::now();
+        let (findings, commits_count, total_bytes) =
+            crate::git::GitManager::scan_git_since(&self.detector, since_ref)?;
+
+        let duration = start_time.elapsed();
+
+        let stats = ScanStats {
+            files_scanned: commits_count,
+            files_ignored: 0,
+            bytes_scanned: total_bytes,
+            findings_count: findings.len(),
+            duration_ms: duration.as_millis(),
+        };
+
+        Ok(ScanReport {
+            timestamp: chrono_now_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            stats,
+            findings,
+        })
+    }
 }
 
 fn chrono_now_string() -> String {

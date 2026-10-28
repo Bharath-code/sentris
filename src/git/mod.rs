@@ -34,10 +34,30 @@ impl GitManager {
     pub fn scan_git_history(
         detector: &crate::detector::DetectorEngine,
     ) -> Result<(Vec<crate::model::Finding>, usize, u64), SentrisError> {
+        Self::scan_git_log_args(detector, &["log", "-p", "-U0", "--full-history"])
+    }
+
+    /// Scans git commits since a given ref or commit range (e.g. `HEAD~1` or `origin/main..HEAD`)
+    pub fn scan_git_since(
+        detector: &crate::detector::DetectorEngine,
+        since_ref: &str,
+    ) -> Result<(Vec<crate::model::Finding>, usize, u64), SentrisError> {
+        let range = if since_ref.contains("..") {
+            since_ref.to_string()
+        } else {
+            format!("{since_ref}..HEAD")
+        };
+        Self::scan_git_log_args(detector, &["log", &range, "-p", "-U0"])
+    }
+
+    fn scan_git_log_args(
+        detector: &crate::detector::DetectorEngine,
+        args: &[&str],
+    ) -> Result<(Vec<crate::model::Finding>, usize, u64), SentrisError> {
         Self::find_git_root()?;
 
         let mut child = match Command::new("git")
-            .args(["log", "-p", "-U0", "--full-history"])
+            .args(args)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()
@@ -168,8 +188,28 @@ fi
             fs::set_permissions(&hook_file, perms)?;
         }
 
+        // Also install a pre-push guardrail hook to catch any commits that bypassed pre-commit with --no-verify
+        let pre_push_file = hooks_dir.join("pre-push");
+        let pre_push_script = r#"#!/bin/sh
+# --- Sentris Pre-Push Guardrail (Catches --no-verify commits before push) ---
+if command -v sentris >/dev/null 2>&1; then
+    sentris scan --since HEAD~1 --fail-on-secret 2>/dev/null || sentris scan --staged --fail-on-secret
+elif [ -f "./target/release/sentris" ]; then
+    ./target/release/sentris scan --since HEAD~1 --fail-on-secret 2>/dev/null || ./target/release/sentris scan --staged --fail-on-secret
+fi
+"#;
+        if !pre_push_file.exists() || force {
+            let _ = fs::write(&pre_push_file, pre_push_script);
+            #[cfg(unix)]
+            if let Ok(meta) = fs::metadata(&pre_push_file) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(&pre_push_file, perms);
+            }
+        }
+
         Ok(format!(
-            "✔ Successfully installed Sentris pre-commit hook at {}",
+            "✔ Successfully installed Sentris pre-commit & pre-push hooks at {}",
             hook_file.display()
         ))
     }
@@ -178,6 +218,14 @@ fi
     pub fn uninstall_pre_commit_hook() -> Result<String, SentrisError> {
         let root = Self::find_git_root()?;
         let hook_file = root.join(".git").join("hooks").join("pre-commit");
+        let pre_push_file = root.join(".git").join("hooks").join("pre-push");
+        if pre_push_file.exists() {
+            if let Ok(pp_content) = fs::read_to_string(&pre_push_file) {
+                if pp_content.contains("Sentris") {
+                    let _ = fs::remove_file(&pre_push_file);
+                }
+            }
+        }
 
         if !hook_file.exists() {
             return Ok("No pre-commit hook found to uninstall.".to_string());

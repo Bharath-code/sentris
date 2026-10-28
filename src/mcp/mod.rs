@@ -319,21 +319,21 @@ impl McpServer {
                     .get(finding.line_number.saturating_sub(1))
                     .copied()
                     .unwrap_or("");
-                let raw_secret = scanner
+                let mut raw_secret = scanner
                     .extract_raw_secret(target_line, &finding.rule_id)
                     .unwrap_or_else(|| target_line.trim().to_string());
 
                 let remediator = Remediator::new();
-                let session_id = remediator
-                    .remediate_finding_with_mode(
-                        finding,
-                        &raw_secret,
-                        dry_run,
-                        Some(backend),
-                        offline,
-                        rotate,
-                    )
-                    .map_err(|e| (-32603, e.to_string()))?;
+                let res = remediator.remediate_finding_with_mode(
+                    finding,
+                    &raw_secret,
+                    dry_run,
+                    Some(backend),
+                    offline,
+                    rotate,
+                );
+                Remediator::zeroize_secret_string(&mut raw_secret);
+                let session_id = res.map_err(|e| (-32603, e.to_string()))?;
 
                 let env_var = Remediator::env_var_name_for_rule(&finding.rule_id);
                 let payload = json!({

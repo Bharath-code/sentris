@@ -37,6 +37,7 @@ fn main() {
             path,
             staged,
             git_history,
+            since,
             format,
             fail_on_secret,
             webhook,
@@ -57,7 +58,20 @@ fn main() {
                 }
             };
 
-            let mut report = if git_history {
+            let mut report = if let Some(since_ref) = &since {
+                match scanner.scan_git_since(since_ref) {
+                    Ok(r) => r,
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed during git commit range scan ({}): {}",
+                            "ERROR:".red().bold(),
+                            since_ref,
+                            err
+                        );
+                        process::exit(1);
+                    }
+                }
+            } else if git_history {
                 match scanner.scan_git_history() {
                     Ok(r) => r,
                     Err(err) => {
@@ -353,6 +367,7 @@ fn main() {
             yes,
             backend,
             rotate,
+            all,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -395,73 +410,41 @@ fn main() {
                 return;
             }
 
-            // Find matching finding or first remediable finding (Stripe preferred)
-            let target_finding = if let Some(id) = &finding_id {
-                report
-                    .findings
-                    .iter()
-                    .find(|f| {
-                        f.rule_id == *id
-                            || f.fingerprint.starts_with(id)
-                            || f.file_path == *id
-                            || f.file_path.ends_with(id)
-                            || std::path::Path::new(&f.file_path) == std::path::Path::new(id)
-                    })
-                    .or_else(|| report.findings.first())
+            // Collect target findings: either all matching findings (--all) or the primary target finding
+            let targets: Vec<&crate::model::Finding> = if all {
+                report.findings.iter().collect()
             } else {
-                report
-                    .findings
-                    .iter()
-                    .find(|f| {
-                        f.rule_id == "stripe-secret-key" || f.rule_id == "stripe-restricted-key"
-                    })
-                    .or_else(|| report.findings.first())
+                let single = if let Some(id) = &finding_id {
+                    report
+                        .findings
+                        .iter()
+                        .find(|f| {
+                            f.rule_id == *id
+                                || f.fingerprint.starts_with(id)
+                                || f.file_path == *id
+                                || f.file_path.ends_with(id)
+                                || std::path::Path::new(&f.file_path) == std::path::Path::new(id)
+                        })
+                        .or_else(|| report.findings.first())
+                } else {
+                    report
+                        .findings
+                        .iter()
+                        .find(|f| {
+                            f.rule_id == "stripe-secret-key" || f.rule_id == "stripe-restricted-key"
+                        })
+                        .or_else(|| report.findings.first())
+                };
+                single.into_iter().collect()
             };
 
-            let finding = match target_finding {
-                Some(f) => f,
-                None => {
-                    eprintln!(
-                        "{} Could not find matching finding to remediate.",
-                        "ERROR:".red().bold()
-                    );
-                    process::exit(1);
-                }
-            };
-
-            // Extract the raw secret from the file at line_number
-            let content = match fs::read_to_string(&finding.file_path) {
-                Ok(c) => c,
-                Err(err) => {
-                    eprintln!(
-                        "{} Failed to read target file {}: {}",
-                        "ERROR:".red().bold(),
-                        finding.file_path,
-                        err
-                    );
-                    process::exit(1);
-                }
-            };
-
-            let lines: Vec<&str> = content.lines().collect();
-            if finding.line_number == 0 || finding.line_number > lines.len() {
-                eprintln!("{} Invalid line number in finding.", "ERROR:".red().bold());
+            if targets.is_empty() {
+                eprintln!(
+                    "{} Could not find matching finding to remediate.",
+                    "ERROR:".red().bold()
+                );
                 process::exit(1);
             }
-
-            let target_line = lines[finding.line_number - 1];
-            // Extract the exact raw secret token using the detector rule's capture group
-            let raw_secret_owned = scanner
-                .extract_raw_secret(target_line, &finding.rule_id)
-                .unwrap_or_else(|| {
-                    target_line
-                        .split(&['"', '\'', '`'][..])
-                        .nth(1)
-                        .unwrap_or(target_line)
-                        .trim()
-                        .to_string()
-                });
-            let raw_secret = raw_secret_owned.as_str();
 
             // Interactive confirmation gate (Stripe CLI / Terraform standard)
             if !dry_run && !yes {
@@ -481,12 +464,21 @@ fn main() {
                         .yellow()
                         .bold()
                 );
-                println!(
-                    "   Target:          {}:{}",
-                    finding.file_path.bold(),
-                    finding.line_number
-                );
-                println!("   Secret rule:     {}", finding.rule_id.cyan());
+                if targets.len() == 1 {
+                    let finding = targets[0];
+                    println!(
+                        "   Target:          {}:{}",
+                        finding.file_path.bold(),
+                        finding.line_number
+                    );
+                    println!("   Secret rule:     {}", finding.rule_id.cyan());
+                } else {
+                    println!(
+                        "   Targets:         {} secret finding(s) in {}",
+                        targets.len().to_string().bold(),
+                        scan_target.display().to_string().bold()
+                    );
+                }
                 println!("   Backend:         {}", backend.cyan().bold());
                 println!("   Planned actions: 1. Verify credential via provider API");
                 println!("                    2. Create atomic local git backup branch");
@@ -521,36 +513,84 @@ fn main() {
             }
 
             let remediator = Remediator::new();
-            match remediator.remediate_finding_with_mode(
-                finding,
-                raw_secret,
-                dry_run,
-                Some(&backend),
-                cli.offline,
-                rotate,
-            ) {
-                Ok(session_id) => {
-                    if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json")
-                    {
-                        let _ = ledger.record_event(
-                            AuditAction::SecretRemediated {
-                                session_id,
-                                rule_id: finding.rule_id.clone(),
-                                backend: backend.clone(),
-                            },
-                            serde_json::json!({
-                                "file_path": finding.file_path,
-                                "line_number": finding.line_number,
-                                "dry_run": dry_run,
-                            }),
+            for finding in &targets {
+                let content = match fs::read_to_string(&finding.file_path) {
+                    Ok(c) => c,
+                    Err(err) => {
+                        eprintln!(
+                            "{} Failed to read target file {}: {}",
+                            "ERROR:".red().bold(),
+                            finding.file_path,
+                            err
                         );
-                        let _ = ledger.save();
+                        process::exit(1);
                     }
-                }
-                Err(err) => {
-                    eprintln!("{} Remediation failed: {}", "ERROR:".red().bold(), err);
+                };
+
+                let lines: Vec<&str> = content.lines().collect();
+                if finding.line_number == 0 || finding.line_number > lines.len() {
+                    eprintln!("{} Invalid line number in finding.", "ERROR:".red().bold());
                     process::exit(1);
                 }
+
+                let target_line = lines[finding.line_number - 1];
+                // Extract the exact raw secret token using the detector rule's capture group
+                let mut raw_secret_owned = scanner
+                    .extract_raw_secret(target_line, &finding.rule_id)
+                    .unwrap_or_else(|| {
+                        target_line
+                            .split(&['"', '\'', '`'][..])
+                            .nth(1)
+                            .unwrap_or(target_line)
+                            .trim()
+                            .to_string()
+                    });
+
+                let result = remediator.remediate_finding_with_mode(
+                    finding,
+                    raw_secret_owned.as_str(),
+                    dry_run,
+                    Some(&backend),
+                    cli.offline,
+                    rotate,
+                );
+                // Cryptographically zeroize raw secret from RAM immediately after remediation
+                Remediator::zeroize_secret_string(&mut raw_secret_owned);
+
+                match result {
+                    Ok(session_id) => {
+                        if let Ok(mut ledger) =
+                            AuditLedger::load_or_init(".sentris/audit_ledger.json")
+                        {
+                            let _ = ledger.record_event(
+                                AuditAction::SecretRemediated {
+                                    session_id,
+                                    rule_id: finding.rule_id.clone(),
+                                    backend: backend.clone(),
+                                },
+                                serde_json::json!({
+                                    "file_path": finding.file_path,
+                                    "line_number": finding.line_number,
+                                    "dry_run": dry_run,
+                                }),
+                            );
+                            let _ = ledger.save();
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("{} Remediation failed: {}", "ERROR:".red().bold(), err);
+                        process::exit(1);
+                    }
+                }
+            }
+
+            if !all && report.findings.len() > 1 {
+                println!(
+                    "{} {} additional secret(s) remain in target. Run with {} to batch-remediate all findings at once.",
+                    "ℹ️ ".cyan(),
+                    (report.findings.len() - 1).to_string().bold(),
+                    "--all".cyan().bold()
+                );
             }
         }
 

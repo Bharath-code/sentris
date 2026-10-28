@@ -59,6 +59,7 @@ impl EnvPatcher {
 
         if !env_path.exists() {
             fs::write(&env_path, format!("{new_line}\n"))?;
+            let _ = Self::sync_env_example_in(base_dir, var_name);
             return Ok(());
         }
 
@@ -82,6 +83,39 @@ impl EnvPatcher {
         }
 
         fs::write(&env_path, lines.join("\n") + "\n")?;
+        let _ = Self::sync_env_example_in(base_dir, var_name);
+        Ok(())
+    }
+
+    /// Synchronizes `.env.example` with a safe empty key placeholder (`VAR_NAME=`)
+    /// so teammates know a new environment variable is required without exposing the secret.
+    pub fn sync_env_example_in(base_dir: &Path, var_name: &str) -> Result<(), SentrisError> {
+        let example_path = base_dir.join(".env.example");
+        let placeholder_line = format!("{var_name}=");
+
+        if !example_path.exists() {
+            fs::write(
+                &example_path,
+                format!(
+                    "# Sentris Secret Contract (safe empty placeholders for team onboarding)\n{placeholder_line}\n"
+                ),
+            )?;
+            return Ok(());
+        }
+
+        let content = fs::read_to_string(&example_path)?;
+        let prefix = format!("{var_name}=");
+        if content.lines().any(|l| l.trim().starts_with(&prefix)) {
+            return Ok(());
+        }
+
+        let mut updated = content.trim_end().to_string();
+        if !updated.is_empty() {
+            updated.push('\n');
+        }
+        updated.push_str(&placeholder_line);
+        updated.push('\n');
+        fs::write(&example_path, updated)?;
         Ok(())
     }
 }
@@ -97,5 +131,19 @@ mod tests {
         EnvPatcher::ensure_env_gitignored_in(dir.path()).unwrap();
         let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert!(content.contains(".env"));
+    }
+
+    #[test]
+    fn test_inject_env_syncs_env_example_without_secret() {
+        let dir = tempdir().unwrap();
+        EnvPatcher::inject_env_variable_in(dir.path(), "STRIPE_SECRET_KEY", "sk_live_real123")
+            .unwrap();
+
+        let env_content = fs::read_to_string(dir.path().join(".env")).unwrap();
+        assert!(env_content.contains("STRIPE_SECRET_KEY=sk_live_real123"));
+
+        let example_content = fs::read_to_string(dir.path().join(".env.example")).unwrap();
+        assert!(example_content.contains("STRIPE_SECRET_KEY="));
+        assert!(!example_content.contains("sk_live_real123"));
     }
 }

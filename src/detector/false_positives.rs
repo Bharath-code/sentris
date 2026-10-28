@@ -36,7 +36,48 @@ impl FalsePositiveFilter {
             return true;
         }
 
+        // 6. Syntactic comment & documentation example context awareness
+        if Self::is_comment_documentation_example(rule_id, line_context) {
+            return true;
+        }
+
         false
+    }
+
+    /// Syntactic context check: suppresses generic-api-key matches or documentation examples
+    /// that appear purely inside source code comments (`//`, `#`, `/*`, `* `, `--`).
+    fn is_comment_documentation_example(rule_id: &str, line_context: &str) -> bool {
+        let trimmed_line = line_context.trim_start();
+        let is_comment = trimmed_line.starts_with("//")
+            || trimmed_line.starts_with('#')
+            || trimmed_line.starts_with("/*")
+            || trimmed_line.starts_with("* ")
+            || trimmed_line.starts_with("--");
+
+        if !is_comment {
+            return false;
+        }
+
+        // Generic assignments inside code comments are almost universally documentation prose
+        if rule_id == "generic-api-key" {
+            return true;
+        }
+
+        let lower = trimmed_line.to_ascii_lowercase();
+        let doc_indicators = [
+            "example",
+            "e.g.",
+            "eg:",
+            "sample",
+            "format:",
+            "looks like",
+            "placeholder",
+            "mock",
+            "dummy",
+            "pattern",
+        ];
+
+        doc_indicators.iter().any(|ind| lower.contains(ind))
     }
 
     /// Known documentation, official SDK examples, and RFC sample keys
@@ -352,6 +393,25 @@ mod tests {
             concat!("AKIA2J5W", "9X7Y8Z9EXAMPLE"),
             "aws-access-key-id",
             concat!("export AWS_ACCESS_KEY_ID='", "AKIA2J5W", "9X7Y8Z9EXAMPLE'")
+        ));
+    }
+
+    #[test]
+    fn test_syntactic_comment_documentation_suppression() {
+        assert!(FalsePositiveFilter::is_false_positive(
+            concat!("sk_live_", "51AbcDefGhIjKlMnOpQrStUvWxYz123456"),
+            "stripe-secret-key",
+            concat!(
+                "// Example format: const key = '",
+                "sk_live_",
+                "51AbcDefGhIjKlMnOpQrStUvWxYz123456';"
+            )
+        ));
+
+        assert!(FalsePositiveFilter::is_false_positive(
+            "xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2",
+            "generic-api-key",
+            "# api_key = 'xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2'"
         ));
     }
 }

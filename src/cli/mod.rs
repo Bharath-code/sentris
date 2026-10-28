@@ -44,6 +44,10 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         git_history: bool,
 
+        /// Scan git commits since a given commit ref or branch range (e.g. HEAD~1 or origin/main..HEAD)
+        #[arg(long)]
+        since: Option<String>,
+
         /// Output format
         #[arg(short, long, value_enum, default_value_t = OutputFormat::Text)]
         format: OutputFormat,
@@ -103,6 +107,10 @@ pub enum Commands {
         /// Rotate the credential via provider API instead of safe local extraction
         #[arg(long, default_value_t = false)]
         rotate: bool,
+
+        /// Batch-remediate all detected secrets in the target file or directory
+        #[arg(short, long, default_value_t = false)]
+        all: bool,
     },
 
     /// Revert a previous remediation session and restore original files

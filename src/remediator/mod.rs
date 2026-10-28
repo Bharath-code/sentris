@@ -31,6 +31,20 @@ impl Remediator {
         }
     }
 
+    /// Cryptographically scrubs a mutable String buffer in RAM using volatile writes
+    /// and a sequential-consistency compiler fence so plaintext secrets never linger in heap memory.
+    pub fn zeroize_secret_string(secret: &mut String) {
+        // SAFETY: Overwriting UTF-8 bytes with 0x00 (ASCII NUL) preserves valid UTF-8 invariants.
+        unsafe {
+            let bytes = secret.as_bytes_mut();
+            for b in bytes.iter_mut() {
+                std::ptr::write_volatile(b, 0u8);
+            }
+        }
+        std::sync::atomic::compiler_fence(std::sync::atomic::Ordering::SeqCst);
+        secret.clear();
+    }
+
     /// Maps a secret rule ID to its canonical environment variable name
     pub fn env_var_name_for_rule(rule_id: &str) -> &'static str {
         match rule_id {
@@ -197,7 +211,7 @@ impl Remediator {
 
         // Step 3: Provision Replacement Key or Extract Working Credential
         print!("  [3/7] 🔑 Provisioning replacement API credential... ");
-        let new_key = if !rotate && !dry_run {
+        let mut new_key = if !rotate && !dry_run {
             // Safe Local Extraction default: preserve the working credential when moving to .env/vault
             // so the developer's local application never breaks.
             raw_secret.to_string()
@@ -230,7 +244,12 @@ impl Remediator {
         let env_var_name = Self::env_var_name_for_rule(&finding.rule_id);
 
         backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
-        println!("{} ({}=***)", "INJECTED".green(), env_var_name);
+        Self::zeroize_secret_string(&mut new_key);
+        println!(
+            "{} ({}=*** • RAM buffer zeroized)",
+            "INJECTED".green(),
+            env_var_name
+        );
 
         // Step 5: Replace hardcoded secret in target source file
         print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");
