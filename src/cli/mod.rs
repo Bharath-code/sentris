@@ -1,9 +1,10 @@
 pub mod completions;
+pub mod handlers;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 #[command(
     name = "sentris",
     author = "Sentris Contributors",
@@ -42,7 +43,7 @@ impl Cli {
     }
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum Commands {
     /// Recursively scan files and directories for hardcoded credentials
     Scan {
@@ -257,7 +258,7 @@ pub enum Commands {
     },
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum AuthSubcommand {
     /// Log in with a Sentris Pro license token or API key
     Login {
@@ -277,7 +278,7 @@ pub enum AuthSubcommand {
     Logout,
 }
 
-#[derive(Subcommand, Debug)]
+#[derive(Subcommand, Debug, Clone)]
 pub enum BaselineSubcommand {
     /// Scan target path and record findings into a baseline file
     Record {

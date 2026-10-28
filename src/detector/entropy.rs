@@ -33,7 +33,6 @@ pub fn calculate_shannon_entropy(data: &str) -> f64 {
 }
 
 /// Checks whether a given secret candidate meets the minimum entropy threshold.
-#[allow(dead_code)]
 pub fn is_high_entropy(data: &str, threshold: f64) -> bool {
     calculate_shannon_entropy(data) >= threshold
 }

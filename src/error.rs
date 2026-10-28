@@ -14,19 +14,15 @@ pub enum SentrisError {
     #[error("Scan error: {0}")]
     Scan(String),
 
-    #[allow(dead_code)]
     #[error("Configuration error: {0}")]
     Config(String),
 
-    #[allow(dead_code)]
     #[error("Webhook error: {0}")]
     Webhook(String),
 
-    #[allow(dead_code)]
     #[error("Audit error: {0}")]
     Audit(String),
 
-    #[allow(dead_code)]
     #[error("Cloud error: {0}")]
     Cloud(String),
 }

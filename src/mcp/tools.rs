@@ -1,0 +1,354 @@
+use std::path::Path;
+
+use serde_json::{json, Value};
+
+use crate::audit::AuditLedger;
+use crate::mcp::McpServer;
+use crate::remediator::Remediator;
+use crate::scanner::Scanner;
+
+impl McpServer {
+    /// Returns the MCP `tools/list` schema for AI coding agents.
+    pub fn list_tools() -> Value {
+        json!({
+            "tools": [
+                {
+                    "name": "sentris_scan_path",
+                    "description": "Scan a file or directory for hardcoded API keys, tokens, and credentials in <25ms. Returns zero-knowledge redacted findings and canonical environment variable names.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "File or directory path to scan (defaults to '.')"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "sentris_scan_staged",
+                    "description": "Scan git staged index changes (git diff --cached) before committing code.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "sentris_remediate_finding",
+                    "description": "Safely remediate a hardcoded secret by extracting it into .env / Vault / AWS Secrets Manager / Doppler and replacing the code literal with the idiomatic environment variable accessor.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "file_path": {
+                                "type": "string",
+                                "description": "Target file path containing the secret"
+                            },
+                            "backend": {
+                                "type": "string",
+                                "description": "Secret backend: env, vault, aws, or doppler (default: env)"
+                            },
+                            "rotate": {
+                                "type": "boolean",
+                                "description": "If true, provision a rotated replacement credential instead of extracting the existing working key (default: false)"
+                            },
+                            "dry_run": {
+                                "type": "boolean",
+                                "description": "Preview remediation without modifying files (default: false)"
+                            }
+                        },
+                        "required": ["file_path"]
+                    }
+                },
+                {
+                    "name": "sentris_audit_verify",
+                    "description": "Verify the SOC 2 / ISO 27001 cryptographic HMAC-SHA256 hash chain audit ledger.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "ledger_path": {
+                                "type": "string",
+                                "description": "Path to audit ledger file (default: .sentris/audit_ledger.json)"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "sentris_rollback_session",
+                    "description": "Atomically revert a previous remediation session and restore the original file line byte-for-byte.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Optional session ID (e.g. rm_a1b2c3d4). Defaults to the most recent session."
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "sentris_team_blast_radius",
+                    "description": "Query the Zero-Knowledge Multi-Repo Blast Radius Insight table correlating duplicate salted HMAC-SHA256 secrets across repositories with 0 bytes of source code ingested.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                }
+            ]
+        })
+    }
+
+    pub(crate) fn call_tool(params: Option<&Value>, offline: bool) -> Result<Value, (i32, String)> {
+        let params = params.ok_or((-32602, "Missing params object".to_string()))?;
+        let name = params
+            .get("name")
+            .and_then(|v| v.as_str())
+            .ok_or((-32602, "Missing tool 'name'".to_string()))?;
+        let args = params
+            .get("arguments")
+            .cloned()
+            .unwrap_or_else(|| json!({}));
+
+        match name {
+            "sentris_scan_path" => {
+                let target_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+                let report = scanner
+                    .scan_path(Path::new(target_path))
+                    .map_err(|e| (-32603, e.to_string()))?;
+
+                let enriched_findings: Vec<Value> = report
+                    .findings
+                    .iter()
+                    .map(|f| {
+                        let env_var = Remediator::env_var_name_for_rule(&f.rule_id);
+                        json!({
+                            "rule_id": f.rule_id,
+                            "severity": f.severity,
+                            "file_path": f.file_path,
+                            "line_number": f.line_number,
+                            "column": f.column,
+                            "redacted_match": f.redacted_match,
+                            "entropy": f.entropy,
+                            "fingerprint": f.fingerprint,
+                            "recommended_env_var": env_var,
+                        })
+                    })
+                    .collect();
+
+                let payload = json!({
+                    "status": if report.findings.is_empty() { "clean" } else { "secrets_detected" },
+                    "files_scanned": report.stats.files_scanned,
+                    "duration_ms": report.stats.duration_ms,
+                    "findings_count": report.findings.len(),
+                    "findings": enriched_findings,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
+            "sentris_scan_staged" => {
+                let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+                let report = scanner.scan_staged().map_err(|e| (-32603, e.to_string()))?;
+
+                let payload = json!({
+                    "status": if report.findings.is_empty() { "clean" } else { "secrets_detected" },
+                    "staged_files_scanned": report.stats.files_scanned,
+                    "duration_ms": report.stats.duration_ms,
+                    "findings_count": report.findings.len(),
+                    "findings": report.findings,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
+            "sentris_remediate_finding" => {
+                let file_path = args
+                    .get("file_path")
+                    .and_then(|v| v.as_str())
+                    .ok_or((-32602, "Missing required argument 'file_path'".to_string()))?;
+                let backend = args
+                    .get("backend")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("env");
+                let rotate = args
+                    .get("rotate")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+                let dry_run = args
+                    .get("dry_run")
+                    .and_then(|v| v.as_bool())
+                    .unwrap_or(false);
+
+                let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+                let report = scanner
+                    .scan_path(Path::new(file_path))
+                    .map_err(|e| (-32603, e.to_string()))?;
+
+                let finding = match report.findings.first() {
+                    Some(f) => f,
+                    None => {
+                        return Ok(json!({
+                            "content": [{
+                                "type": "text",
+                                "text": serde_json::to_string_pretty(&json!({
+                                    "status": "clean",
+                                    "message": "No secrets detected in target file."
+                                })).unwrap_or_default()
+                            }],
+                            "isError": false
+                        }));
+                    }
+                };
+
+                let content = std::fs::read_to_string(&finding.file_path)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let lines: Vec<&str> = content.lines().collect();
+                let target_line = lines
+                    .get(finding.line_number.saturating_sub(1))
+                    .copied()
+                    .unwrap_or("");
+                let mut raw_secret = scanner
+                    .extract_raw_secret(target_line, &finding.rule_id)
+                    .unwrap_or_else(|| target_line.trim().to_string());
+
+                let remediator = Remediator::new();
+                let res = remediator.remediate_finding_with_options(
+                    finding,
+                    &raw_secret,
+                    dry_run,
+                    Some(backend),
+                    offline,
+                    rotate,
+                    true,
+                );
+                Remediator::zeroize_secret_string(&mut raw_secret);
+                let session_id = res.map_err(|e| (-32603, e.to_string()))?;
+
+                let env_var = Remediator::env_var_name_for_rule(&finding.rule_id);
+                let payload = json!({
+                    "status": "remediated",
+                    "session_id": session_id,
+                    "file_path": finding.file_path,
+                    "line_number": finding.line_number,
+                    "rule_id": finding.rule_id,
+                    "env_var_injected": env_var,
+                    "backend": backend,
+                    "mode": if rotate { "provider_rotation" } else { "safe_local_extraction" },
+                    "dry_run": dry_run,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
+            "sentris_audit_verify" => {
+                let ledger_path = args
+                    .get("ledger_path")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or(".sentris/audit_ledger.json");
+
+                let ledger =
+                    AuditLedger::load_or_init(ledger_path).map_err(|e| (-32603, e.to_string()))?;
+                let valid = ledger.verify_integrity().unwrap_or(false);
+
+                let payload = json!({
+                    "ledger_path": ledger_path,
+                    "records_count": ledger.records.len(),
+                    "chain_integrity_verified": valid,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": !valid
+                }))
+            }
+            "sentris_rollback_session" => {
+                let mut ledger = crate::remediator::rollback::RollbackLedger::load()
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let target_session = args
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| ledger.transactions.last().map(|t| t.session_id.clone()));
+
+                let Some(sess_id) = target_session else {
+                    return Ok(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&json!({
+                                "status": "no_sessions",
+                                "message": "No remediation sessions recorded in rollback ledger."
+                            })).unwrap_or_default()
+                        }],
+                        "isError": false
+                    }));
+                };
+
+                let msg = ledger
+                    .revert(&sess_id)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let payload = json!({
+                    "status": "rolled_back",
+                    "session_id": sess_id,
+                    "message": msg,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
+            "sentris_team_blast_radius" => {
+                let creds = crate::cloud::Credentials::load_default().unwrap_or_else(|_| {
+                    crate::cloud::Credentials {
+                        api_key: "sp_preview_token".to_string(),
+                        server_url: "https://api.sentris.dev".to_string(),
+                        org_id: "org_sample_team".to_string(),
+                        org_name: "Sentris Pro Workspace".to_string(),
+                        tier: "Pro ($8/seat)".to_string(),
+                        seat_limit: 20,
+                        seats_used: 14,
+                        user_email: "dev@sentris.dev".to_string(),
+                        expires_at: None,
+                    }
+                });
+                let team = crate::cloud::TeamInfo::from_credentials(&creds);
+                let payload = json!({
+                    "org_id": team.org_id,
+                    "org_name": team.org_name,
+                    "zero_knowledge_bytes_ingested": 0,
+                    "blast_radius_insights": team.blast_radius_insights,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
+            other => Err((-32601, format!("Unknown tool: {other}"))),
+        }
+    }
+}

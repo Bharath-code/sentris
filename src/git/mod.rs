@@ -329,7 +329,6 @@ fi
     }
 
     /// Fetches all staged file paths and their staged contents from the git index
-    #[allow(dead_code)]
     pub fn get_staged_files() -> Result<Vec<(String, String)>, SentrisError> {
         // Get list of staged files
         let output = Command::new("git")

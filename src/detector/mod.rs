@@ -8,7 +8,6 @@ use crate::model::{Finding, Severity};
 use regex::{Regex, RegexSet, RegexSetBuilder};
 use sha2::{Digest, Sha256};
 
-#[allow(dead_code)]
 pub struct CompiledRule {
     pub rule_id: String,
     pub name: String,
@@ -68,7 +67,6 @@ impl DetectorEngine {
         })
     }
 
-    #[allow(dead_code)]
     pub fn new() -> Result<Self, SentrisError> {
         Self::with_config(None)
     }

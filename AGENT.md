@@ -3,7 +3,7 @@
 > **Target Audience:** AI Coding Agents (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex/Agents, LangGraph, CrewAI, Aider) & Systems Engineers.  
 > **Project:** Sentris (`sentris`)  
 > **Binary Footprint:** `3.8 MB` stripped static Rust binary (`rustls`, zero C/C++/Python/Node runtime dependencies)  
-> **Test Suite Status:** **154 / 154 Passing** (`129` unit + `24` CLI integration + `1` throughput SLA benchmark, `0` Clippy warnings)
+> **Test Suite Status:** **155 / 155 Passing** (`130` unit + `24` CLI integration + `1` throughput SLA benchmark, `0` Clippy warnings)
 
 ---
 
@@ -48,14 +48,24 @@ sentris/
 ├── install.sh                      # POSIX curl | sh installer
 ├── src/
 │   ├── lib.rs                      # Library root exporting all 15 core modules
-│   ├── main.rs                     # CLI dispatcher & exit-code enforcement
+│   ├── main.rs                     # Minimal 7-line binary entry point delegating to sentris::cli::handlers
 │   ├── model.rs                    # Finding, Severity, ContextKind (Production vs TestFixture), ScanReport
 │   ├── error.rs                    # Centralized SentrisError (thiserror)
 │   ├── audit/
-│   │   └── mod.rs                  # Append-only RFC 2104 HMAC-SHA256 ledger & Vanta SOC 2 exporter
+│   │   ├── mod.rs                  # AuditAction, AuditRecord, and append-only AuditLedger hash chain
+│   │   ├── crypto.rs               # RFC 2104 HMAC-SHA256 & repository/workstation audit salt derivation
+│   │   ├── vanta.rs                # 1-Click Vanta/Drata SOC 2 (CC6.1/CC6.7/CC6.8) & ISO 27001 exporter
+│   │   └── tests.rs                # Tamper-detection & hash-chain integrity test suite
 │   ├── cli/
 │   │   ├── mod.rs                  # Clap v4 CLI structs, flags, and subcommands
-│   │   └── completions.rs          # Shell completions (bash, zsh, fish, powershell, elvish)
+│   │   ├── completions.rs          # Shell completions (bash, zsh, fish, powershell, elvish)
+│   │   └── handlers/               # Modular CLI subcommand execution handlers
+│   │       ├── mod.rs              # Top-level subcommand router
+│   │       ├── scan.rs             # Scan, baseline filter, live verification, webhook & cloud sync
+│   │       ├── remediate.rs        # Remediate, rollback, and Zone 3 quarantine handlers
+│   │       ├── review.rs           # Interactive Ratatui review & baseline snapshot handlers
+│   │       ├── audit.rs            # Audit ledger, gitleaks migration, git hook & init handlers
+│   │       └── cloud.rs            # Auth, sync, team blast-radius, MCP, LSP & AI agent handlers
 │   ├── cloud/
 │   │   ├── mod.rs                  # Zero-Knowledge Pro Cloud module exports
 │   │   ├── auth.rs                 # License token parser & ~/.sentris/credentials.json storage
@@ -76,18 +86,32 @@ sentris/
 │   ├── lsp/
 │   │   └── mod.rs                  # Native Language Server Protocol (LSP 3.17) over stdio (diagnostics + quickfix)
 │   ├── mcp/
-│   │   └── mod.rs                  # Native Model Context Protocol (MCP JSON-RPC 2.0) server (6 tools)
+│   │   ├── mod.rs                  # Native Model Context Protocol (MCP JSON-RPC 2.0) server & router
+│   │   ├── tools.rs                # 6 MCP tools (scan_path, scan_staged, remediate, rollback, audit, blast_radius)
+│   │   └── manifest.rs             # MCP resources, prompts, AI Agent manifest & workspace scaffolder
 │   ├── remediator/
 │   │   ├── mod.rs                  # 7-step remediation pipeline & volatile RAM zeroization
-│   │   ├── backend.rs              # 6 Secret Store Backends (Env, Vault, AWS, Doppler, 1Password, Infisical)
-│   │   ├── code_replacer.rs        # Polyglot AST-like code replacer (10+ languages + multi-line PEM blocks)
+│   │   ├── backend/                # Modular Secret Store Backends
+│   │   │   ├── mod.rs              # SecretStoreBackend trait, SecretBackendType & SecretBackendFactory
+│   │   │   ├── env.rs              # .env local file driver
+│   │   │   ├── vault.rs            # HashiCorp Vault KV v2 driver
+│   │   │   ├── aws.rs              # AWS Secrets Manager driver
+│   │   │   ├── doppler.rs          # Doppler Secrets driver
+│   │   │   ├── onepassword.rs      # 1Password op:// reference & CLI driver
+│   │   │   └── infisical.rs        # Infisical secret manager driver
+│   │   ├── code_replacer/          # Polyglot AST-like code replacer (10+ languages + multi-line PEM blocks)
+│   │   │   ├── mod.rs              # Language-aware env accessor generator & literal/PEM replacer
+│   │   │   ├── accessor_tests.rs   # Accessor generation unit tests
+│   │   │   └── replacement_tests.rs# String & PEM replacement unit tests
 │   │   ├── env_patcher.rs          # .env injector, .gitignore hardener, and .env.example contract syncer
 │   │   └── rollback.rs             # Byte-exact atomic rollback ledger (.sentris/rollback_ledger.json)
 │   ├── reporter/
 │   │   ├── mod.rs                  # ANSI/ASCII table renderer, JSON exporter, GitHub Actions annotations
 │   │   ├── sarif.rs                # OASIS SARIF v2.1.0 schema exporter
 │   │   ├── gitlab.rs               # GitLab Secret Detection report v15.0.7 exporter
-│   │   └── webhook.rs              # Slack Block Kit & Discord incident card dispatcher
+│   │   └── webhook/                # Slack Block Kit & Discord incident card dispatcher
+│   │       ├── mod.rs              # Formatter & HTTP webhook dispatcher
+│   │       └── tests.rs            # Webhook payload & transport unit tests
 │   ├── scanner/
 │   │   └── mod.rs                  # Lock-free work-stealing parallel directory scanner (build_parallel)
 │   ├── tui/

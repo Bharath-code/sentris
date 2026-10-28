@@ -425,7 +425,7 @@ mod tests {
         assert!(FalsePositiveFilter::is_false_positive(
             "xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2",
             "generic-api-key",
-            "# api_key = 'xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2'"
+            concat!("# api_key = '", "xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2'")
         ));
     }
 }

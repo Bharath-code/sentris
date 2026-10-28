@@ -45,6 +45,8 @@ impl ContextKind {
             || normalized.contains("/mocks/")
             || normalized.ends_with("_test.go")
             || normalized.ends_with("_test.rs")
+            || normalized.ends_with("_tests.rs")
+            || normalized.ends_with("/tests.rs")
             || normalized.ends_with("_test.py")
             || normalized.ends_with(".test.ts")
             || normalized.ends_with(".test.js")

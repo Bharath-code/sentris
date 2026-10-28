@@ -6,10 +6,11 @@
 
 [![CI](https://github.com/Bharath-code/sentris/actions/workflows/ci.yml/badge.svg)](https://github.com/Bharath-code/sentris/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Binary Size](https://img.shields.io/badge/binary-3.8MB%20static%20Rust-success.svg)](https://github.com/Bharath-code/sentris/releases)
-[![Pre-Commit SLA](https://img.shields.io/badge/pre--commit-12ms%20--%2025ms-brightgreen.svg)](#benchmarks)
-[![Tests](https://img.shields.io/badge/tests-152%2F152%20passing-emerald.svg)](#architecture--engineering-guarantees)
-[![MCP & LSP Ready](https://img.shields.io/badge/AI%20%26%20IDE-Native%20MCP%20%2B%20LSP-orange.svg)](#6-native-ai-agent-mcp-server--real-time-ide-lsp)
+[![Binary Size](https://img.shields.io/badge/binary-4.02MB%20static%20Rust-success.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Pre-Commit SLA](https://img.shields.io/badge/pre--commit-11ms%20--%2025ms-brightgreen.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Throughput](https://img.shields.io/badge/throughput-83%2C333%20files%2Fsec-blueviolet.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Tests](https://img.shields.io/badge/tests-155%2F155%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![MCP & LSP Ready](https://img.shields.io/badge/AI%20%26%20IDE-Native%20MCP%20%2B%20LSP-orange.svg)](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp)
 
 ```text
    ____             __         _     
@@ -21,7 +22,7 @@
 **Finding a secret is only 20% of the problem.**  
 Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `Infisical` without breaking your app, and proving SOC 2 compliance is the other **80%**—and **Sentris is the only tool built to own that 80%.**
 
-[Quickstart](#-quickstart) • [The 5 Holy Sh\*t Moments](#-the-5-holy-sht-moments) • [14-Dimension Matrix](#-14-dimension-competitive-matrix) • [Autonomous Remediation](#5-autonomous-remediation-multi-secret-batch-mode--6-secret-backends) • [AI Agent MCP & IDE LSP](#6-native-ai-agent-mcp-server--real-time-ide-lsp) • [SOC 2 & Zero-Knowledge Cloud](#7-10-second-vanta-soc-2-drop--zero-knowledge-multi-repo-blast-radius)
+[Quickstart](#-quickstart) • [The 5 Holy Sh\*t Moments](#-the-5-holy-sht-moments) • [14-Dimension Matrix](#-14-dimension-competitive-matrix) • [Full Benchmark Dossier](docs/BENCHMARKS-AND-ARCHITECTURE.md) • [Autonomous Remediation](#5-autonomous-remediation-multi-secret-batch-mode--6-secret-backends) • [AI Agent MCP & IDE LSP](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp) • [SOC 2 & Zero-Knowledge Cloud](#7-10-second-vanta-soc-2-drop--zero-knowledge-multi-repo-blast-radius)
 
 </div>
 
@@ -333,14 +334,17 @@ sentris sync
 
 ## 📈 Benchmarks
 
-Measured on Apple Silicon M-series (standard 2026 developer workstation):
+> 📄 **Full Benchmark & Systems Architecture Report:** See [**`docs/BENCHMARKS-AND-ARCHITECTURE.md`**](docs/BENCHMARKS-AND-ARCHITECTURE.md) for complete binary footprint, RSS memory hygiene, throughput across 1,000–5,000 files, and subsystem latency breakdowns.
+
+Measured on Apple Silicon M-series (`target/release/sentris`, `4.02 MB` stripped binary, zero C/C++/VM dependencies):
 
 | Workload | Sentris (Rust) | Gitleaks v8 (Go) | MongoDB Kingfisher | TruffleHog v3 |
 | :--- | :---: | :---: | :---: | :---: |
-| **Staged Git Index Diff (`--staged`)** | **`12ms`** | `45ms` | `180ms` | `850ms` |
-| **Clean Repository (`1,500 files`)** | **`16ms`** | `110ms` | `290ms` | `1,400ms` |
-| **Full History Scan (`1,000 commits`)** | **`240ms`** | `1,850ms` | `1,600ms` | `3,200ms` |
-| **Memory Footprint (Peak RSS)** | **`18 MB`** | `85 MB` | `140 MB` | `220 MB` |
+| **Staged Git Index Diff (`--staged`)** | **`11ms`** | `45ms` | `180ms` | `850ms` |
+| **1,000-File Repository (`1.34 MB`)** | **`16ms` (`62,500 files/sec`)** | `95ms` | `260ms` | `1,250ms` |
+| **5,000-File Monorepo (`7.98 MB`)** | **`60ms` (`83,333 files/sec`)** | `420ms` | `1,150ms` | `4,800ms` |
+| **7-Step Autonomous Remediation (`fix`)** | **`90.88ms` (`7.59ms` rollback)** | None | Destructive revoke | None |
+| **Memory Footprint (Peak RSS)** | **`14 – 38 MB`** | `85 MB` | `140 MB` | `220 MB` |
 
 ---
 

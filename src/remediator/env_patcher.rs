@@ -6,7 +6,6 @@ pub struct EnvPatcher;
 
 impl EnvPatcher {
     /// Ensures `.env` and `.env.*` patterns exist in `.gitignore` to prevent re-leaking
-    #[allow(dead_code)]
     pub fn ensure_env_gitignored() -> Result<(), SentrisError> {
         Self::ensure_env_gitignored_in(Path::new("."))
     }
