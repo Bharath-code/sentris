@@ -28,7 +28,9 @@ type BillingState = { dodoSubscriptionId: string | null; billingEventAt: Date | 
 // Drop events older than the last one applied, and never let a different
 // (e.g. previously cancelled) subscription's end event downgrade the current one.
 export function shouldApply(org: BillingState, subscriptionId: string, ending: boolean, at: Date): boolean {
-  if (org.billingEventAt && at.getTime() <= org.billingEventAt.getTime()) return false
+  const prev = org.billingEventAt?.getTime()
+  // Ties fail closed: an end event wins over an activation stamped the same instant
+  if (prev !== undefined && (at.getTime() < prev || (at.getTime() === prev && !ending))) return false
   if (ending && org.dodoSubscriptionId && org.dodoSubscriptionId !== subscriptionId) return false
   return true
 }

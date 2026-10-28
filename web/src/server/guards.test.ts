@@ -15,6 +15,8 @@ test('shouldApply drops stale and foreign-subscription events', () => {
   const t = (s: string) => new Date(`2026-10-29T00:00:${s}Z`)
   const org = { dodoSubscriptionId: 'sub_new', billingEventAt: t('10') }
   assert.equal(shouldApply(org, 'sub_new', false, t('09')), false, 'older event')
+  assert.equal(shouldApply(org, 'sub_new', true, t('10')), true, 'same-instant cancel still downgrades')
+  assert.equal(shouldApply(org, 'sub_new', false, t('10')), false, 'same-instant activation does not re-upgrade')
   assert.equal(shouldApply(org, 'sub_old', true, t('20')), false, 'old sub cancel must not downgrade')
   assert.equal(shouldApply(org, 'sub_new', true, t('20')), true, 'current sub cancel applies')
   assert.equal(shouldApply(org, 'sub_other', false, t('20')), true, 'new subscription activates')
