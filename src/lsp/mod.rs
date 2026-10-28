@@ -10,6 +10,18 @@ use crate::model::Severity;
 use crate::remediator::code_replacer::CodeReplacer;
 use crate::remediator::Remediator;
 
+const MAX_BODY_BYTES: usize = 8 << 20;
+const MAX_HEADER_BYTES: u64 = 8 << 10;
+
+/// Converts a byte offset within `line` to UTF-16 code units (what LSP positions count).
+fn utf16_col(line: &str, byte_idx: usize) -> usize {
+    let mut i = byte_idx.min(line.len());
+    while !line.is_char_boundary(i) {
+        i -= 1;
+    }
+    line[..i].encode_utf16().count()
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct LspMessage {
     pub jsonrpc: String,
@@ -52,14 +64,21 @@ impl LspServer {
     /// Runs the Language Server Protocol (LSP 3.17) stdio loop supporting both
     /// `Content-Length: N\r\n\r\n` headers and single-line JSON-RPC messages.
     pub fn run_stdio_loop() -> Result<(), SentrisError> {
-        let mut server = Self::new()?;
         let stdin = io::stdin();
-        let mut reader = stdin.lock();
-        let mut stdout = io::stdout();
+        Self::serve(stdin.lock(), io::stdout())
+    }
 
+    pub(crate) fn serve<R: BufRead, W: Write>(
+        mut reader: R,
+        mut stdout: W,
+    ) -> Result<(), SentrisError> {
+        let mut server = Self::new()?;
         loop {
             let mut first_line = String::new();
-            let bytes_read = reader.read_line(&mut first_line)?;
+            let bytes_read = reader
+                .by_ref()
+                .take(MAX_HEADER_BYTES)
+                .read_line(&mut first_line)?;
             if bytes_read == 0 {
                 break;
             }
@@ -74,10 +93,28 @@ impl LspServer {
                 .or_else(|| trimmed.strip_prefix("content-length:"))
             {
                 let content_len: usize = len_str.trim().parse().unwrap_or(0);
+                if content_len > MAX_BODY_BYTES {
+                    // Cannot resync without reading the body, so refuse and stop instead of allocating it
+                    let body = json!({
+                        "jsonrpc": "2.0",
+                        "id": Value::Null,
+                        "error": {"code": -32600, "message": format!("Content-Length {content_len} exceeds {MAX_BODY_BYTES} bytes")}
+                    })
+                    .to_string();
+                    let _ = write!(stdout, "Content-Length: {}\r\n\r\n{}", body.len(), body);
+                    let _ = stdout.flush();
+                    break;
+                }
                 // Consume remaining header lines until blank line
                 loop {
                     let mut header_line = String::new();
-                    if reader.read_line(&mut header_line)? == 0 || header_line.trim().is_empty() {
+                    if reader
+                        .by_ref()
+                        .take(MAX_HEADER_BYTES)
+                        .read_line(&mut header_line)?
+                        == 0
+                        || header_line.trim().is_empty()
+                    {
                         break;
                     }
                 }
@@ -241,12 +278,17 @@ impl LspServer {
     fn build_diagnostics_notification(&self, uri: &str, text: &str) -> LspOutbound {
         let file_path = Self::uri_to_file_path(uri);
         let findings = self.detector.scan_text(text, file_path);
+        let lines: Vec<&str> = text.lines().collect();
 
         let diagnostics: Vec<Value> = findings
             .iter()
             .map(|f| {
                 let line_idx = f.line_number.saturating_sub(1);
-                let col_start = f.column.saturating_sub(1);
+                // LSP columns are UTF-16 code units; Finding.column is a byte offset
+                let col_start = lines
+                    .get(line_idx)
+                    .map(|l| utf16_col(l, f.column.saturating_sub(1)))
+                    .unwrap_or(0);
                 let col_end = col_start + 16;
                 let lsp_severity = match f.severity {
                     Severity::Critical | Severity::High => 1, // Error
@@ -322,7 +364,7 @@ impl LspServer {
                 json!([{
                     "range": {
                         "start": { "line": line_idx, "character": 0 },
-                        "end": { "line": line_idx, "character": target_line.len() }
+                        "end": { "line": line_idx, "character": target_line.encode_utf16().count() }
                     },
                     "newText": patched_line
                 }]),
@@ -411,5 +453,24 @@ mod tests {
             .as_str()
             .unwrap();
         assert_eq!(edit_text, "const k = process.env.STRIPE_SECRET_KEY;");
+    }
+
+    #[test]
+    fn oversized_content_length_is_refused_without_allocating() {
+        let mut out = Vec::new();
+        let input = b"Content-Length: 99999999999\r\n\r\n{}".to_vec();
+        LspServer::serve(std::io::Cursor::new(input), &mut out).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(text.contains("exceeds"));
+    }
+
+    #[test]
+    fn utf16_columns_for_non_ascii_lines() {
+        // "é" is 2 bytes / 1 UTF-16 unit; "😀" is 4 bytes / 2 units
+        assert_eq!(utf16_col("é😀x", 0), 0);
+        assert_eq!(utf16_col("é😀x", 2), 1);
+        assert_eq!(utf16_col("é😀x", 6), 3);
+        assert_eq!(utf16_col("é😀x", 3), 1); // inside a char: floors to boundary
+        assert_eq!(utf16_col("abc", 99), 3);
     }
 }

@@ -117,21 +117,19 @@ backup_branch = true
             dir.join(".sentris.json"),
         ];
 
-        for path in candidates {
-            if path.exists() {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                        if let Ok(cfg) = serde_json::from_str(&content) {
-                            return Some(cfg);
-                        }
-                    } else if let Ok(cfg) = Self::from_toml_str(&content) {
-                        return Some(cfg);
-                    }
-                }
-            }
-        }
+        candidates
+            .iter()
+            .find_map(|path| Self::load_file(path).ok())
+    }
 
-        None
+    /// Loads one specific config file (`.json` or TOML).
+    pub fn load_file(path: &Path) -> Result<Self, SentrisError> {
+        let content = fs::read_to_string(path)?;
+        if path.extension().and_then(|s| s.to_str()) == Some("json") {
+            Ok(serde_json::from_str(&content)?)
+        } else {
+            Self::from_toml_str(&content)
+        }
     }
 
     /// Zero-dependency, safe TOML parser tailored for Sentris configuration
