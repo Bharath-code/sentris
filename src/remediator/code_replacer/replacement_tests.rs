@@ -388,3 +388,72 @@ fn test_multiline_pem_block_replacement() {
     assert!(!updated.contains("BEGIN RSA PRIVATE KEY"));
     assert!(updated.contains("export default privateKey;"));
 }
+
+#[test]
+fn test_crlf_file_stays_crlf_and_only_target_line_changes() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("app.py");
+    std::fs::write(&p, "import os\r\nkey = \"sk_live_123\"\r\nprint(key)\r\n").unwrap();
+    CodeReplacer::replace_secret(p.to_str().unwrap(), 2, "sk_live_123", "STRIPE_SECRET_KEY")
+        .unwrap();
+    let out = std::fs::read(&p).unwrap();
+    let text = String::from_utf8(out).unwrap();
+    assert_eq!(
+        text,
+        "import os\r\nkey = os.environ.get(\"STRIPE_SECRET_KEY\")\r\nprint(key)\r\n"
+    );
+}
+
+#[test]
+fn test_no_trailing_newline_is_preserved() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.py");
+    std::fs::write(&p, "k = \"sk_live_123\"").unwrap();
+    CodeReplacer::replace_secret(p.to_str().unwrap(), 1, "sk_live_123", "K").unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&p).unwrap(),
+        "k = os.environ.get(\"K\")"
+    );
+}
+
+#[test]
+fn test_stale_line_errors_and_leaves_file_untouched() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("a.py");
+    let src = "x = 1\n";
+    std::fs::write(&p, src).unwrap();
+    let err = CodeReplacer::replace_secret(p.to_str().unwrap(), 1, "sk_live_123", "K");
+    assert!(err.is_err());
+    assert_eq!(std::fs::read_to_string(&p).unwrap(), src);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_symlink_target_is_rejected() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("real.py");
+    let link = dir.path().join("link.py");
+    std::fs::write(&real, "k = \"sk_live_123\"\n").unwrap();
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    assert!(CodeReplacer::replace_secret(link.to_str().unwrap(), 1, "sk_live_123", "K").is_err());
+    assert!(std::fs::read_to_string(&real)
+        .unwrap()
+        .contains("sk_live_123"));
+}
+
+#[test]
+fn test_pem_original_block_is_returned_in_full() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("k.ts");
+    let src = concat!(
+        "const k = `-----BEGIN ",
+        "RSA PRIVATE KEY-----\nAAAA\nBBBB\n-----END RSA PRIVATE KEY-----`;\nnext();\n"
+    );
+    std::fs::write(&p, src).unwrap();
+    let (orig, _) =
+        CodeReplacer::replace_secret(p.to_str().unwrap(), 1, "ignored", "PRIVATE_KEY_PEM").unwrap();
+    assert_eq!(
+        orig,
+        src.trim_end().strip_suffix("next();").unwrap().trim_end()
+    );
+}
