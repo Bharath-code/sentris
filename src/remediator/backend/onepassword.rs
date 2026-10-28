@@ -1,8 +1,8 @@
 use crate::error::SentrisError;
-use crate::remediator::backend::{current_timestamp_secs, SecretStoreBackend};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::remediator::backend::{
+    current_timestamp_secs, mock_notice, mock_requested, record_mock, SecretStoreBackend,
+};
+use std::path::PathBuf;
 
 /// 1Password backend driver supporting `op://` secret reference URIs and `op` CLI mutations.
 #[derive(Debug, Clone)]
@@ -15,13 +15,10 @@ pub struct OnePasswordBackend {
 
 impl OnePasswordBackend {
     pub fn new() -> Self {
-        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
         Self {
             vault_name: std::env::var("OP_VAULT").unwrap_or_else(|_| "Engineering".to_string()),
             item_name: std::env::var("OP_ITEM").unwrap_or_else(|_| "SentrisSecrets".to_string()),
-            mock: !live_mode,
+            mock: mock_requested(),
             mock_ledger_path: None,
         }
     }
@@ -78,30 +75,18 @@ impl SecretStoreBackend for OnePasswordBackend {
         dry_run: bool,
     ) -> Result<String, SentrisError> {
         let op_ref = self.format_op_reference(key);
-        let cli_cmd = self.format_cli_command(key, secret);
-
         if dry_run {
             return Ok(format!(
-                "[dry-run] Staged 1Password secret '{key}' -> {op_ref} (CLI: '{cli_cmd}')"
+                "[dry-run] Staged 1Password secret '{key}' -> {op_ref} (CLI: '{}')",
+                self.format_cli_command(key, "<redacted>")
             ));
         }
 
         if self.mock {
-            let ledger_path = self
-                .mock_ledger_path
-                .clone()
-                .unwrap_or_else(|| Path::new(".sentris").join("1password_mock.json"));
-            if let Some(parent) = ledger_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut existing: HashMap<String, serde_json::Value> = if ledger_path.exists() {
-                let content = fs::read_to_string(&ledger_path)?;
-                serde_json::from_str(&content).unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-            existing.insert(
-                key.to_string(),
+            let path = record_mock(
+                self.mock_ledger_path.as_deref(),
+                "1password_mock.json",
+                key,
                 serde_json::json!({
                     "vault": self.vault_name,
                     "item": self.item_name,
@@ -109,12 +94,19 @@ impl SecretStoreBackend for OnePasswordBackend {
                     "secret": secret,
                     "timestamp": current_timestamp_secs()
                 }),
-            );
-            fs::write(&ledger_path, serde_json::to_string_pretty(&existing)?)?;
+            )?;
             return Ok(format!(
-                "Recorded 1Password secret '{key}' ({op_ref}) to {}",
-                ledger_path.display()
+                "{} (ledger: {})",
+                mock_notice("1Password"),
+                path.display()
             ));
+        }
+
+        if !crate::remediator::backend::argv_secrets_allowed() {
+            return Err(SentrisError::Scan(format!(
+                "Live {} writes pass the secret as a CLI argument, visible to other local users via ps. Refusing; set SENTRIS_ALLOW_ARGV_SECRETS=1 to accept that risk, or use the aws, doppler or vault backend.",
+                self.backend_name()
+            )));
         }
 
         let assignment = format!("{key}[password]={secret}");
@@ -144,6 +136,10 @@ impl SecretStoreBackend for OnePasswordBackend {
                 "Failed to spawn 1Password 'op' CLI for '{key}': {e}"
             ))),
         }
+    }
+
+    fn is_mock(&self) -> bool {
+        self.mock
     }
 }
 

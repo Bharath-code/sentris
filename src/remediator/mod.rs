@@ -278,7 +278,10 @@ impl Remediator {
         }
         let env_var_name = Self::env_var_name_for_rule(&finding.rule_id);
 
-        backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
+        let inject_note = backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
+        if backend_driver.is_mock() && !dry_run && !quiet {
+            eprintln!("{}", inject_note.yellow().bold());
+        }
         Self::zeroize_secret_string(&mut new_key);
         if !quiet {
             println!(
@@ -326,7 +329,9 @@ impl Remediator {
 
             println!(
                 "  [6/7] ⚠️  Leaked key NOT revoked: {}",
-                "still valid until you rotate it at the provider".yellow().bold()
+                "still valid until you rotate it at the provider"
+                    .yellow()
+                    .bold()
             );
 
             // Step 7: Record transaction in Rollback Ledger

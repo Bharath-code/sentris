@@ -1,5 +1,8 @@
 use crate::error::SentrisError;
-use crate::remediator::backend::{current_timestamp_secs, SecretStoreBackend};
+use crate::remediator::backend::{
+    current_timestamp_secs, mock_notice, mock_requested, write_private, SecretStoreBackend,
+};
+use crate::remediator::env_patcher::EnvPatcher;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,7 +38,7 @@ impl VaultBackend {
     pub fn new() -> Self {
         let vault_addr = std::env::var("VAULT_ADDR").ok();
         let vault_token = std::env::var("VAULT_TOKEN").ok();
-        let mock = vault_addr.is_none();
+        let mock = mock_requested();
         Self {
             vault_addr,
             vault_token,
@@ -123,8 +126,10 @@ impl VaultBackend {
             payload: payload.clone(),
         });
 
-        let serialized = serde_json::to_string_pretty(&ledger)?;
-        fs::write(&ledger_path, serialized)?;
+        write_private(&ledger_path, &serde_json::to_string_pretty(&ledger)?)?;
+        if self.mock_ledger_path.is_none() {
+            EnvPatcher::ensure_env_gitignored()?;
+        }
         Ok(ledger_path)
     }
 }
@@ -152,32 +157,66 @@ impl SecretStoreBackend for VaultBackend {
         if dry_run {
             return Ok(format!(
                 "[dry-run] Formatted HashiCorp Vault v2 payload for POST {endpoint}: {}",
-                serde_json::to_string(&payload)?
+                serde_json::to_string(&Self::format_payload(key, "<redacted>"))?
             ));
         }
 
-        if self.mock || self.vault_addr.is_none() {
+        if self.mock {
             let path = self.write_to_mock_ledger(key, &payload)?;
             return Ok(format!(
-                "Injected secret '{key}' to local Vault mock ledger at {} (POST {endpoint})",
+                "{} (ledger: {})",
+                mock_notice("Vault"),
                 path.display()
             ));
         }
 
-        let base_addr = self
-            .vault_addr
+        let base_addr = self.vault_addr.as_deref().ok_or_else(|| {
+            SentrisError::Scan("VAULT_ADDR is not set; refusing to simulate. Set SENTRIS_MOCK_BACKEND=1 for local testing".into())
+        })?;
+        let token = self
+            .vault_token
             .as_deref()
-            .unwrap_or("http://127.0.0.1:8200");
+            .ok_or_else(|| SentrisError::Scan("VAULT_TOKEN is not set".into()))?;
         let full_url = format!("{}{}", base_addr.trim_end_matches('/'), endpoint);
-        let token = self.vault_token.as_deref().unwrap_or("root");
+        let timeout = std::time::Duration::from_secs(5);
 
-        let response = ureq::post(&full_url)
+        // KV v2 POST replaces the whole version, so merge into the current data and guard with cas
+        let (mut data, version) = match ureq::get(&full_url)
+            .set("X-Vault-Token", token)
+            .timeout(timeout)
+            .call()
+        {
+            Ok(res) => {
+                let body: serde_json::Value = res.into_json().map_err(|e| {
+                    SentrisError::Scan(format!("Unreadable Vault response from {full_url}: {e}"))
+                })?;
+                (
+                    body["data"]["data"]
+                        .as_object()
+                        .cloned()
+                        .unwrap_or_default(),
+                    body["data"]["metadata"]["version"].as_u64().unwrap_or(0),
+                )
+            }
+            Err(ureq::Error::Status(404, _)) => (serde_json::Map::new(), 0),
+            Err(err) => {
+                return Err(SentrisError::Scan(format!(
+                    "Failed to read existing Vault data at {full_url}: {err}"
+                )))
+            }
+        };
+        data.insert(
+            key.to_string(),
+            serde_json::Value::String(secret.to_string()),
+        );
+        let body = serde_json::json!({ "options": { "cas": version }, "data": data });
+
+        match ureq::post(&full_url)
             .set("X-Vault-Token", token)
             .set("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(5))
-            .send_json(&payload);
-
-        match response {
+            .timeout(timeout)
+            .send_json(&body)
+        {
             Ok(res) if res.status() >= 200 && res.status() < 300 => Ok(format!(
                 "Successfully posted secret '{key}' to Vault at {full_url} (HTTP {})",
                 res.status()
@@ -190,6 +229,10 @@ impl SecretStoreBackend for VaultBackend {
                 "Failed to post secret to Vault at {full_url}: {err}"
             ))),
         }
+    }
+
+    fn is_mock(&self) -> bool {
+        self.mock
     }
 }
 
@@ -214,7 +257,7 @@ mod tests {
             .unwrap();
         assert!(dry_res.contains("[dry-run]"));
         assert!(dry_res.contains("/v1/secret/data/sentris/app"));
-        assert!(dry_res.contains("sec_vault_123"));
+        assert!(!dry_res.contains("sec_vault_123"));
     }
 
     #[test]
@@ -228,7 +271,13 @@ mod tests {
         let res = backend
             .inject_secret("DATABASE_URL", "postgres://mock:5432/db", false)
             .unwrap();
-        assert!(res.contains("Injected secret 'DATABASE_URL' to local Vault mock ledger"));
+        assert!(res.contains("[MOCK]"));
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = fs::metadata(&ledger_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
         assert!(ledger_path.exists());
 
         let content = fs::read_to_string(&ledger_path).unwrap();
@@ -252,5 +301,75 @@ mod tests {
         assert_eq!(backend.endpoint_path(), "/v1/kv/data/services/auth");
         let dry_res = backend.inject_secret("SECRET_KEY", "value", true).unwrap();
         assert!(dry_res.contains("/v1/kv/data/services/auth"));
+    }
+
+    #[test]
+    fn live_write_without_vault_addr_errors_instead_of_simulating() {
+        let mut backend = VaultBackend::new().with_mock(false);
+        backend.vault_addr = None;
+        let err = backend.inject_secret("K", "v", false).unwrap_err();
+        assert!(err.to_string().contains("VAULT_ADDR"));
+    }
+
+    #[test]
+    fn live_write_merges_existing_keys_and_sends_cas() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (tx, rx) = std::sync::mpsc::channel::<String>();
+        std::thread::spawn(move || {
+            for i in 0..2 {
+                let (mut conn, _) = listener.accept().unwrap();
+                let mut buf = Vec::new();
+                let mut chunk = [0u8; 4096];
+                loop {
+                    let n = conn.read(&mut chunk).unwrap();
+                    buf.extend_from_slice(&chunk[..n]);
+                    let text = String::from_utf8_lossy(&buf).to_string();
+                    if let Some(split) = text.find("\r\n\r\n") {
+                        let len = text
+                            .lines()
+                            .find_map(|l| {
+                                l.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .map(|v| v.trim().parse::<usize>().unwrap())
+                            })
+                            .unwrap_or(0);
+                        if buf.len() >= split + 4 + len {
+                            break;
+                        }
+                    }
+                }
+                let text = String::from_utf8_lossy(&buf).to_string();
+                if i == 0 {
+                    let body =
+                        r#"{"data":{"data":{"EXISTING":"keep-me"},"metadata":{"version":3}}}"#;
+                    write!(conn, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                } else {
+                    tx.send(text.split("\r\n\r\n").nth(1).unwrap_or("").to_string())
+                        .unwrap();
+                    write!(
+                        conn,
+                        "HTTP/1.1 200 OK\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                    )
+                    .unwrap();
+                }
+            }
+        });
+
+        let backend = VaultBackend::new()
+            .with_mock(false)
+            .with_vault_addr(format!("http://{addr}"))
+            .with_token("t");
+        backend
+            .inject_secret("NEW_KEY", "new-value", false)
+            .unwrap();
+
+        let posted: serde_json::Value = serde_json::from_str(&rx.recv().unwrap()).unwrap();
+        assert_eq!(posted["options"]["cas"], 3);
+        assert_eq!(posted["data"]["EXISTING"], "keep-me");
+        assert_eq!(posted["data"]["NEW_KEY"], "new-value");
     }
 }

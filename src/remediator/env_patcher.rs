@@ -15,7 +15,7 @@ impl EnvPatcher {
         if !gitignore_path.exists() {
             fs::write(
                 &gitignore_path,
-                ".env\n.env.*\n!.env.example\n.sentris/rollback_ledger.json\n*.log\n",
+                ".env\n.env.*\n!.env.example\n.sentris/\n*.log\n",
             )?;
             return Ok(());
         }
@@ -33,8 +33,8 @@ impl EnvPatcher {
         if !lines.contains(&"!.env.example") {
             additions.push("!.env.example");
         }
-        if !lines.contains(&".sentris/rollback_ledger.json") {
-            additions.push(".sentris/rollback_ledger.json");
+        if !lines.contains(&".sentris/") {
+            additions.push(".sentris/");
         }
 
         if !additions.is_empty() {
@@ -66,7 +66,7 @@ impl EnvPatcher {
         let new_line = format!("{var_name}={secret_value}");
 
         if !env_path.exists() {
-            fs::write(&env_path, format!("{new_line}\n"))?;
+            crate::remediator::backend::write_private(&env_path, &format!("{new_line}\n"))?;
             let _ = Self::sync_env_example_in(base_dir, var_name);
             return Ok(());
         }

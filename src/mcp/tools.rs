@@ -235,6 +235,10 @@ impl McpServer {
                 let session_id = res.map_err(|e| (-32603, e.to_string()))?;
 
                 let env_var = Remediator::env_var_name_for_rule(&finding.rule_id);
+                let backend_is_mock =
+                    crate::remediator::backend::SecretBackendFactory::from_name(backend)
+                        .map(|b| b.is_mock())
+                        .unwrap_or(false);
                 let payload = json!({
                     "status": "remediated",
                     "session_id": session_id,
@@ -244,6 +248,8 @@ impl McpServer {
                     "env_var_injected": env_var,
                     "backend": backend,
                     "mode": if rotate { "provider_rotation" } else { "safe_local_extraction" },
+                    "mock": !dry_run && backend_is_mock,
+                    "key_revoked": false,
                     "dry_run": dry_run,
                 });
 

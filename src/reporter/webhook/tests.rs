@@ -85,9 +85,9 @@ fn test_format_slack_card_critical() {
     assert!(finding_block_text.contains("AKIA...7EXA"));
 
     let action_block_text = blocks.last().unwrap()["text"]["text"].as_str().unwrap();
-    assert!(
-        action_block_text.contains("Run 'sentris remediate' to move the secret out of source (then revoke the old key)")
-    );
+    assert!(action_block_text.contains(
+        "Run 'sentris remediate' to move the secret out of source (then revoke the old key)"
+    ));
 }
 
 #[test]
@@ -147,7 +147,9 @@ fn test_format_discord_card_critical() {
     assert_eq!(embed["color"].as_u64().unwrap(), 15158332);
 
     let desc = embed["description"].as_str().unwrap();
-    assert!(desc.contains("Run 'sentris remediate' to move the secret out of source (then revoke the old key)"));
+    assert!(desc.contains(
+        "Run 'sentris remediate' to move the secret out of source (then revoke the old key)"
+    ));
 
     let fields = embed["fields"].as_array().unwrap();
     assert_eq!(fields[0]["name"].as_str().unwrap(), "📊 Scan Summary");

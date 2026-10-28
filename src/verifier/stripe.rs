@@ -86,5 +86,4 @@ mod tests {
             _ => panic!("Expected mock key to verify active"),
         }
     }
-
 }

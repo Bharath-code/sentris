@@ -164,7 +164,6 @@ mod tests {
         assert_eq!(res, LiveStatus::Revoked);
     }
 
-
     #[test]
     fn test_openai_error_handling() {
         let verifier = OpenAiVerifier::new();

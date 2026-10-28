@@ -205,6 +205,9 @@ pub fn handle_remediate(
                 "backend": backend,
                 "dry_run": dry_run,
                 "rotate": rotate,
+                "mock": !dry_run && crate::remediator::backend::SecretBackendFactory::from_name(&backend)
+                    .map(|b| b.is_mock())
+                    .unwrap_or(false),
                 "remediated_count": completed_sessions.len(),
                 "sessions": completed_sessions,
                 "next_agent_actions": [

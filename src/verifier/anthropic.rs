@@ -144,7 +144,6 @@ mod tests {
         assert_eq!(res, LiveStatus::Revoked);
     }
 
-
     #[test]
     fn test_anthropic_error_handling() {
         let verifier = AnthropicVerifier::new();
