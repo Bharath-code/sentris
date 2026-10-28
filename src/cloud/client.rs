@@ -212,6 +212,50 @@ pub fn build_cloud_payload(
     })
 }
 
+/// Production API until a custom domain exists.
+pub const DEFAULT_SERVER_URL: &str = "https://sentris-web.kumarbharath63.workers.dev";
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Explicit offline simulation for tests/demos. Never inferred from the server URL.
+pub fn mock_mode() -> bool {
+    env_flag("SENTRIS_CLOUD_MOCK")
+}
+
+/// The bearer API key is sent to this URL, so require https (plain http only for loopback with an explicit opt-in).
+pub fn validate_server_url(url: &str) -> Result<(), SentrisError> {
+    let bad = |why: &str| SentrisError::Cloud(format!("Refusing server URL '{url}': {why}"));
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| bad("expected https://host"))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') {
+        return Err(bad("missing host or embedded credentials"));
+    }
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    };
+    match scheme.to_ascii_lowercase().as_str() {
+        "https" => Ok(()),
+        "http" if matches!(host, "localhost" | "127.0.0.1" | "::1") => {
+            if env_flag("SENTRIS_ALLOW_INSECURE") {
+                Ok(())
+            } else {
+                Err(bad(
+                    "http is only allowed for loopback with SENTRIS_ALLOW_INSECURE=1",
+                ))
+            }
+        }
+        _ => Err(bad("the API key would travel unencrypted; use https")),
+    }
+}
+
 /// Upload scan findings to Sentris Pro Cloud API
 pub fn upload_scan(
     payload: &CloudScanPayload,
@@ -224,19 +268,19 @@ pub fn upload_scan(
         ));
     }
 
+    validate_server_url(&creds.server_url)?;
     let url = format!("{}/api/v1/scans", creds.server_url.trim_end_matches('/'));
 
     let blast_radius_insights = record_and_correlate_local_blast_radius(payload);
 
-    // Check if test/mock mode or non-reachable endpoint
-    if creds.server_url.contains("mock") || creds.server_url.contains("localhost") {
+    if mock_mode() {
         return Ok(CloudUploadResponse {
             success: true,
             scan_id: payload.scan_id.clone(),
-            dashboard_url: format!("{}/dashboard/scans/{}", creds.server_url, payload.scan_id),
+            dashboard_url: String::new(),
             new_findings_count: payload.findings.len(),
             message: format!(
-                "Successfully synchronized {} zero-knowledge finding(s) with Sentris Pro Cloud.",
+                "[MOCK] SENTRIS_CLOUD_MOCK is set: nothing was uploaded ({} finding(s) correlated locally only).",
                 payload.findings.len()
             ),
             blast_radius_insights,
@@ -271,21 +315,10 @@ pub fn upload_scan(
                 "Cloud API rejected sync (HTTP {status}): {body}"
             )))
         }
-        Err(ureq::Error::Transport(err)) => {
-            // Graceful fallback for offline / unconfigured cloud endpoint
-            Ok(CloudUploadResponse {
-                success: true,
-                scan_id: payload.scan_id.clone(),
-                dashboard_url: format!("{}/dashboard/scans/{}", creds.server_url, payload.scan_id),
-                new_findings_count: payload.findings.len(),
-                message: format!(
-                    "Queued {} zero-knowledge finding(s) for local team ledger (endpoint offline: {}).",
-                    payload.findings.len(),
-                    err.kind()
-                ),
-                blast_radius_insights,
-            })
-        }
+        Err(ureq::Error::Transport(err)) => Err(SentrisError::Cloud(format!(
+            "Could not reach {}: {err}. Nothing was synced.",
+            creds.server_url
+        ))),
     }
 }
 
@@ -483,5 +516,48 @@ mod tests {
             vec!["billing-svc", "auth-worker", "analytics-etl", "admin-api"]
         );
         assert!(insights[0].zk_fingerprint.starts_with("zk_"));
+    }
+
+    #[test]
+    fn server_url_validation() {
+        assert!(validate_server_url("https://app.example.com").is_ok());
+        assert!(validate_server_url("http://example.com").is_err());
+        assert!(validate_server_url("http://localhost:3000").is_err());
+        assert!(validate_server_url("ftp://example.com").is_err());
+        assert!(validate_server_url("https://user:pw@example.com").is_err());
+        assert!(validate_server_url("https://").is_err());
+        assert!(validate_server_url("example.com").is_err());
+        // A hostile name containing "mock"/"localhost" gets no special treatment
+        assert!(validate_server_url("https://mock.evil.tld").is_ok());
+        assert!(validate_server_url("http://mock.evil.tld/localhost").is_err());
+    }
+
+    #[test]
+    fn unreachable_server_is_an_error_not_a_success() {
+        let payload = CloudScanPayload {
+            scan_id: "s".into(),
+            org_id: "o".into(),
+            repo_name: "r".into(),
+            branch: "b".into(),
+            commit_hash: None,
+            timestamp: "t".into(),
+            files_scanned: 0,
+            duration_ms: 0,
+            findings: vec![],
+        };
+        let creds = Credentials {
+            api_key: "sp_live_x".into(),
+            server_url: "https://127.0.0.1:9".into(),
+            org_id: String::new(),
+            org_name: String::new(),
+            tier: String::new(),
+            seat_limit: 0,
+            seats_used: 0,
+            user_email: String::new(),
+            expires_at: None,
+            team_secret: None,
+        };
+        let err = upload_scan(&payload, &creds, false).unwrap_err();
+        assert!(err.to_string().contains("Nothing was synced"));
     }
 }

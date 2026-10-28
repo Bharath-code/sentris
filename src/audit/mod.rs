@@ -4,6 +4,17 @@ pub mod vanta;
 #[cfg(test)]
 mod tests;
 
+/// Result of comparing a ledger against the head recorded outside the repo.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AnchorStatus {
+    /// Head matches: no truncation or substitution since the last save on this machine.
+    Anchored,
+    /// No head on this machine (fresh clone/CI): the chain is self-consistent but truncation is undetectable.
+    Unanchored,
+    /// Head disagrees with the ledger: truncated, replaced, or from another repo.
+    Mismatch,
+}
+
 pub use crypto::{get_audit_salt, hmac_sha256, GENESIS_PREVIOUS_HASH};
 
 use std::fs;
@@ -202,16 +213,24 @@ impl AuditLedger {
         if !self.verify_integrity_with_salt(&salt)? {
             return Ok(false);
         }
-        self.matches_anchor()
+        Ok(self.anchor_status()? != AnchorStatus::Mismatch)
     }
 
     /// Per-ledger anchor outside the repo: (record count, last entry hash) at the last save.
     /// Detects truncation or deletion, which a self-contained hash chain cannot.
     fn anchor_path(&self) -> Result<PathBuf, SentrisError> {
-        let abs = if self.file_path.is_absolute() {
-            self.file_path.clone()
-        } else {
-            std::env::current_dir()?.join(&self.file_path)
+        // Canonical so every spelling of the same ledger path (./x, x, symlinks) maps to one anchor
+        let abs = match self.file_path.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                let name = self.file_path.file_name().unwrap_or_default();
+                let parent = self
+                    .file_path
+                    .parent()
+                    .filter(|p| !p.as_os_str().is_empty())
+                    .unwrap_or_else(|| Path::new("."));
+                parent.canonicalize()?.join(name)
+            }
         };
         let id = hex::encode(sha2::Sha256::digest(abs.to_string_lossy().as_bytes()));
         Ok(crate::keystore::state_dir()?
@@ -219,21 +238,27 @@ impl AuditLedger {
             .join(format!("{}.head", &id[..16])))
     }
 
-    fn matches_anchor(&self) -> Result<bool, SentrisError> {
+    /// Whether this machine holds a head anchor for the ledger and whether it still matches.
+    pub fn anchor_status(&self) -> Result<AnchorStatus, SentrisError> {
         let Ok(raw) = fs::read_to_string(self.anchor_path()?) else {
-            return Ok(true);
+            return Ok(AnchorStatus::Unanchored);
         };
-        let Some((count, hash)) = raw.trim().split_once(':') else {
-            return Ok(false);
-        };
-        let Ok(count) = count.parse::<usize>() else {
-            return Ok(false);
-        };
-        Ok(count == 0
-            || self
-                .records
-                .get(count - 1)
-                .is_some_and(|r| crate::keystore::ct_eq(&r.entry_hash, hash)))
+        let ok = raw
+            .trim()
+            .split_once(':')
+            .and_then(|(count, hash)| Some((count.parse::<usize>().ok()?, hash)))
+            .is_some_and(|(count, hash)| {
+                count == 0
+                    || self
+                        .records
+                        .get(count - 1)
+                        .is_some_and(|r| crate::keystore::ct_eq(&r.entry_hash, hash))
+            });
+        Ok(if ok {
+            AnchorStatus::Anchored
+        } else {
+            AnchorStatus::Mismatch
+        })
     }
 
     /// Verifies the cryptographic integrity using an explicit salt.

@@ -206,6 +206,12 @@ mod tests {
             .clone();
         assert_eq!(tools.len(), 6);
 
+        // Without credentials the tool reports an error instead of inventing sample data
+        let _guard = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let empty = tempfile::tempdir().unwrap();
+        std::env::set_var("SENTRIS_CONFIG_DIR", empty.path());
         let br_req = r#"{
             "jsonrpc": "2.0",
             "id": 20,
@@ -216,12 +222,12 @@ mod tests {
             }
         }"#;
         let br_resp = McpServer::handle_raw_message(br_req, true).expect("Expected response");
-        let br_text = br_resp.result.unwrap()["content"][0]["text"]
+        std::env::remove_var("SENTRIS_CONFIG_DIR");
+        assert!(br_resp.result.is_none());
+        assert!(br_resp.error.unwrap()["message"]
             .as_str()
             .unwrap()
-            .to_string();
-        assert!(br_text.contains("postgres-connection-uri"));
-        assert!(br_text.contains("zero_knowledge_bytes_ingested"));
+            .contains("Not logged in"));
     }
 
     #[test]

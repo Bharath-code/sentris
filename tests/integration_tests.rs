@@ -485,6 +485,7 @@ fn test_cli_auth_login_status_logout_flow() {
     // 1. Auth Login
     let login_output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args([
             "auth",
             "login",
@@ -496,11 +497,12 @@ fn test_cli_auth_login_status_logout_flow() {
     assert!(login_output.status.success());
     let login_stdout = String::from_utf8_lossy(&login_output.stdout);
     assert!(login_stdout.contains("Successfully authenticated with Sentris Pro Cloud"));
-    assert!(login_stdout.contains("Pro ($8/seat)"));
+    assert!(login_stdout.contains("Mock"));
 
     // 2. Auth Status
     let status_output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["auth", "status"])
         .output()
         .expect("Failed to execute auth status");
@@ -512,6 +514,7 @@ fn test_cli_auth_login_status_logout_flow() {
     // 3. Auth Logout
     let logout_output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["auth", "logout"])
         .output()
         .expect("Failed to execute auth logout");
@@ -529,11 +532,13 @@ fn test_cli_team_overview_command() {
     // Seed credentials
     let _ = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["auth", "login", "--token", "sp_live_test_team_998877665544"])
         .output();
 
     let output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["--no-color", "team"])
         .output()
         .expect("Failed to execute sentris team");
@@ -569,6 +574,7 @@ fn test_cli_sync_with_mock_credentials() {
     // Authenticate with a mock endpoint
     let _ = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args([
             "auth",
             "login",
@@ -581,6 +587,7 @@ fn test_cli_sync_with_mock_credentials() {
 
     let output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["sync", "src/error.rs"])
         .output()
         .expect("Failed to execute sentris sync");

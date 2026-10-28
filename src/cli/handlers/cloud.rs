@@ -29,6 +29,10 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
             team_secret,
         } => match Credentials::from_token(&token, server) {
             Ok(mut creds) => {
+                if let Err(err) = creds.refresh_from_server() {
+                    eprintln!("{} Authentication failed: {}", "ERROR:".red().bold(), err);
+                    process::exit(1);
+                }
                 let path = Credentials::default_credentials_path();
                 // Precedence: explicit flag > secret already on this machine > new secret
                 let provided = match team_secret.as_deref() {

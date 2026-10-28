@@ -408,20 +408,12 @@ impl McpServer {
                 }))
             }
             "sentris_team_blast_radius" => {
-                let creds = crate::cloud::Credentials::load_default().unwrap_or_else(|_| {
-                    crate::cloud::Credentials {
-                        api_key: "sp_preview_token".to_string(),
-                        server_url: "https://api.sentris.dev".to_string(),
-                        org_id: "org_sample_team".to_string(),
-                        org_name: "Sentris Pro Workspace".to_string(),
-                        tier: "Pro ($8/seat)".to_string(),
-                        seat_limit: 20,
-                        seats_used: 14,
-                        user_email: "dev@sentris.dev".to_string(),
-                        expires_at: None,
-                        team_secret: None,
-                    }
-                });
+                let creds = crate::cloud::Credentials::load_default().map_err(|_| {
+                    (
+                        -32001,
+                        "Not logged in: run `sentris auth login --token <KEY>` first".to_string(),
+                    )
+                })?;
                 let team = crate::cloud::TeamInfo::from_credentials(&creds);
                 let payload = json!({
                     "org_id": team.org_id,
