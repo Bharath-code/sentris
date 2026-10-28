@@ -242,13 +242,30 @@ impl Remediator {
                 env_var_name,
             )?
         } else {
-            let accessor = CodeReplacer::get_env_accessor(&finding.file_path, env_var_name);
-            (
-                "const key = '...'".to_string(),
-                format!("const key = {accessor}"),
-            )
+            let orig = std::fs::read_to_string(&finding.file_path)
+                .ok()
+                .and_then(|c| {
+                    c.lines()
+                        .nth(finding.line_number.saturating_sub(1))
+                        .map(|s| s.to_string())
+                })
+                .unwrap_or_else(|| format!("const secret = \"{raw_secret}\";"));
+            let repl = CodeReplacer::replace_secret_in_line(
+                &finding.file_path,
+                &orig,
+                raw_secret,
+                env_var_name,
+            );
+            (orig, repl)
         };
         println!("{}", "PATCHED".green());
+        let masked_orig = original_line.replace(raw_secret, &Finding::mask_secret(raw_secret));
+        println!("        {} {}", "-".red().bold(), masked_orig.trim().red());
+        println!(
+            "        {} {}",
+            "+".green().bold(),
+            replacement_line.trim().green()
+        );
 
         // Step 6: Dual-Key Graceful Deprecation (Zero Prod Downtime)
         print!("  [6/7] ⏳ Queuing old credential for safe deprecation... ");

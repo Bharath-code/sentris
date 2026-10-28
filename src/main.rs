@@ -893,7 +893,11 @@ fn main() {
             }
         },
 
-        Commands::Audit { ledger, verify } => {
+        Commands::Audit {
+            ledger,
+            verify,
+            export_vanta,
+        } => {
             let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
             let audit_ledger = match AuditLedger::load_or_init(&ledger) {
                 Ok(l) => l,
@@ -983,6 +987,25 @@ fn main() {
                         "   • [#{}] {:?} (Hash: {hash_prefix}...)",
                         record.index, record.action,
                     );
+                }
+            }
+
+            if let Some(vanta_path) = export_vanta {
+                match audit_ledger.export_vanta_evidence_pack(&vanta_path) {
+                    Ok(()) => {
+                        println!(
+                            "\n   ✔ Exported 1-Click Vanta/Drata SOC 2 Evidence Pack: {}",
+                            vanta_path.display()
+                        );
+                    }
+                    Err(err) => {
+                        eprintln!(
+                            "ERROR: Failed to export Vanta compliance pack to {}: {}",
+                            vanta_path.display(),
+                            err
+                        );
+                        process::exit(1);
+                    }
                 }
             }
             println!();

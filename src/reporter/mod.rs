@@ -193,14 +193,28 @@ impl Reporter {
         }
 
         if !quiet {
+            let first_target = report
+                .findings
+                .first()
+                .map(|f| f.file_path.as_str())
+                .unwrap_or(".");
             if no_color {
                 println!("Tip: Run 'sentris remediate' to safely rotate live credentials with zero downtime.");
+                println!("     Quick fix: sentris remediate {first_target}  |  Interactive TUI: sentris review");
             } else {
                 println!(
                     "{}",
                     "Tip: Run 'sentris remediate' to safely rotate live credentials with zero downtime."
                         .italic()
                         .dimmed()
+                );
+                println!(
+                    "     {} {}  {}  {} {}",
+                    "Quick fix:".dimmed(),
+                    format!("sentris remediate {first_target}").cyan().bold(),
+                    "│".dimmed(),
+                    "Interactive TUI:".dimmed(),
+                    "sentris review".cyan().bold()
                 );
             }
             println!();

@@ -322,6 +322,73 @@ impl AuditLedger {
         fs::write(&self.file_path, serialized)?;
         Ok(())
     }
+
+    /// Exports a 1-Click Vanta / Drata SOC 2 Type II (CC6.1, CC6.7, CC6.8) & ISO 27001 (A.8.24)
+    /// cryptographic compliance evidence JSON bundle.
+    pub fn export_vanta_evidence_pack<P: AsRef<Path>>(
+        &self,
+        output_path: P,
+    ) -> Result<(), SentrisError> {
+        let chain_valid = self.verify_integrity()?;
+        let head_hash = self
+            .records
+            .last()
+            .map(|r| r.entry_hash.clone())
+            .unwrap_or_else(|| GENESIS_PREVIOUS_HASH.to_string());
+        let head_hmac = self
+            .records
+            .last()
+            .map(|r| r.hmac_signature.clone())
+            .unwrap_or_default();
+
+        let mut scans_completed = 0usize;
+        let mut secrets_remediated = 0usize;
+        let mut baselines_recorded = 0usize;
+        let mut quarantines_created = 0usize;
+
+        for r in &self.records {
+            match &r.action {
+                AuditAction::ScanCompleted { .. } => scans_completed += 1,
+                AuditAction::SecretRemediated { .. } => secrets_remediated += 1,
+                AuditAction::BaselineRecorded { .. } => baselines_recorded += 1,
+                AuditAction::QuarantineCreated { .. } => quarantines_created += 1,
+            }
+        }
+
+        let pack = serde_json::json!({
+            "schema": "sentris.vanta.drata.compliance.v1",
+            "framework_mappings": [
+                "SOC2_CC6.1_Logical_Access_Security",
+                "SOC2_CC6.7_Zero_Knowledge_Data_Transmission",
+                "SOC2_CC6.8_Autonomous_Credential_Remediation",
+                "ISO27001_A.8.24_Use_Of_Cryptography"
+            ],
+            "cryptographic_proof": {
+                "algorithm": "HMAC-SHA256 (RFC 2104) + SHA-256 Hash Chain",
+                "chain_integrity": if chain_valid { "PASS" } else { "FAIL" },
+                "genesis_hash": GENESIS_PREVIOUS_HASH,
+                "chain_head_hash": head_hash,
+                "chain_head_hmac": head_hmac,
+                "total_verified_records": self.records.len()
+            },
+            "summary_metrics": {
+                "scans_completed": scans_completed,
+                "secrets_remediated": secrets_remediated,
+                "baselines_recorded": baselines_recorded,
+                "quarantines_created": quarantines_created
+            },
+            "records": self.records
+        });
+
+        let out_ref = output_path.as_ref();
+        if let Some(parent) = out_ref.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                fs::create_dir_all(parent)?;
+            }
+        }
+        fs::write(out_ref, serde_json::to_string_pretty(&pack)?)?;
+        Ok(())
+    }
 }
 
 #[cfg(test)]

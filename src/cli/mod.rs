@@ -162,6 +162,10 @@ pub enum Commands {
         /// Verify integrity of the cryptographic hash chain
         #[arg(long, default_value_t = true)]
         verify: bool,
+
+        /// Export 1-Click Vanta / Drata SOC 2 Type II (CC6.1, CC6.7, CC6.8) compliance evidence JSON pack
+        #[arg(long)]
+        export_vanta: Option<PathBuf>,
     },
 
     /// Migrate existing .gitleaks.toml configuration into native .sentris.toml
