@@ -151,6 +151,49 @@ impl CodeReplacer {
         let target_line = &lines[line_number - 1];
         let original_line = target_line.clone();
 
+        // Check if this line begins a multi-line PEM private key block (`-----BEGIN ... KEY-----`)
+        if let Some((start_ln, end_ln, _)) =
+            crate::detector::DetectorEngine::extract_multiline_pem_block(&content, line_number)
+        {
+            let accessor = Self::get_env_accessor(file_path, var_name);
+            let start_idx = start_ln - 1;
+            let end_idx = end_ln - 1;
+            let first = &lines[start_idx];
+            let last = &lines[end_idx];
+
+            let prefix = if let Some(begin_pos) = first.find("-----BEGIN ") {
+                first[..begin_pos]
+                    .trim_end_matches(['"', '\'', '`'])
+                    .to_string()
+            } else {
+                String::new()
+            };
+
+            let suffix = if let Some(end_pos) = last.rfind("-----") {
+                last[end_pos + 5..]
+                    .trim_start_matches(['"', '\'', '`'])
+                    .to_string()
+            } else {
+                String::new()
+            };
+
+            let replacement_line = format!("{prefix}{accessor}{suffix}");
+            lines.splice(
+                start_idx..=end_idx,
+                std::iter::once(replacement_line.clone()),
+            );
+
+            let trailing_newline = if content.ends_with("\r\n") {
+                "\r\n"
+            } else if content.ends_with('\n') {
+                "\n"
+            } else {
+                ""
+            };
+            fs::write(path, format!("{}{}", lines.join("\n"), trailing_newline))?;
+            return Ok((original_line, replacement_line));
+        }
+
         let replacement_line =
             Self::replace_secret_in_line(file_path, target_line, secret, var_name);
 
@@ -764,5 +807,43 @@ mod tests {
 
         let res_oob = CodeReplacer::replace_secret(path, 999, "sec", "VAR");
         assert!(res_oob.is_err());
+    }
+
+    #[test]
+    fn test_multiline_pem_block_replacement() {
+        let dir = tempfile::tempdir().unwrap();
+        let ts_path = dir.path().join("jwt_signer.ts");
+        let pem_code = concat!(
+            "const header = 1;\n",
+            "const privateKey = `-----BEGIN RSA PRIVATE KEY-----\n",
+            "MIIEpAIBAAKCAQEA1234567890abcdef\n",
+            "9876543210fedcbaMIIEpAIBAAKCAQEA\n",
+            "-----END RSA PRIVATE KEY-----`;\n",
+            "export default privateKey;\n"
+        );
+        std::fs::write(&ts_path, pem_code).unwrap();
+
+        let extracted =
+            crate::detector::DetectorEngine::extract_multiline_pem_block(pem_code, 2).unwrap();
+        assert_eq!(extracted.0, 2);
+        assert_eq!(extracted.1, 5);
+        assert!(extracted
+            .2
+            .contains("-----BEGIN RSA PRIVATE KEY-----\\nMIIEp"));
+        assert!(extracted.2.ends_with("-----END RSA PRIVATE KEY-----"));
+
+        let (_, replaced) = CodeReplacer::replace_secret(
+            ts_path.to_str().unwrap(),
+            2,
+            &extracted.2,
+            "PRIVATE_KEY_PEM",
+        )
+        .unwrap();
+        assert_eq!(replaced, "const privateKey = process.env.PRIVATE_KEY_PEM;");
+
+        let updated = std::fs::read_to_string(&ts_path).unwrap();
+        assert!(updated.contains("const privateKey = process.env.PRIVATE_KEY_PEM;"));
+        assert!(!updated.contains("BEGIN RSA PRIVATE KEY"));
+        assert!(updated.contains("export default privateKey;"));
     }
 }

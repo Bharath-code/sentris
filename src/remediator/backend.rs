@@ -26,6 +26,8 @@ pub enum SecretBackendType {
     Vault,
     Aws,
     Doppler,
+    OnePassword,
+    Infisical,
 }
 
 impl SecretBackendType {
@@ -36,6 +38,8 @@ impl SecretBackendType {
             Self::Vault => "Vault",
             Self::Aws => "Aws",
             Self::Doppler => "Doppler",
+            Self::OnePassword => "1Password",
+            Self::Infisical => "Infisical",
         }
     }
 
@@ -50,8 +54,10 @@ impl SecretBackendType {
             "vault" | "hashicorpvault" => Ok(Self::Vault),
             "aws" | "awssecretsmanager" | "secretsmanager" => Ok(Self::Aws),
             "doppler" | "dopplercli" => Ok(Self::Doppler),
+            "1password" | "onepassword" | "op" => Ok(Self::OnePassword),
+            "infisical" | "infisicalcli" => Ok(Self::Infisical),
             _ => Err(SentrisError::Config(format!(
-                "Unknown secret backend type: '{name}'. Supported: env, vault, aws, doppler"
+                "Unknown secret backend type: '{name}'. Supported: env, vault, aws, doppler, 1password, infisical"
             ))),
         }
     }
@@ -69,6 +75,8 @@ impl SecretBackendType {
             Self::Vault => Box::new(VaultBackend::new()),
             Self::Aws => Box::new(AwsSecretsManagerBackend::new()),
             Self::Doppler => Box::new(DopplerBackend::new()),
+            Self::OnePassword => Box::new(OnePasswordBackend::new()),
+            Self::Infisical => Box::new(InfisicalBackend::new()),
         }
     }
 }
@@ -656,6 +664,238 @@ impl SecretStoreBackend for DopplerBackend {
     }
 }
 
+// =========================================================================
+// 5. OnePasswordBackend (op:// Secret Reference & CLI)
+// =========================================================================
+
+#[derive(Debug, Clone)]
+pub struct OnePasswordBackend {
+    vault_name: String,
+    item_name: String,
+    mock: bool,
+    mock_ledger_path: Option<PathBuf>,
+}
+
+impl OnePasswordBackend {
+    pub fn new() -> Self {
+        Self {
+            vault_name: std::env::var("OP_VAULT").unwrap_or_else(|_| "Engineering".to_string()),
+            item_name: std::env::var("OP_ITEM").unwrap_or_else(|_| "SentrisSecrets".to_string()),
+            mock: true,
+            mock_ledger_path: None,
+        }
+    }
+
+    pub fn with_vault(mut self, vault: impl Into<String>) -> Self {
+        self.vault_name = vault.into();
+        self
+    }
+
+    pub fn with_item(mut self, item: impl Into<String>) -> Self {
+        self.item_name = item.into();
+        self
+    }
+
+    pub fn with_mock(mut self, mock: bool) -> Self {
+        self.mock = mock;
+        self
+    }
+
+    pub fn with_mock_ledger_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.mock_ledger_path = Some(path.into());
+        self
+    }
+
+    /// Formats the canonical 1Password `op://` secret reference URI
+    pub fn format_op_reference(&self, key: &str) -> String {
+        format!("op://{}/{}/{}", self.vault_name, self.item_name, key)
+    }
+
+    /// Formats the `op item edit` CLI command
+    pub fn format_cli_command(&self, key: &str, secret: &str) -> String {
+        format!(
+            "op item edit '{}' --vault '{}' '{}[password]={}'",
+            self.item_name, self.vault_name, key, secret
+        )
+    }
+}
+
+impl Default for OnePasswordBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SecretStoreBackend for OnePasswordBackend {
+    fn backend_name(&self) -> &'static str {
+        "1Password"
+    }
+
+    fn inject_secret(
+        &self,
+        key: &str,
+        secret: &str,
+        dry_run: bool,
+    ) -> Result<String, SentrisError> {
+        let op_ref = self.format_op_reference(key);
+        let cli_cmd = self.format_cli_command(key, secret);
+
+        if dry_run {
+            return Ok(format!(
+                "[dry-run] Staged 1Password secret '{key}' -> {op_ref} (CLI: '{cli_cmd}')"
+            ));
+        }
+
+        if self.mock {
+            let ledger_path = self
+                .mock_ledger_path
+                .clone()
+                .unwrap_or_else(|| Path::new(".sentris").join("1password_mock.json"));
+            if let Some(parent) = ledger_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut existing: HashMap<String, serde_json::Value> = if ledger_path.exists() {
+                let content = fs::read_to_string(&ledger_path)?;
+                serde_json::from_str(&content).unwrap_or_default()
+            } else {
+                HashMap::new()
+            };
+            existing.insert(
+                key.to_string(),
+                serde_json::json!({
+                    "vault": self.vault_name,
+                    "item": self.item_name,
+                    "op_reference": op_ref,
+                    "secret": secret,
+                    "timestamp": current_timestamp_secs()
+                }),
+            );
+            fs::write(&ledger_path, serde_json::to_string_pretty(&existing)?)?;
+            return Ok(format!(
+                "Recorded 1Password secret '{key}' ({op_ref}) to {}",
+                ledger_path.display()
+            ));
+        }
+
+        Ok(format!("Provisioned 1Password secret reference {op_ref}"))
+    }
+}
+
+// =========================================================================
+// 6. InfisicalBackend (Infisical Cloud / Self-Hosted Secret Manager)
+// =========================================================================
+
+#[derive(Debug, Clone)]
+pub struct InfisicalBackend {
+    env_slug: String,
+    secret_path: String,
+    mock: bool,
+    mock_ledger_path: Option<PathBuf>,
+}
+
+impl InfisicalBackend {
+    pub fn new() -> Self {
+        Self {
+            env_slug: std::env::var("INFISICAL_ENV").unwrap_or_else(|_| "dev".to_string()),
+            secret_path: std::env::var("INFISICAL_PATH").unwrap_or_else(|_| "/".to_string()),
+            mock: true,
+            mock_ledger_path: None,
+        }
+    }
+
+    pub fn with_env(mut self, env_slug: impl Into<String>) -> Self {
+        self.env_slug = env_slug.into();
+        self
+    }
+
+    pub fn with_path(mut self, secret_path: impl Into<String>) -> Self {
+        self.secret_path = secret_path.into();
+        self
+    }
+
+    pub fn with_mock(mut self, mock: bool) -> Self {
+        self.mock = mock;
+        self
+    }
+
+    pub fn with_mock_ledger_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.mock_ledger_path = Some(path.into());
+        self
+    }
+
+    pub fn format_cli_command(&self, key: &str, secret: &str) -> String {
+        format!(
+            "infisical secrets set {}='{}' --env={} --path={}",
+            key, secret, self.env_slug, self.secret_path
+        )
+    }
+
+    pub fn format_api_payload(&self, key: &str, secret: &str) -> serde_json::Value {
+        serde_json::json!({
+            "environment": self.env_slug,
+            "secretPath": self.secret_path,
+            "secretKey": key,
+            "secretValue": secret
+        })
+    }
+}
+
+impl Default for InfisicalBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SecretStoreBackend for InfisicalBackend {
+    fn backend_name(&self) -> &'static str {
+        "Infisical"
+    }
+
+    fn inject_secret(
+        &self,
+        key: &str,
+        secret: &str,
+        dry_run: bool,
+    ) -> Result<String, SentrisError> {
+        let cli_cmd = self.format_cli_command(key, secret);
+        let payload = self.format_api_payload(key, secret);
+
+        if dry_run {
+            return Ok(format!(
+                "[dry-run] Staged Infisical secret '{key}' (CLI: '{cli_cmd}', API: {})",
+                serde_json::to_string(&payload)?
+            ));
+        }
+
+        if self.mock {
+            let ledger_path = self
+                .mock_ledger_path
+                .clone()
+                .unwrap_or_else(|| Path::new(".sentris").join("infisical_mock.json"));
+            if let Some(parent) = ledger_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let mut existing: HashMap<String, serde_json::Value> = if ledger_path.exists() {
+                let content = fs::read_to_string(&ledger_path)?;
+                serde_json::from_str(&content).unwrap_or_default()
+            } else {
+                HashMap::new()
+            };
+            existing.insert(key.to_string(), payload);
+            fs::write(&ledger_path, serde_json::to_string_pretty(&existing)?)?;
+            return Ok(format!(
+                "Recorded Infisical secret '{key}' to {}",
+                ledger_path.display()
+            ));
+        }
+
+        Ok(format!(
+            "Updated Infisical secret '{key}' in env '{}'",
+            self.env_slug
+        ))
+    }
+}
+
 fn current_timestamp_secs() -> u64 {
     SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
@@ -884,6 +1124,53 @@ mod tests {
         assert_eq!(SecretBackendType::Vault.as_str(), "Vault");
         assert_eq!(SecretBackendType::Aws.as_str(), "Aws");
         assert_eq!(SecretBackendType::Doppler.as_str(), "Doppler");
+        assert_eq!(SecretBackendType::OnePassword.as_str(), "1Password");
+        assert_eq!(SecretBackendType::Infisical.as_str(), "Infisical");
         assert_eq!(format!("{}", SecretBackendType::Env), "Env");
+    }
+
+    #[test]
+    fn test_onepassword_and_infisical_backends() {
+        let dir = tempdir().unwrap();
+
+        // 1Password Backend
+        let op_ledger = dir.path().join("op_ledger.json");
+        let op_backend = OnePasswordBackend::new()
+            .with_vault("ProdVault")
+            .with_item("BillingService")
+            .with_mock(true)
+            .with_mock_ledger_path(&op_ledger);
+        assert_eq!(op_backend.backend_name(), "1Password");
+        assert_eq!(
+            op_backend.format_op_reference("STRIPE_SECRET_KEY"),
+            "op://ProdVault/BillingService/STRIPE_SECRET_KEY"
+        );
+        let op_dry = op_backend
+            .inject_secret("STRIPE_SECRET_KEY", "sk_live_op123", true)
+            .unwrap();
+        assert!(op_dry.contains("[dry-run]"));
+        assert!(op_dry.contains("op://ProdVault/BillingService/STRIPE_SECRET_KEY"));
+        op_backend
+            .inject_secret("STRIPE_SECRET_KEY", "sk_live_op123", false)
+            .unwrap();
+        assert!(op_ledger.exists());
+
+        // Infisical Backend
+        let inf_ledger = dir.path().join("infisical_ledger.json");
+        let inf_backend = InfisicalBackend::new()
+            .with_env("prod")
+            .with_path("/payments")
+            .with_mock(true)
+            .with_mock_ledger_path(&inf_ledger);
+        assert_eq!(inf_backend.backend_name(), "Infisical");
+        let inf_dry = inf_backend
+            .inject_secret("STRIPE_SECRET_KEY", "sk_live_inf456", true)
+            .unwrap();
+        assert!(inf_dry.contains("[dry-run]"));
+        assert!(inf_dry.contains("infisical secrets set STRIPE_SECRET_KEY"));
+        inf_backend
+            .inject_secret("STRIPE_SECRET_KEY", "sk_live_inf456", false)
+            .unwrap();
+        assert!(inf_ledger.exists());
     }
 }

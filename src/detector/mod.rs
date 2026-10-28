@@ -5,7 +5,7 @@ pub mod patterns;
 
 use crate::error::SentrisError;
 use crate::model::{Finding, Severity};
-use regex::{Regex, RegexSet};
+use regex::{Regex, RegexSet, RegexSetBuilder};
 use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
@@ -58,7 +58,9 @@ impl DetectorEngine {
             }
         }
 
-        let regex_set = RegexSet::new(&pattern_strings)?;
+        let regex_set = RegexSetBuilder::new(&pattern_strings)
+            .multi_line(true)
+            .build()?;
 
         Ok(Self {
             rules: compiled,
@@ -80,6 +82,51 @@ impl DetectorEngine {
             }
         }
         None
+    }
+
+    /// Extracts a multi-line PEM / private key block starting at `start_line_number` (1-indexed),
+    /// returning `(start_line_number, end_line_number, escaped_single_line_pem_for_env)`.
+    pub fn extract_multiline_pem_block(
+        content: &str,
+        start_line_number: usize,
+    ) -> Option<(usize, usize, String)> {
+        let lines: Vec<&str> = content.lines().collect();
+        if start_line_number == 0 || start_line_number > lines.len() {
+            return None;
+        }
+        let start_idx = start_line_number - 1;
+        let first_line = lines[start_idx];
+        let begin_pos = first_line.find("-----BEGIN ")?;
+
+        let mut pem_lines = Vec::new();
+        let mut end_idx = None;
+
+        for (offset, &line) in lines[start_idx..].iter().enumerate() {
+            let segment = if offset == 0 {
+                &line[begin_pos..]
+            } else {
+                line.trim()
+            };
+            if let Some(end_marker_idx) = segment.find("-----END ") {
+                if let Some(close_dashes) = segment[end_marker_idx + 9..].find("-----") {
+                    let end_slice = &segment[..end_marker_idx + 9 + close_dashes + 5];
+                    pem_lines.push(end_slice.trim());
+                } else {
+                    pem_lines.push(segment.trim());
+                }
+                end_idx = Some(start_idx + offset);
+                break;
+            } else {
+                pem_lines.push(segment.trim_end_matches(['"', '\'', '`', ';', ',']));
+            }
+        }
+
+        let final_idx = end_idx?;
+        if final_idx > start_idx {
+            Some((start_line_number, final_idx + 1, pem_lines.join("\\n")))
+        } else {
+            None
+        }
     }
 
     /// Scans a single line of text with custom line number and optional commit hash
@@ -185,6 +232,11 @@ impl DetectorEngine {
 
     /// Scans a text file's contents line-by-line, returning all detected findings.
     pub fn scan_text(&self, content: &str, file_path: &str) -> Vec<Finding> {
+        // Whole-file DFA prefilter: skip clean files in a single pass before line splitting
+        if !self.regex_set.is_match(content) {
+            return Vec::new();
+        }
+
         let mut findings = Vec::new();
 
         for (line_idx, line) in content.lines().enumerate() {
@@ -367,5 +419,18 @@ mod tests {
         let sb_findings = engine.scan_text(supabase_line, ".env");
         assert_eq!(sb_findings.len(), 1);
         assert_eq!(sb_findings[0].rule_id, "supabase-access-token");
+
+        let jwt_secret_line = concat!(
+            "const JWT_SECRET = \"",
+            "k9L2mP8qR4vW7xZ1bN5jC3dF6hT0sU8yA2cB9xQ4wE",
+            "\";\n"
+        );
+        let struct_findings = engine.scan_text(jwt_secret_line, "src/auth.ts");
+        assert_eq!(struct_findings.len(), 1);
+        assert_eq!(struct_findings[0].rule_id, "structural-secret-assignment");
+        assert_eq!(
+            engine.extract_raw_secret(jwt_secret_line, "structural-secret-assignment"),
+            Some("k9L2mP8qR4vW7xZ1bN5jC3dF6hT0sU8yA2cB9xQ4wE".to_string())
+        );
     }
 }

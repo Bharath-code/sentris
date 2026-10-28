@@ -194,6 +194,27 @@ impl McpServer {
                             }
                         }
                     }
+                },
+                {
+                    "name": "sentris_rollback_session",
+                    "description": "Atomically revert a previous remediation session and restore the original file line byte-for-byte.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "session_id": {
+                                "type": "string",
+                                "description": "Optional session ID (e.g. rm_a1b2c3d4). Defaults to the most recent session."
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "sentris_team_blast_radius",
+                    "description": "Query the Zero-Knowledge Multi-Repo Blast Radius Insight table correlating duplicate salted HMAC-SHA256 secrets across repositories with 0 bytes of source code ingested.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
                 }
             ]
         })
@@ -380,6 +401,75 @@ impl McpServer {
                     "isError": !valid
                 }))
             }
+            "sentris_rollback_session" => {
+                let mut ledger = crate::remediator::rollback::RollbackLedger::load()
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let target_session = args
+                    .get("session_id")
+                    .and_then(|v| v.as_str())
+                    .map(|s| s.to_string())
+                    .or_else(|| ledger.transactions.last().map(|t| t.session_id.clone()));
+
+                let Some(sess_id) = target_session else {
+                    return Ok(json!({
+                        "content": [{
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&json!({
+                                "status": "no_sessions",
+                                "message": "No remediation sessions recorded in rollback ledger."
+                            })).unwrap_or_default()
+                        }],
+                        "isError": false
+                    }));
+                };
+
+                let msg = ledger
+                    .revert(&sess_id)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let payload = json!({
+                    "status": "rolled_back",
+                    "session_id": sess_id,
+                    "message": msg,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
+            "sentris_team_blast_radius" => {
+                let creds = crate::cloud::Credentials::load_default().unwrap_or_else(|_| {
+                    crate::cloud::Credentials {
+                        api_key: "sp_preview_token".to_string(),
+                        server_url: "https://api.sentris.dev".to_string(),
+                        org_id: "org_sample_team".to_string(),
+                        org_name: "Sentris Pro Workspace".to_string(),
+                        tier: "Pro ($8/seat)".to_string(),
+                        seat_limit: 20,
+                        seats_used: 14,
+                        user_email: "dev@sentris.dev".to_string(),
+                        expires_at: None,
+                    }
+                });
+                let team = crate::cloud::TeamInfo::from_credentials(&creds);
+                let payload = json!({
+                    "org_id": team.org_id,
+                    "org_name": team.org_name,
+                    "zero_knowledge_bytes_ingested": 0,
+                    "blast_radius_insights": team.blast_radius_insights,
+                });
+
+                Ok(json!({
+                    "content": [{
+                        "type": "text",
+                        "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+                    }],
+                    "isError": false
+                }))
+            }
             other => Err((-32601, format!("Unknown tool: {other}"))),
         }
     }
@@ -404,7 +494,24 @@ mod tests {
             .as_array()
             .unwrap()
             .clone();
-        assert_eq!(tools.len(), 4);
+        assert_eq!(tools.len(), 6);
+
+        let br_req = r#"{
+            "jsonrpc": "2.0",
+            "id": 20,
+            "method": "tools/call",
+            "params": {
+                "name": "sentris_team_blast_radius",
+                "arguments": {}
+            }
+        }"#;
+        let br_resp = McpServer::handle_raw_message(br_req, true).expect("Expected response");
+        let br_text = br_resp.result.unwrap()["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(br_text.contains("postgres-connection-uri"));
+        assert!(br_text.contains("zero_knowledge_bytes_ingested"));
     }
 
     #[test]

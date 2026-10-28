@@ -374,6 +374,14 @@ pub fn get_rules() -> Vec<Rule> {
             min_entropy: 4.2,
         },
         Rule {
+            rule_id: "structural-secret-assignment",
+            name: "High-Entropy Structural Secret Assignment",
+            description: "Identifies high-entropy custom signing, encryption, JWT, master, or webhook secrets in variable assignments",
+            severity: Severity::High,
+            pattern: r#"(?i)(?:signing_key|encryption_key|master_key|webhook_secret|jwt_secret|client_secret|auth_secret|session_secret|private_token)\s*[:=]\s*['"]([a-zA-Z0-9+/=_-]{32,128})['"]"#,
+            min_entropy: 4.3,
+        },
+        Rule {
             rule_id: "datadog-api-key",
             name: "Datadog API Key",
             description: "Identifies Datadog Agent and API keys",

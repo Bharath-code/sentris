@@ -225,6 +225,9 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         print_config: bool,
     },
+
+    /// Start Language Server Protocol (LSP 3.17) server over stdio for real-time IDE diagnostics and Quick Fix code actions
+    Lsp,
 }
 
 #[derive(Subcommand, Debug)]

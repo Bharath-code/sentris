@@ -5,6 +5,7 @@ pub mod config;
 pub mod detector;
 pub mod error;
 pub mod git;
+pub mod lsp;
 pub mod mcp;
 pub mod model;
 pub mod remediator;

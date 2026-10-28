@@ -267,7 +267,69 @@ fi
         }
     }
 
+    /// Scans only added lines (`+`) in staged diff hunks (`git diff --cached -U0`) with exact line numbers
+    pub fn scan_staged_diff_hunks(
+        detector: &crate::detector::DetectorEngine,
+    ) -> Result<(Vec<crate::model::Finding>, usize, u64), SentrisError> {
+        let output = Command::new("git")
+            .args(["diff", "--cached", "-U0", "--diff-filter=ACM"])
+            .output()
+            .map_err(|e| SentrisError::Scan(format!("Failed to execute git diff --cached: {e}")))?;
+
+        if !output.status.success() {
+            return Err(SentrisError::Scan("Git index diff failed".to_string()));
+        }
+
+        let diff_text = String::from_utf8_lossy(&output.stdout);
+        Ok(Self::parse_staged_diff_hunks(detector, &diff_text))
+    }
+
+    /// Parses unified diff hunks (`-U0`) and scans only added lines (`+`) with exact staged line numbers
+    pub fn parse_staged_diff_hunks(
+        detector: &crate::detector::DetectorEngine,
+        diff_text: &str,
+    ) -> (Vec<crate::model::Finding>, usize, u64) {
+        let mut findings = Vec::new();
+        let mut current_file: Option<String> = None;
+        let mut current_line: usize = 0;
+        let mut files_scanned: usize = 0;
+        let mut total_bytes: u64 = 0;
+
+        for line in diff_text.lines() {
+            if line.starts_with("diff --git ") {
+                if let Some(pos) = line.rfind(" b/") {
+                    current_file = Some(line[pos + 3..].trim().to_string());
+                    files_scanned += 1;
+                }
+                current_line = 0;
+            } else if line.starts_with("@@ ") {
+                if let Some(plus_idx) = line.find('+') {
+                    let rest = &line[plus_idx + 1..];
+                    let num_str: String = rest.chars().take_while(|c| c.is_ascii_digit()).collect();
+                    if let Ok(n) = num_str.parse::<usize>() {
+                        current_line = n;
+                    }
+                }
+            } else if line.starts_with('+') && !line.starts_with("+++") {
+                let content = &line[1..];
+                total_bytes += content.len() as u64;
+                let line_num = if current_line > 0 { current_line } else { 1 };
+                let file_path = current_file.as_deref().unwrap_or("unknown");
+
+                let hits = detector.scan_single_line(content, file_path, line_num, None);
+                findings.extend(hits);
+
+                current_line += 1;
+            } else if line.starts_with(' ') {
+                current_line += 1;
+            }
+        }
+
+        (findings, files_scanned, total_bytes)
+    }
+
     /// Fetches all staged file paths and their staged contents from the git index
+    #[allow(dead_code)]
     pub fn get_staged_files() -> Result<Vec<(String, String)>, SentrisError> {
         // Get list of staged files
         let output = Command::new("git")
@@ -346,5 +408,28 @@ mod tests {
         assert!(root.is_ok());
         let path = root.unwrap();
         assert!(path.join(".git").exists());
+    }
+
+    #[test]
+    fn test_parse_staged_diff_hunks_exact_line_numbers() {
+        let detector = crate::detector::DetectorEngine::new().unwrap();
+        let diff = concat!(
+            "diff --git a/src/payments.ts b/src/payments.ts\n",
+            "index 1111111..2222222 100644\n",
+            "--- a/src/payments.ts\n",
+            "+++ b/src/payments.ts\n",
+            "@@ -40,0 +42,2 @@\n",
+            "+const safeLine = 1;\n",
+            "+const stripe = \"",
+            "sk_live_",
+            "51AbcDefGhIjKlMnOpQrStUvWxYz123456\";\n"
+        );
+        let (findings, files_scanned, bytes) = GitManager::parse_staged_diff_hunks(&detector, diff);
+        assert_eq!(files_scanned, 1);
+        assert!(bytes > 0);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].file_path, "src/payments.ts");
+        assert_eq!(findings[0].line_number, 43);
+        assert_eq!(findings[0].rule_id, "stripe-secret-key");
     }
 }

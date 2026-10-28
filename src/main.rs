@@ -5,6 +5,7 @@ mod config;
 mod detector;
 mod error;
 mod git;
+pub mod lsp;
 pub mod mcp;
 mod model;
 mod remediator;
@@ -658,9 +659,14 @@ fn main() {
                 }
 
                 let target_line = lines[finding.line_number - 1];
-                // Extract the exact raw secret token using the detector rule's capture group
-                let mut raw_secret_owned = scanner
-                    .extract_raw_secret(target_line, &finding.rule_id)
+                // Extract the exact raw secret token (supporting multi-line PEM blocks or single-line capture groups)
+                let mut raw_secret_owned =
+                    crate::detector::DetectorEngine::extract_multiline_pem_block(
+                        &content,
+                        finding.line_number,
+                    )
+                    .map(|(_, _, pem)| pem)
+                    .or_else(|| scanner.extract_raw_secret(target_line, &finding.rule_id))
                     .unwrap_or_else(|| {
                         target_line
                             .split(&['"', '\'', '`'][..])
@@ -1502,6 +1508,13 @@ fn main() {
             }
             if let Err(err) = crate::mcp::McpServer::run_stdio_loop(cli.offline) {
                 eprintln!("{} MCP server error: {}", "ERROR:".red().bold(), err);
+                process::exit(1);
+            }
+        }
+
+        Commands::Lsp => {
+            if let Err(err) = crate::lsp::LspServer::run_stdio_loop() {
+                eprintln!("{} LSP server error: {}", "ERROR:".red().bold(), err);
                 process::exit(1);
             }
         }

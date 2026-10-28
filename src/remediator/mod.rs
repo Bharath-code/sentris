@@ -90,6 +90,12 @@ impl Remediator {
             "linear-api-key" => "LINEAR_API_KEY",
             "planetscale-token" => "PLANETSCALE_TOKEN",
             "posthog-api-key" => "POSTHOG_API_KEY",
+            "structural-secret-assignment" => "APP_SECRET_KEY",
+            "rsa-private-key"
+            | "openssh-private-key"
+            | "pgp-private-key"
+            | "ec-private-key"
+            | "generic-private-key" => "PRIVATE_KEY_PEM",
             _ => "API_SECRET_KEY",
         }
     }
