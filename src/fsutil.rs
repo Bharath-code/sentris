@@ -42,6 +42,23 @@ pub fn write_atomic(path: &Path, content: &str) -> Result<(), SentrisError> {
     result
 }
 
+/// Errors if `path` or its parent directory is a symlink (a hostile repo can plant one to redirect a write).
+pub fn reject_symlinks(path: &Path) -> Result<(), SentrisError> {
+    let is_link = |p: &Path| {
+        fs::symlink_metadata(p)
+            .map(|m| m.file_type().is_symlink())
+            .unwrap_or(false)
+    };
+    let parent = path.parent().filter(|p| !p.as_os_str().is_empty());
+    if is_link(path) || parent.is_some_and(is_link) {
+        return Err(SentrisError::Scan(format!(
+            "Refusing to use symlinked path: {}",
+            path.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Splits `s` into (text, line ending) for one `split_inclusive('\n')` segment.
 pub fn split_eol(seg: &str) -> (&str, &str) {
     if let Some(body) = seg.strip_suffix("\r\n") {
@@ -90,6 +107,19 @@ mod tests {
         std::os::unix::fs::symlink(&real, &link).unwrap();
         assert!(write_atomic(&link, "evil").is_err());
         assert_eq!(fs::read_to_string(&real).unwrap(), "keep");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reject_symlinks_flags_file_and_parent_links() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        fs::create_dir(&real).unwrap();
+        std::os::unix::fs::symlink(&real, dir.path().join("dirlink")).unwrap();
+        std::os::unix::fs::symlink(real.join("x"), real.join("filelink")).unwrap();
+        assert!(reject_symlinks(&dir.path().join("dirlink").join("ledger.json")).is_err());
+        assert!(reject_symlinks(&real.join("filelink")).is_err());
+        assert!(reject_symlinks(&real.join("ledger.json")).is_ok());
     }
 
     #[test]

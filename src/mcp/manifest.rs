@@ -133,7 +133,7 @@ impl McpServer {
                     "role": "user",
                     "content": {
                         "type": "text",
-                        "text": "Run `sentris scan . --json` (or call `sentris_scan_path`). For every finding with `context_kind == \"PRODUCTION\"`, run `sentris fix <file_path> --yes --json` (or call `sentris_remediate_finding`), then verify 0 remaining secrets with `sentris scan . --json`."
+                        "text": "Run `sentris scan . --json` (or call `sentris_scan_path`). For every finding with `context_kind == \"PRODUCTION\"`, run `sentris fix <file_path> --yes --json` (or call `sentris_remediate_finding`), then verify 0 remaining secrets with `sentris scan . --json`. MCP remediation is preview-only by default: call `sentris_remediate_finding` with dry_run=true, then (only if the server was started with SENTRIS_MCP_ALLOW_WRITES=1) repeat with dry_run=false and the returned confirm_token."
                     }
                 }]
             })),

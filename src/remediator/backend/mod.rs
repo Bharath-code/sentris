@@ -47,6 +47,7 @@ pub(crate) fn mock_requested() -> bool {
 
 /// Writes a file readable by the owner only (secrets live in these files).
 pub(crate) fn write_private(path: &Path, content: &str) -> Result<(), SentrisError> {
+    crate::fsutil::reject_symlinks(path)?;
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent)?;
     }

@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde_json::{json, Value};
 
@@ -6,6 +6,62 @@ use crate::audit::AuditLedger;
 use crate::mcp::McpServer;
 use crate::remediator::Remediator;
 use crate::scanner::Scanner;
+
+type ToolErr = (i32, String);
+
+/// Root every agent-supplied path must stay inside: `SENTRIS_WORKSPACE`, else the server's cwd.
+fn workspace() -> Result<PathBuf, ToolErr> {
+    let root = std::env::var_os("SENTRIS_WORKSPACE")
+        .map(PathBuf::from)
+        .map(Ok)
+        .unwrap_or_else(std::env::current_dir)
+        .map_err(|e| (-32603, e.to_string()))?;
+    root.canonicalize().map_err(|e| (-32603, e.to_string()))
+}
+
+/// Resolves `p` (symlinks included) and rejects anything outside the workspace.
+fn confine(p: &str) -> Result<PathBuf, ToolErr> {
+    confine_in(&workspace()?, p)
+}
+
+fn confine_in(root: &Path, p: &str) -> Result<PathBuf, ToolErr> {
+    let root = root.canonicalize().map_err(|e| (-32603, e.to_string()))?;
+    let resolved = root
+        .join(p)
+        .canonicalize()
+        .map_err(|e| (-32602, format!("Cannot access '{p}': {e}")))?;
+    if resolved.starts_with(&root) {
+        Ok(resolved)
+    } else {
+        Err((-32602, format!("Path '{p}' is outside the workspace")))
+    }
+}
+
+/// File-modifying tools stay off unless the human who launched the server opts in.
+fn require_writes() -> Result<(), ToolErr> {
+    let on = std::env::var("SENTRIS_MCP_ALLOW_WRITES")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+    if on {
+        Ok(())
+    } else {
+        Err((
+            -32001,
+            "Write tools are disabled. Preview with dry_run, then run `sentris fix` yourself, or start the MCP server with SENTRIS_MCP_ALLOW_WRITES=1".to_string(),
+        ))
+    }
+}
+
+/// Binds a real write to the exact finding that was previewed.
+fn confirm_token(f: &crate::model::Finding, backend: &str) -> Result<String, ToolErr> {
+    let msg = format!(
+        "{}|{}|{}|{backend}",
+        f.fingerprint, f.file_path, f.line_number
+    );
+    crate::keystore::mac_hex("mcp-confirm", msg.as_bytes())
+        .map(|m| m[..16].to_string())
+        .map_err(|e| (-32603, e.to_string()))
+}
 
 impl McpServer {
     /// Returns the MCP `tools/list` schema for AI coding agents.
@@ -47,13 +103,17 @@ impl McpServer {
                                 "type": "string",
                                 "description": "Secret backend: env, vault, aws, or doppler (default: env)"
                             },
+                            "confirm": {
+                                "type": "string",
+                                "description": "Required when dry_run=false: the confirm_token returned by a dry_run=true call for this exact finding. Writes also need SENTRIS_MCP_ALLOW_WRITES=1 on the server"
+                            },
                             "rotate": {
                                 "type": "boolean",
                                 "description": "If true, NOT SUPPORTED yet: returns an error. Leave false; revoke the old key at the provider after remediation"
                             },
                             "dry_run": {
                                 "type": "boolean",
-                                "description": "Preview remediation without modifying files (default: false)"
+                                "description": "Preview only, no files modified (default: true). Set false together with confirm to write"
                             }
                         },
                         "required": ["file_path"]
@@ -111,9 +171,10 @@ impl McpServer {
         match name {
             "sentris_scan_path" => {
                 let target_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let target = confine(target_path)?;
                 let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
                 let report = scanner
-                    .scan_path(Path::new(target_path))
+                    .scan_path(&target)
                     .map_err(|e| (-32603, e.to_string()))?;
 
                 let enriched_findings: Vec<Value> = report
@@ -184,14 +245,20 @@ impl McpServer {
                     .get("rotate")
                     .and_then(|v| v.as_bool())
                     .unwrap_or(false);
+                // Preview unless the caller explicitly asks for a write
                 let dry_run = args
                     .get("dry_run")
                     .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
+                    .unwrap_or(true);
+                let confirm = args.get("confirm").and_then(|v| v.as_str()).unwrap_or("");
+                if !dry_run {
+                    require_writes()?;
+                }
 
+                let target = confine(file_path)?;
                 let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
                 let report = scanner
-                    .scan_path(Path::new(file_path))
+                    .scan_path(&target)
                     .map_err(|e| (-32603, e.to_string()))?;
 
                 let finding = match report.findings.first() {
@@ -209,6 +276,14 @@ impl McpServer {
                         }));
                     }
                 };
+
+                let token = confirm_token(finding, backend)?;
+                if !dry_run && !crate::keystore::ct_eq(confirm, &token) {
+                    return Err((
+                        -32602,
+                        "Missing or stale 'confirm': run with dry_run=true first and pass its confirm_token".to_string(),
+                    ));
+                }
 
                 let content = std::fs::read_to_string(&finding.file_path)
                     .map_err(|e| (-32603, e.to_string()))?;
@@ -240,7 +315,8 @@ impl McpServer {
                         .map(|b| b.is_mock())
                         .unwrap_or(false);
                 let payload = json!({
-                    "status": "remediated",
+                    "status": if dry_run { "preview" } else { "remediated" },
+                    "confirm_token": if dry_run { Some(token.clone()) } else { None },
                     "session_id": session_id,
                     "file_path": finding.file_path,
                     "line_number": finding.line_number,
@@ -262,13 +338,15 @@ impl McpServer {
                 }))
             }
             "sentris_audit_verify" => {
-                let ledger_path = args
+                let requested = args
                     .get("ledger_path")
                     .and_then(|v| v.as_str())
                     .unwrap_or(".sentris/audit_ledger.json");
+                let ledger_path = confine(requested)?;
+                let ledger_path = ledger_path.to_string_lossy();
 
-                let ledger =
-                    AuditLedger::load_or_init(ledger_path).map_err(|e| (-32603, e.to_string()))?;
+                let ledger = AuditLedger::load_or_init(ledger_path.as_ref())
+                    .map_err(|e| (-32603, e.to_string()))?;
                 let valid = ledger.verify_integrity().unwrap_or(false);
 
                 let payload = json!({
@@ -286,6 +364,7 @@ impl McpServer {
                 }))
             }
             "sentris_rollback_session" => {
+                require_writes()?;
                 let mut ledger = crate::remediator::rollback::RollbackLedger::load()
                     .map_err(|e| (-32603, e.to_string()))?;
                 let target_session = args
@@ -357,5 +436,42 @@ impl McpServer {
             }
             other => Err((-32601, format!("Unknown tool: {other}"))),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn confine_rejects_escapes_and_outside_symlinks() {
+        let ws = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        std::fs::write(ws.path().join("ok.txt"), "x").unwrap();
+        std::fs::write(outside.path().join("secret.txt"), "x").unwrap();
+
+        assert!(confine_in(ws.path(), "ok.txt").is_ok());
+        assert!(confine_in(ws.path(), ".").is_ok());
+        assert!(confine_in(ws.path(), "/").is_err());
+        assert!(confine_in(ws.path(), "..").is_err());
+        assert!(confine_in(ws.path(), outside.path().to_str().unwrap()).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(outside.path(), ws.path().join("link")).unwrap();
+            assert!(confine_in(ws.path(), "link/secret.txt").is_err());
+        }
+    }
+
+    #[test]
+    fn real_remediation_without_opt_in_is_refused_and_file_unchanged() {
+        let ws = tempfile::tempdir().unwrap();
+        let f = ws.path().join("a.py");
+        let src = "k = \"sk_live_abcdefghijklmnopqrstuvwx\"\n";
+        std::fs::write(&f, src).unwrap();
+        let params = json!({"name":"sentris_remediate_finding","arguments":{
+            "file_path": f.to_str().unwrap(), "dry_run": false, "confirm": "x"}});
+        let err = McpServer::call_tool(Some(&params), true).unwrap_err();
+        assert!(err.1.contains("disabled") || err.1.contains("outside the workspace"));
+        assert_eq!(std::fs::read_to_string(&f).unwrap(), src);
     }
 }

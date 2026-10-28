@@ -42,6 +42,7 @@ impl RollbackLedger {
     }
 
     pub fn load_from(path: &Path) -> Result<Self, SentrisError> {
+        crate::fsutil::reject_symlinks(path)?;
         if !path.exists() {
             return Ok(Self::default());
         }
@@ -92,6 +93,7 @@ impl RollbackLedger {
                 ))
             })?;
         let entry = self.transactions[entry_idx].clone();
+        crate::fsutil::reject_symlinks(ledger_path)?;
 
         let workspace = workspace.canonicalize()?;
         let canonical = workspace
@@ -251,6 +253,20 @@ mod tests {
         )
         .unwrap();
         assert!(RollbackLedger::load_from(&ledger).is_err());
+
+        // A symlinked .sentris dir or ledger file is never followed
+        #[cfg(unix)]
+        {
+            let elsewhere = tempfile::tempdir().unwrap();
+            let victim = elsewhere.path().join("victim.txt");
+            fs::write(&victim, "precious").unwrap();
+            let link = ws.join("planted.json");
+            std::os::unix::fs::symlink(&victim, &link).unwrap();
+            let mut l = RollbackLedger::default();
+            assert!(l.save_to(&link).is_err());
+            assert!(RollbackLedger::load_from(&link).is_err());
+            assert_eq!(fs::read_to_string(&victim).unwrap(), "precious");
+        }
 
         // Even a validly signed entry outside the workspace is refused
         let outside = tempfile::tempdir().unwrap();
