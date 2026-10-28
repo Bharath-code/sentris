@@ -1,19 +1,44 @@
 {
-  "name": "sentris-pro-platform",
-  "version": "0.1.0",
+  "name": "sentris-web",
   "private": true,
-  "description": "Sentris Pro SaaS & Commercial Team Platform ($8/seat Pro Tier) with high-taste product design, Three.js 3D reactor & GSAP motion",
+  "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "vite dev --port 3000",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "npm run build && vite preview",
+    "deploy": "npm run build && wrangler deploy",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "cf-typegen": "wrangler types --strict-vars=false",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply sentris --local",
+    "db:migrate:remote": "wrangler d1 migrations apply sentris --remote"
   },
   "dependencies": {
-    "gsap": "^3.12.5",
-    "three": "^0.169.0",
-    "lucide": "^0.453.0"
+    "@fontsource-variable/geist": "^5.3.0",
+    "@fontsource-variable/geist-mono": "^5.3.0",
+    "@gsap/react": "^2.1.2",
+    "@tanstack/react-router": "^1.170.46",
+    "@tanstack/react-start": "^1.169.4",
+    "better-auth": "^1.7.14",
+    "dodopayments": "^2.59.0",
+    "drizzle-orm": "^0.45.4",
+    "gsap": "^3.15.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
-    "vite": "^5.4.9"
+    "@cloudflare/vite-plugin": "^1.66.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^26.6.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "drizzle-kit": "^0.31.11",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "wrangler": "^4.154.0"
   }
 }

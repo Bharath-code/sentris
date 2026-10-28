@@ -1,0 +1,20 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sentris-web",
+  "compatibility_date": "2026-10-27",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "@tanstack/react-start/server-entry",
+  "observability": { "enabled": true },
+  "upload_source_maps": true,
+  "assets": { "html_handling": "drop-trailing-slash" },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "sentris", "database_id": "33fe442a-0da2-42d8-a811-78c7c880dda0", "migrations_dir": "drizzle" }
+  ],
+  "vars": {
+    "APP_URL": "https://sentris-web.kumarbharath63.workers.dev",
+    "DODO_ENV": "test_mode",
+    "DODO_PRO_PRODUCT_ID": "pdt_REPLACE_ME",
+    // Beta only: lets free orgs sync. Set to "false" (or remove) to require Pro.
+    "BETA_FREE_SYNC": "true"
+  }
+}
