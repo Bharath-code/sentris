@@ -280,9 +280,14 @@ fn draw_finding_details(f: &mut Frame, app: &App, area: Rect) {
         let line_no_str = format!("{line_prefix}{current_line_no:4} │ ");
 
         if is_target {
+            let env_var = crate::remediator::Remediator::env_var_name_for_rule(&finding.rule_id);
+            let accessor = crate::remediator::code_replacer::CodeReplacer::get_env_accessor(
+                &finding.file_path,
+                env_var,
+            );
             code_spans.push(Line::from(vec![
                 Span::styled(
-                    line_no_str,
+                    format!("- {current_line_no:4} │ "),
                     Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
@@ -293,10 +298,25 @@ fn draw_finding_details(f: &mut Frame, app: &App, area: Rect) {
                         .add_modifier(Modifier::BOLD),
                 ),
             ]));
+            code_spans.push(Line::from(vec![
+                Span::styled(
+                    format!("+ {current_line_no:4} │ "),
+                    Style::default()
+                        .fg(Color::Green)
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!("  [Staged Patch -> {accessor}]"),
+                    Style::default()
+                        .fg(Color::Green)
+                        .bg(Color::Rgb(16, 48, 28))
+                        .add_modifier(Modifier::BOLD),
+                ),
+            ]));
         } else {
             code_spans.push(Line::from(vec![
                 Span::styled(line_no_str, Style::default().fg(Color::DarkGray)),
-                Span::styled(line_str, Style::default().fg(Color::Gray)),
+                Span::styled(line_str, Style::default().fg(Color::Cyan)),
             ]));
         }
     }

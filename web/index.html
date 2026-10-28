@@ -229,6 +229,7 @@
               <tr>
                 <th class="p-4 sm:p-5">Feature Dimension</th>
                 <th class="p-4 sm:p-5 text-[#FF8844] font-bold">Sentris Pro ($8/seat)</th>
+                <th class="p-4 sm:p-5">MongoDB Kingfisher</th>
                 <th class="p-4 sm:p-5">GitGuardian</th>
                 <th class="p-4 sm:p-5">TruffleHog</th>
                 <th class="p-4 sm:p-5">Gitleaks</th>
@@ -237,45 +238,59 @@
             <tbody class="divide-y divide-white/[0.06] text-slate-300">
               <tr class="hover:bg-white/[0.02] transition-colors">
                 <td class="p-4 sm:p-5 font-bold text-white">Scanning Engine & Language</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">Rust (Rayon Parallel)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Python 3.8+ (Sluggish)</td>
+                <td class="p-4 sm:p-5 font-bold text-[#10B981]">Rust (RegexSet DFA + Rayon)</td>
+                <td class="p-4 sm:p-5 text-slate-400">Rust (Hyperscan C++)</td>
+                <td class="p-4 sm:p-5 text-slate-400">Python / Rust CLI + Cloud</td>
                 <td class="p-4 sm:p-5 text-slate-400">Go (Goroutines)</td>
                 <td class="p-4 sm:p-5 text-slate-400">Go (Goroutines)</td>
               </tr>
               <tr class="hover:bg-white/[0.02] transition-colors">
                 <td class="p-4 sm:p-5 font-bold text-white">Pre-Commit Hook Latency</td>
                 <td class="p-4 sm:p-5 font-bold text-[#10B981]">&lt; 25 ms (Imperceptible)</td>
-                <td class="p-4 sm:p-5 text-red-400">1,500 – 3,500 ms (Devs bypass)</td>
-                <td class="p-4 sm:p-5 text-slate-400">~250 ms</td>
-                <td class="p-4 sm:p-5 text-slate-400">~80 ms</td>
+                <td class="p-4 sm:p-5 text-slate-400">80 – 350 ms</td>
+                <td class="p-4 sm:p-5 text-red-400">400 – 1,500 ms (Devs bypass)</td>
+                <td class="p-4 sm:p-5 text-slate-400">~800 ms</td>
+                <td class="p-4 sm:p-5 text-slate-400">~45 ms</td>
               </tr>
               <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Autonomous Key Rotation</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">🚀 YES (15s via Provider API)</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No (Manual ticket)</td>
+                <td class="p-4 sm:p-5 font-bold text-white">Safe Code Patch + .env / Vault Extract</td>
+                <td class="p-4 sm:p-5 font-bold text-[#10B981]">🚀 YES (7 Languages + 0 Downtime)</td>
+                <td class="p-4 sm:p-5 text-red-400">❌ Revoke Only (Breaks App)</td>
+                <td class="p-4 sm:p-5 text-slate-500">❌ No (Manual Jira ticket)</td>
                 <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
                 <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
               </tr>
               <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Dual-Key Safe Rotation (0 Downtime)</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">🚀 YES (Verified Probe First)</td>
+                <td class="p-4 sm:p-5 font-bold text-white">Native AI Agent MCP Server (AX)</td>
+                <td class="p-4 sm:p-5 font-bold text-[#10B981]">🚀 YES (sentris mcp Local Stdio)</td>
+                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
+                <td class="p-4 sm:p-5 text-slate-400">Cloud Account Required</td>
                 <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
                 <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
+              </tr>
+              <tr class="hover:bg-white/[0.02] transition-colors">
+                <td class="p-4 sm:p-5 font-bold text-white">1-Click Vanta SOC 2 Cryptographic Proof</td>
+                <td class="p-4 sm:p-5 font-bold text-[#10B981]">✔ HMAC-SHA256 Hash Chain JSON</td>
+                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
+                <td class="p-4 sm:p-5 text-slate-400">Enterprise Tier ($20k+/yr)</td>
+                <td class="p-4 sm:p-5 text-slate-400">Enterprise Tier</td>
                 <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
               </tr>
               <tr class="hover:bg-white/[0.02] transition-colors">
                 <td class="p-4 sm:p-5 font-bold text-white">Zero-Knowledge Code Privacy</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">✔ Salted HMAC-SHA256 Only</td>
+                <td class="p-4 sm:p-5 font-bold text-[#10B981]">✔ Salted HMAC-SHA256 + RAM Zeroize</td>
+                <td class="p-4 sm:p-5 text-slate-400">Local CLI</td>
                 <td class="p-4 sm:p-5 text-red-400">❌ Uploads code to SaaS servers</td>
                 <td class="p-4 sm:p-5 text-slate-400">OSS Local / Cloud Upload</td>
                 <td class="p-4 sm:p-5 text-slate-400">Local only</td>
               </tr>
               <tr class="hover:bg-white/[0.02] transition-colors">
                 <td class="p-4 sm:p-5 font-bold text-white">Pricing Model</td>
-                <td class="p-4 sm:p-5 font-bold text-[#FF8844]">$8 / seat / month</td>
-                <td class="p-4 sm:p-5 text-slate-400">$15–$25 / seat / month</td>
+                <td class="p-4 sm:p-5 font-bold text-[#FF8844]">$8 / seat / mo ($12 monthly)</td>
+                <td class="p-4 sm:p-5 text-slate-400">Free (Apache-2.0)</td>
+                <td class="p-4 sm:p-5 text-slate-400">$18–$25 / seat / month</td>
                 <td class="p-4 sm:p-5 text-slate-400">Contact Sales (Hidden)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Free (Unmaintained)</td>
+                <td class="p-4 sm:p-5 text-slate-400">Free (MIT)</td>
               </tr>
             </tbody>
           </table>

@@ -91,6 +91,7 @@ impl App {
                 "Added {} to baseline.",
                 self.findings[self.selected_index].fingerprint
             ));
+            self.should_quit = true;
         }
     }
 
@@ -101,6 +102,7 @@ impl App {
                 "Added inline ignore for finding at line {}.",
                 self.findings[self.selected_index].line_number
             ));
+            self.should_quit = true;
         }
     }
 
