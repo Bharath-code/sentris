@@ -4,6 +4,7 @@ import { env } from 'cloudflare:workers'
 import { db, schema } from './db'
 import { parseBearer, randomHex, sha256 } from './crypto'
 import { canIngest } from './org'
+import { readCapped } from './guards'
 
 // Mirrors CloudScanPayload in src/cloud/client.rs
 const Finding = z.object({
@@ -27,6 +28,14 @@ const Payload = z.object({
 
 const json = (body: unknown, status = 200) => Response.json(body, { status })
 const fail = (status: number, message: string) => json({ success: false, message }, status)
+const safeJson = (s: string) => {
+  try {
+    return JSON.parse(s)
+  } catch {
+    return null
+  }
+}
+
 const chunk = <T,>(xs: T[], n: number) =>
   Array.from({ length: Math.ceil(xs.length / n) }, (_, i) => xs.slice(i * n, i * n + n))
 
@@ -44,8 +53,9 @@ export async function handleScanUpload(request: Request): Promise<Response> {
   if (!row) return fail(401, 'API key is invalid or revoked.')
   if (!canIngest(row.org)) return fail(402, 'Cloud sync requires an active Sentris Pro subscription.')
 
-  if (Number(request.headers.get('content-length') ?? 0) > 2_000_000) return fail(413, 'Payload too large.')
-  const parsed = Payload.safeParse(await request.json().catch(() => null))
+  const body = await readCapped(request, 2_000_000)
+  if (body === null) return fail(413, 'Payload too large.')
+  const parsed = Payload.safeParse(safeJson(body))
   if (!parsed.success) return fail(400, `Invalid scan payload: ${parsed.error.issues[0]?.message}`)
   const p = parsed.data
   const orgId = row.org.id

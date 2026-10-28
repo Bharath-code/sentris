@@ -3,6 +3,7 @@ import DodoPayments from 'dodopayments'
 import { eq } from 'drizzle-orm'
 import { db, schema } from './db'
 import type { Org } from './org'
+import { shouldApply } from './guards'
 
 // Lazy: secrets don't exist at build/prerender time
 const dodo = () =>
@@ -18,7 +19,8 @@ export async function createCheckout(org: Org, user: { email: string; name: stri
     customer: org.dodoCustomerId ? { customer_id: org.dodoCustomerId } : { email: user.email, name: user.name },
     metadata: { org_id: org.id },
     return_url: `${env.APP_URL}/app?checkout=done`,
-    subscription_data: { trial_period_days: 14 },
+    // One trial per org: anyone who has subscribed before pays from day one
+    subscription_data: { trial_period_days: org.dodoSubscriptionId ? 0 : 14 },
   })
   if (!s.checkout_url) throw new Error('Dodo returned no checkout URL')
   return s.checkout_url
@@ -43,15 +45,21 @@ export async function handleDodoWebhook(request: Request): Promise<Response> {
     return new Response('invalid signature', { status: 401 })
   }
 
-  // ponytail: the update below is idempotent, so redeliveries are harmless; add an event log if out-of-order delivery bites
   if (!ACTIVE.has(event.type) && !ENDED.has(event.type)) return new Response('ignored', { status: 200 })
   const sub = event.data as Extract<typeof event, { type: 'subscription.active' }>['data']
   const orgId = typeof sub.metadata?.org_id === 'string' ? sub.metadata.org_id : null
-  const where = orgId ? eq(schema.org.id, orgId) : eq(schema.org.dodoSubscriptionId, sub.subscription_id)
+  const org = await db.query.org.findFirst({
+    where: orgId ? eq(schema.org.id, orgId) : eq(schema.org.dodoSubscriptionId, sub.subscription_id),
+  })
+  if (!org) return new Response('unknown org', { status: 200 })
+
+  const at = new Date(event.timestamp)
+  if (!shouldApply(org, sub.subscription_id, ENDED.has(event.type), at)) return new Response('stale', { status: 200 })
 
   await db
     .update(schema.org)
     .set({
+      billingEventAt: at,
       plan: ACTIVE.has(event.type) ? 'pro' : 'free',
       seats: ACTIVE.has(event.type) ? sub.quantity : 1,
       subscriptionStatus: sub.status,
@@ -59,7 +67,7 @@ export async function handleDodoWebhook(request: Request): Promise<Response> {
       dodoSubscriptionId: sub.subscription_id,
       currentPeriodEnd: new Date(sub.next_billing_date),
     })
-    .where(where)
+    .where(eq(schema.org.id, org.id))
 
   return new Response('ok', { status: 200 })
 }

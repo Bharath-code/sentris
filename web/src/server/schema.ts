@@ -63,6 +63,8 @@ export const org = sqliteTable('org', {
   dodoCustomerId: text('dodo_customer_id'),
   dodoSubscriptionId: text('dodo_subscription_id').unique(),
   currentPeriodEnd: ts('current_period_end'),
+  // Timestamp of the last applied billing webhook; older events are dropped
+  billingEventAt: ts('billing_event_at'),
   createdAt: ts('created_at').notNull().$defaultFn(now),
 })
 

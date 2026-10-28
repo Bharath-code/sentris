@@ -104,6 +104,8 @@ Visitor → landing/pricing → GitHub sign-in → dashboard creates org
 - `sentris auth login` shows fake seats (14/25), fake org name/email → fetch from a `GET /api/v1/me` endpoint (needs adding).
 - Default server `https://api.sentris.dev` → change to workers.dev URL until domain bought.
 - CLI treats any URL containing `localhost`/`mock` as offline mock → document or remove.
+- **Zero-knowledge gap (security review):** salt = `org_` + key chars 8..16, so the server knows it and can confirm a guessed secret against a fingerprint. Worse, `CloudFindingPayload.finding_id` is the *unsalted* `sha256(secret)` (server drops it, but it is transmitted). Fix in CLI: stop sending `finding_id`; derive salt from an org secret distributed out of band (e.g. `sentris team join <secret>`), never sent to the server, ≥128 bits.
+  - **AC:** captured upload contains no unsalted hash and no value from which the salt can be derived.
 - **AC:** fresh install + `auth login --token` with no `--server` syncs to prod.
 
 ### B8 👤 Distribution
