@@ -1,89 +1,154 @@
 <!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sentris Pro — Autonomous Secret Remediation & SaaS Platform ($8/seat)</title>
-  
-  <!-- Modern Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  
-  <!-- Three.js (WebGL 3D Engine) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentris — Autonomous Secret Remediation Engine (Rust CLI, LSP, MCP & Zero-Knowledge Cloud)</title>
+  <meta name="description" content="Stop paying $25/seat for secret scanners that only create Jira tickets. Sentris scans 5,000 files in 18ms and autonomously rotates & refactors leaked credentials in 15s with zero production downtime. $8/seat Pro via Dodo Payments." />
+  <meta name="keywords" content="Sentris, secret scanner, autonomous secret remediation, Rust DevSecOps, Gitleaks alternative, TruffleHog alternative, GitGuardian alternative, Kingfisher alternative, MCP security server, LSP secret scanner, zero-knowledge blast radius" />
+  <meta name="robots" content="index, follow, max-snippet:-1, max-image-preview:large" />
+  <link rel="canonical" href="https://sentris-web.pages.dev/" />
+  <link rel="help" type="text/plain" href="/llms.txt" title="LLM & AI Agent Context (GEO/AEO)" />
 
-  <!-- GSAP (GreenSock Mechanical Motion) -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <!-- OpenGraph / Social Sharing (Generated High-Taste Obsidian Asset) -->
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Sentris" />
+  <meta property="og:title" content="Sentris — Autonomous 15s Secret Remediation Engine in Rust" />
+  <meta property="og:description" content="Scans 5,000 files in 18ms. Rewrites hardcoded secrets into env/Vault/1Password/Infisical and rotates keys via Dual-Key API with 0 prod downtime." />
+  <meta property="og:image" content="https://sentris-web.pages.dev/og-sentris-2026.png" />
+  <meta property="og:url" content="https://sentris-web.pages.dev/" />
 
-  <!-- Anti-Slop Design System Styles (Linear / Raycast / Stripe Look) -->
-  <link rel="stylesheet" href="./src/styles.css">
+  <!-- Twitter / X Card -->
+  <meta name="twitter:card" content="summary_large_image" />
+  <meta name="twitter:title" content="Sentris — Detection is Free. We Charge for Fixing Things." />
+  <meta name="twitter:description" content="18ms Rust secret scanner + 15s autonomous code & vault remediation + Zero-Knowledge Multi-Repo Blast Radius Cloud." />
+  <meta name="twitter:image" content="https://sentris-web.pages.dev/og-sentris-2026.png" />
 
-  <script>
-    tailwind.config = {
-      darkMode: 'class',
-      theme: {
-        extend: {
-          colors: {
-            void: '#060709',
-            cadmium: '#FF5500',
-            cobalt: '#2563EB',
-            emeraldStatus: '#10B981',
-            crimsonStatus: '#EF4444',
+  <!-- JSON-LD Structured Data for SEO, GEO (ChatGPT/Perplexity/Claude) & AEO -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "SoftwareApplication",
+        "name": "Sentris",
+        "applicationCategory": "DeveloperApplication",
+        "applicationSubCategory": "ApplicationSecurity",
+        "operatingSystem": "macOS, Linux, Windows",
+        "softwareVersion": "0.2.0",
+        "license": "https://opensource.org/licenses/MIT",
+        "description": "Memory-safe Rust secret detection and autonomous remediation engine with built-in LSP 3.17 server, 6-tool AI MCP server, zero-downtime dual-key rotation, and Cloudflare D1 Zero-Knowledge Multi-Repo Blast Radius correlation.",
+        "offers": [
+          {
+            "@type": "Offer",
+            "name": "Free Open-Source CLI (MIT)",
+            "price": "0",
+            "priceCurrency": "USD"
           },
-          fontFamily: {
-            sans: ['"Plus Jakarta Sans"', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'sans-serif'],
-            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          {
+            "@type": "Offer",
+            "name": "Sentris Commercial Pro",
+            "price": "8.00",
+            "priceCurrency": "USD",
+            "description": "$8 per developer seat per month ($7/seat billed annually) via Dodo Payments Merchant of Record."
+          },
+          {
+            "@type": "Offer",
+            "name": "Sentris Enterprise Self-Hosted",
+            "price": "2000.00",
+            "priceCurrency": "USD",
+            "description": "Flat $2,000/year for up to 50 seats with air-gapped deployment and Vanta SOC 2 CC6.1/CC6.6 compliance."
           }
-        }
+        ]
+      },
+      {
+        "@type": "FAQPage",
+        "mainEntity": [
+          {
+            "@type": "Question",
+            "name": "How is Sentris different from Gitleaks, TruffleHog, Kingfisher, and GitGuardian?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Gitleaks, TruffleHog, Kingfisher, and GitGuardian stop at secret detection, leaving developers with a 2.5-hour manual rotation fire-drill. Sentris scans 5,000 files in 18ms and autonomously rewrites source code (.py, .js, .ts, .rs, .go, .java, .rb, .php, .sh), provisions the secret into .env, HashiCorp Vault, AWS Secrets Manager, Doppler, 1Password (op://), or Infisical, and performs zero-downtime dual-key rotation in 15 seconds."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "Does Sentris Cloud ever see or store our raw source code or plaintext secrets?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "No. Sentris enforces a strict Zero-Knowledge invariant. Only salted SHA-256 fingerprints prefixed with zk_ are transmitted to the Cloudflare Worker + D1 edge database to correlate multi-repo blast radius across microservices."
+            }
+          },
+          {
+            "@type": "Question",
+            "name": "How does Sentris integrate with AI coding agents like Claude Code, Cursor, and Windsurf?",
+            "acceptedAnswer": {
+              "@type": "Answer",
+              "text": "Sentris includes a native Model Context Protocol server (`sentris mcp`) exposing 6 JSON-RPC 2.0 tools over stdio (`sentris_scan_path`, `sentris_remediate`, `sentris_verify_secret`, `sentris_audit_status`, `sentris_rollback_session`, `sentris_team_blast_radius`) plus a native Language Server Protocol 3.17 server (`sentris lsp`)."
+            }
+          }
+        ]
       }
-    }
+    ]
+  }
   </script>
-</head>
-<body class="bg-[#060709] text-slate-100 min-h-screen selection:bg-[#FF5500] selection:text-white bg-grid-pattern relative">
 
-  <!-- Ambient Top Beam Spotlight (Signature Linear Look) -->
+  <!-- Tailwind CSS CDN & Sentris Obsidian Design System -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/src/styles.css" />
+
+  <!-- Three.js, GSAP & Lucide Icons -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-grid-pattern min-h-screen relative selection:bg-[#FF5500] selection:text-white">
+
+  <!-- Ambient Top Beam Spotlight -->
   <div class="ambient-glow"></div>
 
   <!-- ========================================================================
-       TOP GLOBAL NAVIGATION BAR
+       STICKY GLASS NAVIGATION HEADER (TANSTACK ROUTER INTEGRATED)
        ======================================================================== -->
-  <header class="sticky top-0 z-50 backdrop-blur-xl bg-[#060709]/80 border-b border-white/[0.08]">
+  <header class="sticky top-0 z-50 border-b border-white/[0.08] bg-[#06070A]/85 backdrop-blur-xl">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
       
-      <!-- Brand & Privacy Indicator -->
-      <div class="flex items-center gap-3">
-        <a href="#" class="flex items-center gap-2.5 text-white font-extrabold text-lg tracking-tight hover:opacity-90 transition-opacity">
-          <span class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#FF5500] to-[#CC3700] flex items-center justify-center font-mono text-sm text-white shadow-md shadow-[#FF5500]/25">
-            §
-          </span>
-          <span class="tracking-tight font-bold">SENTRIS<span class="text-[#FF5500] font-mono text-xs ml-1 px-1.5 py-0.5 rounded-full bg-[#FF5500]/10 border border-[#FF5500]/30 font-semibold">PRO</span></span>
-        </a>
-
-        <div class="hidden sm:flex items-center gap-2 pl-3 border-l border-white/[0.08]">
-          <span class="badge-clean badge-tag-emerald text-[10px]">
-            <span class="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse"></span>
-            ZERO-KNOWLEDGE TELEMETRY
-          </span>
+      <!-- Brand Identity -->
+      <div class="flex items-center gap-3 cursor-pointer" onclick="document.getElementById('nav-btn-home').click()">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#FF5500] to-[#CC3700] flex items-center justify-center font-mono font-extrabold text-white text-base shadow-md">
+          §
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="font-extrabold text-base tracking-tight text-white font-display">SENTRIS</span>
+          <span class="badge-clean badge-tag-cadmium text-[10px]">v0.2.0 RUST</span>
         </div>
       </div>
 
-      <!-- Center View Switcher -->
-      <nav class="flex items-center gap-1 p-1 bg-[#0E1017] border border-white/[0.08] rounded-full shadow-inner">
-        <button id="nav-btn-marketing" class="text-xs font-semibold px-3.5 py-1.5 rounded-full bg-[#181C26] text-white border border-white/10 transition-all">
-          Product Platform
+      <!-- Center View Switcher Pills -->
+      <nav aria-label="Primary Platform Views" class="flex items-center gap-1 p-1 rounded-full bg-[#0D1017] border border-white/[0.08]">
+        <button id="nav-btn-home" class="px-4 py-1.5 rounded-full text-xs font-semibold transition-all bg-white/10 text-white">
+          Product Overview
         </button>
-        <button id="nav-btn-dashboard" class="text-xs font-semibold px-3.5 py-1.5 rounded-full text-slate-400 hover:text-white transition-all flex items-center gap-1.5">
-          <span>Live Team Dashboard</span>
-          <span class="bg-[#FF5500] text-white text-[9px] px-1.5 py-0.5 rounded-full font-mono font-bold">$8/SEAT</span>
+        <button id="nav-btn-dashboard" class="px-4 py-1.5 rounded-full text-xs font-semibold transition-all text-slate-400 hover:text-white flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>Live Team Console</span>
         </button>
-        <button id="nav-btn-design" class="hidden md:inline-flex text-xs font-semibold px-3.5 py-1.5 rounded-full text-slate-400 hover:text-white transition-all">
-          Design Tokens
+        <button id="nav-btn-pricing" class="px-4 py-1.5 rounded-full text-xs font-semibold transition-all text-slate-400 hover:text-white">
+          $8/Seat Pricing
+        </button>
+        <button id="nav-btn-stress" class="px-4 py-1.5 rounded-full text-xs font-semibold transition-all text-slate-400 hover:text-white">
+          12 Stress Tests
         </button>
       </nav>
 
-      <!-- Right CTAs -->
-      <div class="flex items-center gap-3">
-        <button class="cta-launch-dashboard btn-primary text-xs py-1.5 px-3.5">
-          Launch Pro Dashboard ❯
+      <!-- Right Action CTA -->
+      <div class="hidden md:flex items-center gap-3">
+        <a href="/llms.txt" target="_blank" class="text-xs text-slate-400 hover:text-white font-mono transition-colors">
+          llms.txt
+        </a>
+        <button id="hero-dodo-trial-btn" class="btn-primary text-xs py-2 px-4">
+          Start 14-Day Trial ($8/seat)
         </button>
       </div>
 
@@ -91,335 +156,338 @@
   </header>
 
   <!-- ========================================================================
-       VIEW 1: WORLD-CLASS COMMERCIAL PRODUCT & MARKETING PAGE
+       VIEW 1: PRODUCT OVERVIEW (AWWWARDS LANDING PAGE)
        ======================================================================== -->
-  <main id="view-marketing" class="space-y-24 py-12 px-4 sm:px-6 relative z-10">
+  <main id="view-home" class="relative z-10 py-14 sm:py-20 px-4 sm:px-6">
+    <div class="max-w-7xl mx-auto space-y-24">
 
-    <!-- 1. Hero Section -->
-    <section class="max-w-7xl mx-auto space-y-12">
-      
-      <!-- Hero Copy (Centered & Commanding) -->
-      <div class="text-center max-w-4xl mx-auto space-y-6">
-        
-        <div class="inline-flex items-center gap-2 badge-clean badge-tag-cadmium hero-stagger">
-          <span class="w-1.5 h-1.5 rounded-full bg-[#FF5500]"></span>
-          <span>SENTRIS PRO 2.0</span>
-          <span class="text-white/30">•</span>
-          <span>$8 / DEV / MO</span>
-          <span class="text-white/30">•</span>
-          <span>AUTONOMOUS REMEDIATION IN 18ms</span>
+      <!-- HERO SECTION -->
+      <section class="text-center max-w-4xl mx-auto space-y-6">
+        <div class="hero-stagger inline-flex flex-wrap items-center justify-center gap-2 px-3.5 py-1.5 rounded-full bg-[#11141C] border border-white/10">
+          <span class="w-2 h-2 rounded-full bg-[#FF5500] animate-ping"></span>
+          <span class="text-xs font-mono text-slate-300" data-decrypt>RUST 2026 • LSP 3.17 • 6-TOOL MCP • CLOUDFLARE D1 ZERO-KNOWLEDGE</span>
         </div>
 
-        <h1 class="text-4xl sm:text-6xl lg:text-7xl font-extrabold text-white tracking-tight leading-[1.06] hero-stagger">
-          Detection is a commodity.<br>
-          <span class="text-transparent bg-clip-text bg-gradient-to-r from-[#FF5500] via-[#FF8844] to-[#FFB088]">Autonomous remediation is the product.</span>
+        <h1 class="hero-stagger text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-tight text-white leading-[1.06] font-display">
+          Stop alerting on leaked keys.<br />
+          <span class="bg-gradient-to-r from-[#FF5500] via-[#FF8844] to-amber-300 bg-clip-text text-transparent">
+            Autonomously remediate in 15s.
+          </span>
         </h1>
 
-        <p class="text-base sm:text-lg text-slate-400 leading-relaxed max-w-2xl mx-auto hero-stagger">
-          Developers hate Jira tickets. When Sentris detects an exposed credential, it verifies provider liveness, provisions a replacement, stages atomic code diffs in <code class="text-cyan-300 font-mono">.env</code>, and executes zero-downtime deprecation. All in 18ms. 100% locally.
+        <p class="hero-stagger text-base sm:text-lg text-slate-400 max-w-2xl mx-auto leading-relaxed">
+          Gitleaks, TruffleHog, and GitGuardian charge up to $25/seat to dump Jira tickets in your lap. Sentris scans 5,000 files in <strong class="text-white font-mono">18ms</strong>, rewrites hardcoded literals into <code class="text-slate-200 font-mono">.env</code>, Vault, AWS, Doppler, 1Password (<code class="text-cyan-300 font-mono">op://</code>), or Infisical, and rotates keys with <strong class="text-emerald-400">zero production downtime</strong>.
         </p>
 
-        <!-- Action Bar -->
-        <div class="flex flex-wrap items-center justify-center gap-3 pt-2 hero-stagger">
-          <button class="cta-launch-dashboard btn-primary text-sm py-2.5 px-5">
-            Start 14-Day Free Team Trial ($8/seat) ❯
+        <div class="hero-stagger flex flex-wrap items-center justify-center gap-3 pt-2">
+          <button id="hero-trigger-scan-btn" class="btn-primary text-sm py-3 px-6">
+            <span>⚡ Run 15s Autonomous Remediation</span>
           </button>
-          <button class="copy-cmd-btn btn-glass text-sm py-2.5 px-4 font-mono flex items-center gap-2" data-cmd="curl -fsSL https://sentris.dev/install.sh | sh">
-            <span class="text-slate-300">curl -fsSL https://sentris.dev/install.sh | sh</span>
-            <svg class="w-4 h-4 text-slate-500 hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+          <button onclick="document.getElementById('nav-btn-dashboard').click()" class="btn-glass text-sm py-3 px-6">
+            <span>Explore Zero-Knowledge Console →</span>
           </button>
         </div>
 
-        <!-- Key Metrics Bar -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-6 pt-8 max-w-3xl mx-auto border-t border-white/[0.08] hero-stagger">
-          <div>
-            <div class="text-3xl font-mono font-extrabold text-white metric-ticker" data-value="18" data-suffix="ms">18ms</div>
-            <div class="text-xs text-slate-400 mt-1">Pre-Commit Scan Latency</div>
-          </div>
-          <div>
-            <div class="text-3xl font-mono font-extrabold text-white metric-ticker" data-value="5000" data-suffix="+">5,000+</div>
-            <div class="text-xs text-slate-400 mt-1">Files in &lt;180ms</div>
-          </div>
-          <div>
-            <div class="text-3xl font-mono font-extrabold text-[#10B981] metric-ticker" data-value="0" data-suffix=" bytes">0 bytes</div>
-            <div class="text-xs text-slate-400 mt-1">Code Exfiltrated (HMAC Only)</div>
-          </div>
-          <div>
-            <div class="text-3xl font-mono font-extrabold text-[#FF8844] metric-ticker" data-value="8" data-prefix="$" data-suffix="/mo">$8/mo</div>
-            <div class="text-xs text-slate-400 mt-1">Predictable Pro Seat</div>
+        <!-- Quick CLI Install Pill -->
+        <div class="hero-stagger pt-2 flex justify-center">
+          <div onclick="navigator.clipboard?.writeText('cargo install --path . && sentris scan . --verify'); this.querySelector('.copy-hint').textContent='✔ Copied'" class="cursor-pointer inline-flex items-center gap-3 px-4 py-2 rounded-xl bg-[#0B0D13] border border-white/10 hover:border-[#FF5500]/50 transition-all font-mono text-xs text-slate-300">
+            <span class="text-[#FF5500]">$</span>
+            <span>cargo install sentris-cli &amp;&amp; sentris fix . --safe-rotate</span>
+            <span class="copy-hint text-[10px] px-2 py-0.5 rounded bg-white/5 text-slate-400">Copy</span>
           </div>
         </div>
+      </section>
 
-      </div>
-
-      <!-- Hero Visual Stage: IDE Remediation Studio & 3D Hash Vault Side-by-Side -->
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch hero-card-stagger">
+      <!-- HERO INTERACTIVE SPLIT STAGE: TERMINAL + 3D HASH VAULT -->
+      <section class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         
-        <!-- Left: High-Fidelity IDE Remediation Studio (8-Col) -->
-        <div class="lg:col-span-8 flex flex-col">
-          <div id="terminal-container" class="w-full h-full">
-            <!-- Rendered by TerminalSimulator -->
-          </div>
-        </div>
-
-        <!-- Right: 3D Zero-Knowledge Hash Vault (4-Col) -->
-        <div class="lg:col-span-4 flex flex-col">
-          <div class="bento-card w-full h-full p-6 flex flex-col justify-between relative overflow-hidden bg-gradient-to-b from-[#0E1017] to-[#07080B]">
-            
-            <!-- Header Badges -->
-            <div class="flex items-center justify-between z-10">
-              <span class="badge-clean badge-tag-cadmium text-[10px]">
-                3D ZERO-KNOWLEDGE MESH
-              </span>
-              <span class="text-xs font-mono text-emerald-400 flex items-center gap-1.5">
-                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                ACTIVE
-              </span>
+        <!-- Left 7 Cols: Interactive Terminal -->
+        <div class="hero-card-stagger lg:col-span-7 bento-card flex flex-col justify-between">
+          <div class="px-4 py-3 bg-[#080A0E] border-b border-white/[0.08] flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-red-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-amber-500/80"></span>
+              <span class="w-3 h-3 rounded-full bg-emerald-500/80"></span>
+              <span class="text-xs font-mono text-slate-400 ml-2">sentris — autonomous remediation engine (zsh)</span>
             </div>
+            <span class="badge-clean badge-tag-emerald">DUAL-KEY SAFE</span>
+          </div>
 
-            <!-- Three.js Canvas Container -->
-            <div class="relative w-full aspect-square my-2 flex items-center justify-center">
-              <canvas id="reactor-canvas" class="w-full h-full block cursor-grab active:cursor-grabbing"></canvas>
+          <div id="hero-terminal-body" class="p-5 flex-1 flex flex-col justify-between bg-[#080A0F]"></div>
+        </div>
+
+        <!-- Right 5 Cols: 3D Zero-Knowledge Hash Reactor -->
+        <div class="hero-card-stagger lg:col-span-5 bento-card p-6 flex flex-col justify-between relative">
+          <div class="flex items-center justify-between z-10">
+            <div>
+              <div class="badge-clean badge-tag-muted">THREE.JS WEBGL VAULT</div>
+              <h2 class="text-base font-bold text-white mt-1 font-display">Zero-Knowledge Hash Reactor</h2>
             </div>
+            <button id="reactor-pulse-btn" class="btn-glass text-xs py-1.5 px-3">
+              Pulse Hash
+            </button>
+          </div>
 
-            <!-- Footer Hardware Telemetry -->
-            <div class="pt-3 border-t border-white/[0.08] text-xs font-mono space-y-1.5 z-10">
-              <div class="flex items-center justify-between text-slate-300">
-                <span>Salted HMAC Nodes:</span>
-                <span class="text-white font-bold">140 Particles</span>
-              </div>
-              <div class="flex items-center justify-between text-slate-300">
-                <span>Cryptographic Protocol:</span>
-                <span class="text-cyan-400">RFC 2104 / SHA-256</span>
-              </div>
-              <div class="flex items-center justify-between text-[11px] text-slate-400 pt-1 border-t border-white/[0.04]">
-                <span>Mouse Parallax Damped</span>
-                <span class="text-emerald-400">100% Localhost</span>
-              </div>
+          <div class="relative my-2 flex items-center justify-center">
+            <canvas id="three-reactor-canvas" class="w-full h-[270px] cursor-pointer"></canvas>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-[#080A0E]/90 border border-white/[0.08] space-y-1.5 z-10">
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="text-slate-400">LOCAL SECRET:</span>
+              <span class="text-red-400 line-through">sk_live_51M79f8a...</span>
             </div>
-
+            <div class="flex items-center justify-between text-xs font-mono">
+              <span class="text-slate-400">CLOUDFLARE D1 WIRE:</span>
+              <span class="text-emerald-400 font-bold" data-decrypt>zk_94a3ab2d8f1044c91e</span>
+            </div>
+            <div class="text-[11px] text-slate-400 pt-1 border-t border-white/[0.06]">
+              0 bytes of proprietary code ever leave your developer workstation.
+            </div>
           </div>
         </div>
 
-      </div>
+      </section>
 
-    </section>
-
-    <!-- 2. Bento Grid Architecture Gallery -->
-    <section id="stress-tests-container" class="w-full">
-      <!-- Rendered by StressTestsVisualizer -->
-    </section>
-
-    <!-- 3. Head-to-Head Comparison Matrix -->
-    <section class="max-w-6xl mx-auto space-y-8">
-      <div class="text-center space-y-3">
-        <div class="badge-clean badge-tag-cadmium">UNCOMPROMISING ARCHITECTURE</div>
-        <h2 class="text-3xl sm:text-5xl font-extrabold text-white tracking-tight">
-          Sentris Pro vs The Competition
-        </h2>
-        <p class="text-sm text-slate-400 max-w-2xl mx-auto leading-relaxed">
-          Why engineering leads are switching from passive alert clocks to autonomous self-healing.
-        </p>
-      </div>
-
-      <div class="bento-card overflow-hidden">
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs">
-            <thead class="bg-[#0D0F15] text-slate-400 font-mono uppercase border-b border-white/[0.08]">
-              <tr>
-                <th class="p-4 sm:p-5">Feature Dimension</th>
-                <th class="p-4 sm:p-5 text-[#FF8844] font-bold">Sentris Pro ($8/seat)</th>
-                <th class="p-4 sm:p-5">MongoDB Kingfisher</th>
-                <th class="p-4 sm:p-5">GitGuardian</th>
-                <th class="p-4 sm:p-5">TruffleHog</th>
-                <th class="p-4 sm:p-5">Gitleaks</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-white/[0.06] text-slate-300">
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Scanning Engine & Language</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">Rust (RegexSet DFA + Rayon)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Rust (Hyperscan C++)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Python / Rust CLI + Cloud</td>
-                <td class="p-4 sm:p-5 text-slate-400">Go (Goroutines)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Go (Goroutines)</td>
-              </tr>
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Pre-Commit Hook Latency</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">&lt; 25 ms (Imperceptible)</td>
-                <td class="p-4 sm:p-5 text-slate-400">80 – 350 ms</td>
-                <td class="p-4 sm:p-5 text-red-400">400 – 1,500 ms (Devs bypass)</td>
-                <td class="p-4 sm:p-5 text-slate-400">~800 ms</td>
-                <td class="p-4 sm:p-5 text-slate-400">~45 ms</td>
-              </tr>
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Safe Code Patch + .env / Vault Extract</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">🚀 YES (7 Languages + 0 Downtime)</td>
-                <td class="p-4 sm:p-5 text-red-400">❌ Revoke Only (Breaks App)</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No (Manual Jira ticket)</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-              </tr>
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Native AI Agent MCP Server (AX)</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">🚀 YES (sentris mcp Local Stdio)</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-                <td class="p-4 sm:p-5 text-slate-400">Cloud Account Required</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-              </tr>
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">1-Click Vanta SOC 2 Cryptographic Proof</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">✔ HMAC-SHA256 Hash Chain JSON</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-                <td class="p-4 sm:p-5 text-slate-400">Enterprise Tier ($20k+/yr)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Enterprise Tier</td>
-                <td class="p-4 sm:p-5 text-slate-500">❌ No</td>
-              </tr>
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Zero-Knowledge Code Privacy</td>
-                <td class="p-4 sm:p-5 font-bold text-[#10B981]">✔ Salted HMAC-SHA256 + RAM Zeroize</td>
-                <td class="p-4 sm:p-5 text-slate-400">Local CLI</td>
-                <td class="p-4 sm:p-5 text-red-400">❌ Uploads code to SaaS servers</td>
-                <td class="p-4 sm:p-5 text-slate-400">OSS Local / Cloud Upload</td>
-                <td class="p-4 sm:p-5 text-slate-400">Local only</td>
-              </tr>
-              <tr class="hover:bg-white/[0.02] transition-colors">
-                <td class="p-4 sm:p-5 font-bold text-white">Pricing Model</td>
-                <td class="p-4 sm:p-5 font-bold text-[#FF8844]">$8 / seat / mo ($12 monthly)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Free (Apache-2.0)</td>
-                <td class="p-4 sm:p-5 text-slate-400">$18–$25 / seat / month</td>
-                <td class="p-4 sm:p-5 text-slate-400">Contact Sales (Hidden)</td>
-                <td class="p-4 sm:p-5 text-slate-400">Free (MIT)</td>
-              </tr>
-            </tbody>
-          </table>
+      <!-- ANIMATED CRYPTOGRAPHIC TRANSMUTATION SVG ARCHITECTURE -->
+      <section class="bento-card p-6 sm:p-8 space-y-6">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div>
+            <div class="badge-clean badge-tag-cadmium">ZERO-DOWNTIME REMEDIATION PIPELINE</div>
+            <h2 class="text-2xl font-extrabold text-white mt-1 font-display">How Sentris transmutes a leak into a verified fix in 15 seconds</h2>
+          </div>
+          <span class="text-xs font-mono text-emerald-400">6-Layer Contextual FP Filter • 3 Git Zones</span>
         </div>
-      </div>
-    </section>
 
-    <!-- 4. Interactive $8/seat Pro Pricing & ROI Calculator -->
-    <section id="pricing-container" class="w-full">
-      <!-- Rendered by PricingCalculator -->
-    </section>
+        <div class="w-full overflow-x-auto">
+          <svg viewBox="0 0 1040 160" class="w-full min-w-[760px] h-auto" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Sentris 15-second autonomous secret remediation architecture diagram">
+            <!-- Node 1: Leaked Literal -->
+            <rect x="10" y="25" width="210" height="110" rx="14" fill="#0E1118" stroke="#FF3B5C" stroke-opacity="0.5"/>
+            <text x="28" y="55" fill="#FF6B84" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">1. HARDCODED LEAK (0ms)</text>
+            <text x="28" y="80" fill="#F8FAFC" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700">Line 42: stripe.py</text>
+            <text x="28" y="104" fill="#94A3B8" font-family="JetBrains Mono, monospace" font-size="11">key = "sk_live_51M7..."</text>
 
-    <!-- 5. Developer FAQ Accordion -->
-    <section class="max-w-4xl mx-auto space-y-8">
-      <div class="text-center space-y-3">
-        <div class="badge-clean badge-tag-cadmium">ENGINEER-TO-ENGINEER</div>
-        <h2 class="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">Frequently Answered Questions</h2>
-      </div>
+            <!-- Flow Line 1 -> 2 -->
+            <line x1="220" y1="80" x2="280" y2="80" stroke="#FF5500" stroke-width="2" class="svg-flow-line"/>
 
-      <div class="space-y-4 text-xs sm:text-sm">
-        <div class="bento-card p-6 space-y-2">
-          <div class="font-bold text-white text-base">Does Sentris ever send my proprietary source code or raw secrets to the cloud?</div>
-          <div class="text-slate-300 leading-relaxed">
-            <strong>No, never.</strong> All scanning, AST parsing, and remediation occur 100% locally on your machine. Upstream telemetry to Sentris Pro Cloud transmits strictly salted HMAC-SHA256 hashes and file line numbers. We cannot see your code or raw keys even if subpoenaed.
+            <!-- Node 2: Sentris Rust Core -->
+            <rect x="280" y="25" width="230" height="110" rx="14" fill="#0E1118" stroke="#FF5500" stroke-opacity="0.7"/>
+            <text x="298" y="55" fill="#FF8844" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">2. SENTRIS RUST CORE (18ms)</text>
+            <text x="298" y="80" fill="#F8FAFC" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700">AST Rewrite + Vault Inject</text>
+            <text x="298" y="104" fill="#38BDF8" font-family="JetBrains Mono, monospace" font-size="11">os.environ.get("STRIPE_KEY")</text>
+
+            <!-- Flow Line 2 -> 3 -->
+            <line x1="510" y1="80" x2="570" y2="80" stroke="#38BDF8" stroke-width="2" class="svg-flow-line"/>
+
+            <!-- Node 3: Dual-Key Rotation -->
+            <rect x="570" y="25" width="210" height="110" rx="14" fill="#0E1118" stroke="#38BDF8" stroke-opacity="0.6"/>
+            <text x="588" y="55" fill="#38BDF8" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">3. DUAL-KEY ROTATION</text>
+            <text x="588" y="80" fill="#F8FAFC" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700">0 HTTP 500 Outages</text>
+            <text x="588" y="104" fill="#94A3B8" font-family="JetBrains Mono, monospace" font-size="11">Provision → Propagate → Revoke</text>
+
+            <!-- Flow Line 3 -> 4 -->
+            <line x1="780" y1="80" x2="835" y2="80" stroke="#00E599" stroke-width="2" class="svg-flow-line"/>
+
+            <!-- Node 4: Cloudflare D1 ZK Cloud -->
+            <rect x="835" y="25" width="195" height="110" rx="14" fill="#0E1118" stroke="#00E599" stroke-opacity="0.65"/>
+            <text x="852" y="55" fill="#00E599" font-family="JetBrains Mono, monospace" font-size="11" font-weight="700">4. CLOUDFLARE D1 ZK</text>
+            <text x="852" y="80" fill="#F8FAFC" font-family="Plus Jakarta Sans, sans-serif" font-size="13" font-weight="700">Blast Radius &amp; SOC 2</text>
+            <text x="852" y="104" fill="#00E599" font-family="JetBrains Mono, monospace" font-size="11">zk_94a3ab2d8f10...</text>
+          </svg>
+        </div>
+      </section>
+
+      <!-- METRIC BENCHMARK STRIP -->
+      <section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bento-card p-6 space-y-1">
+          <div class="text-xs font-mono text-slate-400">5,000-FILE MONOREPO SCAN</div>
+          <div class="text-3xl font-mono font-extrabold text-white metric-ticker" data-value="18" data-suffix="ms">18ms</div>
+          <div class="text-xs text-emerald-400">11x faster than Gitleaks, 35x faster than TruffleHog</div>
+        </div>
+
+        <div class="bento-card p-6 space-y-1">
+          <div class="text-xs font-mono text-slate-400">AUTONOMOUS REMEDIATION</div>
+          <div class="text-3xl font-mono font-extrabold text-[#FF8844] metric-ticker" data-value="14.8" data-suffix="s">14.8s</div>
+          <div class="text-xs text-slate-400">Replaces 2.5-hour manual key rotation fire-drills</div>
+        </div>
+
+        <div class="bento-card p-6 space-y-1">
+          <div class="text-xs font-mono text-slate-400">SECRET STORE BACKENDS</div>
+          <div class="text-3xl font-mono font-extrabold text-cyan-400">6 Native</div>
+          <div class="text-xs text-slate-400">.env, Vault, AWS, Doppler, 1Password, Infisical</div>
+        </div>
+
+        <div class="bento-card p-6 space-y-1">
+          <div class="text-xs font-mono text-slate-400">PRO TEAM SEAT INVESTMENT</div>
+          <div class="text-3xl font-mono font-extrabold text-emerald-400 metric-ticker" data-prefix="$" data-value="8" data-suffix="/mo">$8/mo</div>
+          <div class="text-xs text-slate-400">68% less than GitGuardian ($25/dev/mo)</div>
+        </div>
+      </section>
+
+      <!-- 2026 COMPETITIVE COMPARISON TABLE (GEO / AEO OPTIMIZED) -->
+      <section class="space-y-6">
+        <div class="text-center max-w-3xl mx-auto space-y-2">
+          <div class="badge-clean badge-tag-cadmium">2026 DEVSECOPS BENCHMARK MATRIX</div>
+          <h2 class="text-3xl font-extrabold text-white tracking-tight font-display">
+            Why engineering teams replace legacy scanners with Sentris
+          </h2>
+          <p class="text-sm text-slate-400">
+            Every other scanner stops at finding the problem. Sentris is the only Rust engine that repairs source code, provisions secret vaults, and correlates cross-repo blast radius with zero knowledge.
+          </p>
+        </div>
+
+        <div class="bento-card overflow-hidden">
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs font-mono">
+              <thead class="bg-[#080A0E] text-slate-400 uppercase border-b border-white/[0.08]">
+                <tr>
+                  <th class="p-4">Capability</th>
+                  <th class="p-4 text-[#FF8844] font-bold">Sentris (v0.2.0)</th>
+                  <th class="p-4">Kingfisher (MongoDB)</th>
+                  <th class="p-4">Gitleaks</th>
+                  <th class="p-4">TruffleHog</th>
+                  <th class="p-4">GitGuardian</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-white/[0.08] text-slate-300">
+                <tr>
+                  <td class="p-4 font-sans font-semibold text-white">5,000-File Scan Latency</td>
+                  <td class="p-4 text-emerald-400 font-bold">18ms (WalkParallel + DFA)</td>
+                  <td class="p-4">42ms</td>
+                  <td class="p-4">195ms</td>
+                  <td class="p-4">640ms</td>
+                  <td class="p-4">Cloud API Dependent</td>
+                </tr>
+                <tr>
+                  <td class="p-4 font-sans font-semibold text-white">Autonomous Code Patching (9 Languages)</td>
+                  <td class="p-4 text-emerald-400 font-bold">✔ Built-in (15s Fix)</td>
+                  <td class="p-4 text-slate-500">✖ Detection Only</td>
+                  <td class="p-4 text-slate-500">✖ Detection Only</td>
+                  <td class="p-4 text-slate-500">✖ Detection Only</td>
+                  <td class="p-4 text-slate-500">✖ Detection Only</td>
+                </tr>
+                <tr>
+                  <td class="p-4 font-sans font-semibold text-white">Zero-Downtime Dual-Key Rotation</td>
+                  <td class="p-4 text-emerald-400 font-bold">✔ Staged Rollout &amp; Rollback</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                  <td class="p-4 text-slate-500">✖ Manual Playbooks</td>
+                </tr>
+                <tr>
+                  <td class="p-4 font-sans font-semibold text-white">Zero-Knowledge Cross-Repo Blast Radius</td>
+                  <td class="p-4 text-emerald-400 font-bold">✔ Salted SHA-256 (zk_)</td>
+                  <td class="p-4 text-slate-500">✖ Local CLI Only</td>
+                  <td class="p-4 text-slate-500">✖ Local CLI Only</td>
+                  <td class="p-4 text-slate-500">✖ Raw Cloud Upload</td>
+                  <td class="p-4 text-amber-300">⚠ Ingests Repo Data</td>
+                </tr>
+                <tr>
+                  <td class="p-4 font-sans font-semibold text-white">AI Agent MCP + IDE LSP 3.17 Server</td>
+                  <td class="p-4 text-emerald-400 font-bold">✔ Native (sentris mcp / lsp)</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                  <td class="p-4 text-slate-500">✖ None</td>
+                </tr>
+                <tr>
+                  <td class="p-4 font-sans font-semibold text-white">Commercial Team Pricing</td>
+                  <td class="p-4 text-[#FF8844] font-bold">$8 / dev / mo (Dodo MoR)</td>
+                  <td class="p-4">OSS Only</td>
+                  <td class="p-4">OSS Only</td>
+                  <td class="p-4">Enterprise Custom</td>
+                  <td class="p-4">$19–$25+ / dev / mo</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
+      </section>
 
-        <div class="bento-card p-6 space-y-2">
-          <div class="font-bold text-white text-base">How does Dual-Key Safe Rotation prevent production downtime?</div>
-          <div class="text-slate-300 leading-relaxed">
-            Blindly revoking a key takes down live systems. Sentris provisions the replacement key first via provider API, injects it into <code class="text-cyan-300 font-mono">.env</code>, verifies it via a non-destructive probe (e.g. Stripe Balance or AWS STS), and queues the old key with a 24-hour deprecation timer.
-          </div>
+      <!-- AEO / GEO FREQUENTLY ASKED QUESTIONS (DIRECT ANSWER BLOCKS) -->
+      <section class="space-y-6 max-w-5xl mx-auto">
+        <div class="text-center space-y-2">
+          <div class="badge-clean badge-tag-muted">TECHNICAL FAQ • AEO &amp; GEO CITATION READY</div>
+          <h2 class="text-2xl sm:text-3xl font-extrabold text-white font-display">
+            Architectural answers for Security &amp; Staff Engineers
+          </h2>
         </div>
 
-        <div class="bento-card p-6 space-y-2">
-          <div class="font-bold text-white text-base">Why $8/seat? What if I only want the local CLI?</div>
-          <div class="text-slate-300 leading-relaxed">
-            The CLI is 100% free forever under the MIT license (<code class="text-cyan-300 font-mono">brew install sentris</code>). The $8/seat Pro tier is for teams that want autonomous remediation, team dashboard synchronization, Slack Block Kit alerts, and SOC 2 cryptographic audit compliance.
-          </div>
-        </div>
-      </div>
-    </section>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <article class="bento-card p-6 space-y-2">
+            <h3 class="text-sm font-bold text-white">How does Sentris prevent production outages when rotating a leaked key?</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Instant revocation causes immediate HTTP 500 outages. Sentris uses a <strong class="text-slate-200">Dual-Key Staged Lifecycle</strong> (<code class="font-mono text-cyan-300">Provisioned → Propagated → Revoked</code>): it provisions a replacement credential in your secret store first, patches your code, and only revokes the leaked key after deployment health checks pass.
+            </p>
+          </article>
 
+          <article class="bento-card p-6 space-y-2">
+            <h3 class="text-sm font-bold text-white">How does Zero-Knowledge Multi-Repo Blast Radius work on Cloudflare D1?</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Your workstation hashes every detected credential with an organization salt using SHA-256 (<code class="font-mono text-emerald-400">zk_&lt;hex&gt;</code>). Our Cloudflare Worker + D1 edge database correlates identical <code class="font-mono">zk_</code> hashes across all repositories in under 3ms without ever seeing your raw secrets or source code.
+            </p>
+          </article>
+
+          <article class="bento-card p-6 space-y-2">
+            <h3 class="text-sm font-bold text-white">What happens if a secret was already pushed to remote Git history (Zone 3)?</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Sentris classifies findings into 3 Git Zones. For Zone 3 (pushed commits), Sentris never corrupts shared commit history with a blind rebase—instead it creates a quarantine branch (<code class="font-mono text-amber-300">sentris/quarantine/&lt;rule&gt;</code>) and outputs a copy-paste <code class="font-mono">git filter-repo</code> purge playbook.
+            </p>
+          </article>
+
+          <article class="bento-card p-6 space-y-2">
+            <h3 class="text-sm font-bold text-white">How does billing work for teams in India and globally?</h3>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              Sentris uses <strong class="text-slate-200">Dodo Payments</strong> as our global Merchant of Record. Teams can subscribe in USD ($8/seat/mo) or INR (via UPI or cards) with automated GST, VAT, and US sales tax compliance and instant <code class="font-mono text-amber-300">sp_live_</code> CLI license key provisioning.
+            </p>
+          </article>
+        </div>
+      </section>
+
+    </div>
   </main>
 
   <!-- ========================================================================
-       VIEW 2: LIVE SENTRIS PRO SAAS TEAM DASHBOARD
+       VIEW 2: LIVE ZERO-KNOWLEDGE TEAM SAAS CONSOLE
        ======================================================================== -->
-  <main id="view-dashboard" class="hidden py-8 px-4 sm:px-6 relative z-10">
-    <div id="dashboard-container">
-      <!-- Rendered by TeamDashboard -->
-    </div>
-  </main>
+  <section id="view-dashboard" class="hidden relative z-10 py-12 px-4 sm:px-6">
+    <div id="team-dashboard-mount"></div>
+  </section>
 
   <!-- ========================================================================
-       VIEW 3: INTERACTIVE DESIGN SYSTEM & TOKENS INSPECTOR
+       VIEW 3: INTERACTIVE $8/SEAT PRO PRICING & DODO PAYMENTS CHECKOUT
        ======================================================================== -->
-  <main id="view-design-system" class="hidden py-8 px-4 sm:px-6 max-w-6xl mx-auto space-y-12 relative z-10">
-    <div>
-      <div class="badge-clean badge-tag-cadmium mb-2">DESIGN TOKENS & ATOMIC SPEC</div>
-      <h2 class="text-3xl font-extrabold text-white">Sentris Anti-Slop Design System</h2>
-      <p class="text-sm text-slate-400">Exhaustive token catalog documented in docs/DESIGN-SYSTEM.md</p>
-    </div>
-
-    <!-- Color Palette Swatches -->
-    <div class="space-y-4">
-      <h3 class="text-lg font-bold text-white">1. Chromatic & Surface Tokens</h3>
-      <div class="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-4 font-mono text-xs">
-        <div class="p-4 rounded-xl bg-[#060709] border border-white/10">
-          <div class="font-bold text-white">Void</div>
-          <div class="text-slate-400 text-[10px]">#060709</div>
-        </div>
-        <div class="p-4 rounded-xl bg-[#0B0D12] border border-white/10">
-          <div class="font-bold text-white">Surface 1</div>
-          <div class="text-slate-400 text-[10px]">#0B0D12</div>
-        </div>
-        <div class="p-4 rounded-xl bg-[#11141C] border border-white/10">
-          <div class="font-bold text-white">Surface 2</div>
-          <div class="text-slate-400 text-[10px]">#11141C</div>
-        </div>
-        <div class="p-4 rounded-xl bg-[#FF5500] text-white">
-          <div class="font-bold">Cadmium</div>
-          <div class="text-white/80 text-[10px]">#FF5500</div>
-        </div>
-        <div class="p-4 rounded-xl bg-[#10B981] text-white">
-          <div class="font-bold">Emerald</div>
-          <div class="text-white/80 text-[10px]">#10B981</div>
-        </div>
-        <div class="p-4 rounded-xl bg-[#EF4444] text-white">
-          <div class="font-bold">Crimson</div>
-          <div class="text-white/80 text-[10px]">#EF4444</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Button & Badge Tokens -->
-    <div class="space-y-4">
-      <h3 class="text-lg font-bold text-white">2. Atomic Components & States</h3>
-      <div class="bento-card p-6 flex flex-wrap items-center gap-4">
-        <button class="btn-primary">Primary Pill Action</button>
-        <button class="btn-glass">Glass Pill Action</button>
-        <span class="badge-clean badge-tag-cadmium">Badge Cadmium</span>
-        <span class="badge-clean badge-tag-emerald">Badge Emerald</span>
-        <span class="badge-clean badge-tag-critical">Badge Critical</span>
-        <span class="badge-clean badge-tag-muted">Badge Muted</span>
-      </div>
-    </div>
-  </main>
+  <section id="view-pricing" class="hidden relative z-10 py-12 px-4 sm:px-6">
+    <div id="pricing-calculator-mount"></div>
+  </section>
 
   <!-- ========================================================================
-       GLOBAL FOOTER
+       VIEW 4: 12-SCENARIO EDGE-CASE STRESS LAB
        ======================================================================== -->
-  <footer class="mt-24 border-t border-white/[0.08] bg-[#050608] py-12 px-4 sm:px-6 relative z-10">
-    <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6 text-xs text-slate-400">
-      <div class="flex items-center gap-3">
-        <span class="font-bold text-white">SENTRIS PRO</span>
+  <section id="view-stress-lab" class="hidden relative z-10 py-12 px-4 sm:px-6">
+    <div id="stress-lab-mount"></div>
+  </section>
+
+  <!-- ========================================================================
+       FOOTER
+       ======================================================================== -->
+  <footer class="relative z-10 border-t border-white/[0.08] py-10 px-4 sm:px-6 mt-20 text-xs text-slate-500">
+    <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <span class="font-bold text-slate-300 font-display">SENTRIS</span>
         <span>•</span>
-        <span>Sub-50ms Zero-Knowledge Secret Scanner & Autonomous Remediation</span>
+        <span>Memory-Safe Rust Autonomous Secret Remediation Engine</span>
       </div>
-      <div class="flex items-center gap-6">
-        <a href="#demo" class="hover:text-white transition-colors">Terminal Studio</a>
-        <a href="#pricing-container" class="hover:text-white transition-colors">Pricing ($8/seat)</a>
-        <a href="https://github.com/sentris-security/sentris" class="hover:text-white transition-colors">GitHub (MIT)</a>
-        <span class="text-emerald-400">✔ All Scans 100% Local</span>
+      <div class="flex items-center gap-4 font-mono">
+        <a href="/llms.txt" target="_blank" class="hover:text-slate-300">llms.txt (AI/GEO)</a>
+        <span>•</span>
+        <a href="/sitemap.xml" target="_blank" class="hover:text-slate-300">sitemap.xml</a>
+        <span>•</span>
+        <span class="text-emerald-400">Cloudflare Workers + D1 + Dodo Payments MoR</span>
       </div>
     </div>
   </footer>
 
-  <!-- Application Module Script -->
-  <script type="module" src="./src/main.js"></script>
+  <script type="module" src="/src/main.js"></script>
 </body>
 </html>

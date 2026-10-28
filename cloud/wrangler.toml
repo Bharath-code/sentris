@@ -1,0 +1,35 @@
+name = "sentris-zk-cloud"
+main = "src/worker.ts"
+compatibility_date = "2026-04-01"
+workers_dev = true
+
+# Cloudflare Free Tier / Beta Configuration:
+# Deploys automatically to https://sentris-zk-cloud.<your-subdomain>.workers.dev
+# Custom domain (e.g., api.sentris.dev) can be attached later in 1 click when out of beta.
+
+[vars]
+ENVIRONMENT = "production"
+DODO_API_BASE_URL = "https://live.dodopayments.com"
+DODO_PRO_PRODUCT_ID = "pdt_sentris_pro_seat_8usd"
+DODO_PRO_ANNUAL_PRODUCT_ID = "pdt_sentris_pro_seat_7usd_annual"
+DODO_ENTERPRISE_PRODUCT_ID = "pdt_sentris_enterprise_2000usd"
+APP_PUBLIC_URL = "https://sentris-web.pages.dev"
+
+# Serverless Edge SQLite Database (Cloudflare D1)
+# Create via: npx wrangler d1 create sentris-zk-db
+# Apply schema via: npx wrangler d1 execute sentris-zk-db --file=./schema.sql
+[[d1_databases]]
+binding = "DB"
+database_name = "sentris-zk-db"
+database_id = "00000000-0000-0000-0000-000000000001"
+
+# Ultra-Low-Latency Edge Token & Rate-Limit Cache (Cloudflare KV)
+# Create via: npx wrangler kv namespace create SENTRIS_TOKENS
+[[kv_namespaces]]
+binding = "SENTRIS_TOKENS"
+id = "00000000000000000000000000000001"
+
+# Secrets configured via `npx wrangler secret put <NAME>`:
+# - DODO_PAYMENTS_API_KEY       (Bearer API key from Dodo Payments Dashboard)
+# - DODO_PAYMENTS_WEBHOOK_KEY   (whsec_... Standard Webhooks signing secret from Dodo Payments)
+# - SENTRIS_MASTER_PEPPER       (32-byte HMAC pepper for token hashing)

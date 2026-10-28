@@ -394,11 +394,14 @@ impl AwsSecretsManagerBackend {
         let region = std::env::var("AWS_REGION")
             .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
             .unwrap_or_else(|_| "us-east-1".to_string());
+        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         Self {
             region,
             action: AwsActionMode::PutSecretValue,
             kms_key_id: None,
-            mock: true,
+            mock: !live_mode,
             mock_ledger_path: None,
         }
     }
@@ -535,10 +538,46 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
             ));
         }
 
-        Ok(format!(
-            "AWS Secrets Manager {action_name} executed for '{key}' in region {}",
-            self.region
-        ))
+        let subcommand = match self.action {
+            AwsActionMode::PutSecretValue => "put-secret-value",
+            AwsActionMode::CreateSecret => "create-secret",
+        };
+        let id_flag = match self.action {
+            AwsActionMode::PutSecretValue => "--secret-id",
+            AwsActionMode::CreateSecret => "--name",
+        };
+
+        let mut cmd = std::process::Command::new("aws");
+        cmd.args([
+            "secretsmanager",
+            subcommand,
+            id_flag,
+            key,
+            "--secret-string",
+            secret,
+            "--region",
+            &self.region,
+        ]);
+        if let (AwsActionMode::CreateSecret, Some(kms)) = (&self.action, &self.kms_key_id) {
+            cmd.args(["--kms-key-id", kms]);
+        }
+
+        match cmd.output() {
+            Ok(out) if out.status.success() => Ok(format!(
+                "AWS Secrets Manager {action_name} executed via aws CLI for '{key}' in region {}",
+                self.region
+            )),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "aws secretsmanager {subcommand} failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 'aws' CLI for '{key}' (ensure AWS CLI v2 is installed or set mock mode): {e}"
+            ))),
+        }
     }
 }
 
@@ -559,10 +598,13 @@ impl DopplerBackend {
     pub fn new() -> Self {
         let project = std::env::var("DOPPLER_PROJECT").unwrap_or_else(|_| "sentris".to_string());
         let config = std::env::var("DOPPLER_CONFIG").unwrap_or_else(|_| "prd".to_string());
+        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         Self {
             project,
             config,
-            mock: true,
+            mock: !live_mode,
             mock_ledger_path: None,
         }
     }
@@ -657,10 +699,36 @@ impl SecretStoreBackend for DopplerBackend {
             ));
         }
 
-        Ok(format!(
-            "Updated Doppler secret '{key}' in project '{}', config '{}'",
-            self.project, self.config
-        ))
+        let kv_arg = format!("{key}={secret}");
+        let output = std::process::Command::new("doppler")
+            .args([
+                "secrets",
+                "set",
+                &kv_arg,
+                "--project",
+                &self.project,
+                "--config",
+                &self.config,
+                "--silent",
+            ])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => Ok(format!(
+                "Updated Doppler secret '{key}' via doppler CLI in project '{}', config '{}'",
+                self.project, self.config
+            )),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "doppler secrets set failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 'doppler' CLI for '{key}': {e}"
+            ))),
+        }
     }
 }
 
@@ -678,10 +746,13 @@ pub struct OnePasswordBackend {
 
 impl OnePasswordBackend {
     pub fn new() -> Self {
+        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         Self {
             vault_name: std::env::var("OP_VAULT").unwrap_or_else(|_| "Engineering".to_string()),
             item_name: std::env::var("OP_ITEM").unwrap_or_else(|_| "SentrisSecrets".to_string()),
-            mock: true,
+            mock: !live_mode,
             mock_ledger_path: None,
         }
     }
@@ -777,7 +848,33 @@ impl SecretStoreBackend for OnePasswordBackend {
             ));
         }
 
-        Ok(format!("Provisioned 1Password secret reference {op_ref}"))
+        let assignment = format!("{key}[password]={secret}");
+        let output = std::process::Command::new("op")
+            .args([
+                "item",
+                "edit",
+                &self.item_name,
+                "--vault",
+                &self.vault_name,
+                &assignment,
+            ])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => Ok(format!(
+                "Provisioned 1Password secret reference {op_ref} via op CLI"
+            )),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "1Password 'op item edit' failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 1Password 'op' CLI for '{key}': {e}"
+            ))),
+        }
     }
 }
 
@@ -795,10 +892,13 @@ pub struct InfisicalBackend {
 
 impl InfisicalBackend {
     pub fn new() -> Self {
+        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false);
         Self {
             env_slug: std::env::var("INFISICAL_ENV").unwrap_or_else(|_| "dev".to_string()),
             secret_path: std::env::var("INFISICAL_PATH").unwrap_or_else(|_| "/".to_string()),
-            mock: true,
+            mock: !live_mode,
             mock_ledger_path: None,
         }
     }
@@ -889,10 +989,29 @@ impl SecretStoreBackend for InfisicalBackend {
             ));
         }
 
-        Ok(format!(
-            "Updated Infisical secret '{key}' in env '{}'",
-            self.env_slug
-        ))
+        let kv_arg = format!("{key}={secret}");
+        let env_arg = format!("--env={}", self.env_slug);
+        let path_arg = format!("--path={}", self.secret_path);
+        let output = std::process::Command::new("infisical")
+            .args(["secrets", "set", &kv_arg, &env_arg, &path_arg])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => Ok(format!(
+                "Updated Infisical secret '{key}' via infisical CLI in env '{}'",
+                self.env_slug
+            )),
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "infisical secrets set failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 'infisical' CLI for '{key}': {e}"
+            ))),
+        }
     }
 }
 

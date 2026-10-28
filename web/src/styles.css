@@ -1,37 +1,38 @@
 /* ==========================================================================
-   SENTRIS PRO — THE LINEAR LOOK: HIGH-PRECISION PRODUCT DESIGN SYSTEM
-   Deep dark backgrounds, 1px hairline borders, subtle ambient glows,
-   and surgical status colors.
+   SENTRIS PRO — OBSIDIAN CRYPTOGRAPHIC PRECISION DESIGN SYSTEM (AWWWARDS EDITION)
+   Typography: Space Grotesk (Display) + Plus Jakarta Sans (UI) + JetBrains Mono (Code)
+   Motion: React Bits SpotlightCard radial cursor tracking & DecryptedText
    ========================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&display=swap');
 
 :root {
+  --font-display: 'Space Grotesk', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Surfaces & Ambient Lighting */
-  --bg-void: #060709;
+  --bg-void: #06070A;
   --bg-surface: #0B0D12;
   --bg-surface-elevated: #11141C;
-  --bg-surface-glass: rgba(11, 13, 18, 0.75);
+  --bg-surface-glass: rgba(11, 13, 18, 0.78);
 
   /* Borders & Hairlines */
   --border-hairline: rgba(255, 255, 255, 0.08);
-  --border-hover: rgba(255, 255, 255, 0.16);
-  --border-focus: rgba(255, 85, 0, 0.5);
+  --border-hover: rgba(255, 255, 255, 0.18);
+  --border-focus: rgba(255, 85, 0, 0.55);
 
-  /* Accent Colors (Surgical use only) */
+  /* Accent Colors (Surgical Precision) */
   --accent-primary: #FF5500;
   --accent-primary-hover: #FF6A1A;
   --accent-primary-glow: rgba(255, 85, 0, 0.25);
 
   /* Status Colors */
-  --status-emerald: #10B981;
-  --status-emerald-glow: rgba(16, 185, 129, 0.2);
-  --status-critical: #EF4444;
-  --status-warning: #F59E0B;
-  --status-cyan: #06B6D4;
+  --status-emerald: #00E599;
+  --status-emerald-glow: rgba(0, 229, 153, 0.22);
+  --status-critical: #FF3B5C;
+  --status-warning: #FFB020;
+  --status-cyan: #38BDF8;
 
   /* Typography */
   --text-primary: #F8FAFC;
@@ -56,6 +57,16 @@ body {
   overflow-x: hidden;
 }
 
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.03em;
+}
+
+.font-mono, code, pre, .metric-ticker {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Ambient Top Beam Spotlight */
 .ambient-glow {
   position: absolute;
@@ -63,9 +74,14 @@ body {
   left: 50%;
   transform: translateX(-50%);
   width: 100%;
-  max-width: 1200px;
-  height: 550px;
-  background: radial-gradient(ellipse 65% 50% at 50% 0%, rgba(255, 85, 0, 0.12) 0%, rgba(37, 99, 235, 0.04) 40%, transparent 80%);
+  max-width: 1280px;
+  height: 580px;
+  background: radial-gradient(
+    ellipse 65% 50% at 50% 0%,
+    rgba(255, 85, 0, 0.13) 0%,
+    rgba(0, 229, 153, 0.05) 42%,
+    transparent 80%
+  );
   pointer-events: none;
   z-index: 0;
 }
@@ -73,20 +89,47 @@ body {
 /* Micro-Grid Texture */
 .bg-grid-pattern {
   background-image: 
-    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    linear-gradient(to right, rgba(255, 255, 255, 0.028) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.028) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
-/* Bento Card Style */
+/* Bento Card + React Bits SpotlightCard Cursor Specular Lighting */
 .bento-card {
   position: relative;
   background: var(--bg-surface);
   border: 1px solid var(--border-hairline);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 10px 30px -10px rgba(0, 0, 0, 0.6);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.06), 0 10px 30px -10px rgba(0, 0, 0, 0.65);
   border-radius: 16px;
   overflow: hidden;
   transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  --mouse-x: -500px;
+  --mouse-y: -500px;
+}
+
+.bento-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    480px circle at var(--mouse-x) var(--mouse-y),
+    rgba(255, 85, 0, 0.075),
+    rgba(56, 189, 248, 0.03) 40%,
+    transparent 75%
+  );
+  opacity: 0;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.bento-card:hover::before {
+  opacity: 1;
+}
+
+.bento-card > * {
+  position: relative;
+  z-index: 1;
 }
 
 .bento-card:hover {
@@ -94,9 +137,9 @@ body {
 }
 
 .bento-card-interactive:hover {
-  border-color: rgba(255, 85, 0, 0.35);
+  border-color: rgba(255, 85, 0, 0.38);
   transform: translateY(-2px);
-  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 16px 36px -10px rgba(255, 85, 0, 0.08);
+  box-shadow: inset 0 1px 0 0 rgba(255, 255, 255, 0.1), 0 18px 40px -10px rgba(255, 85, 0, 0.1);
 }
 
 /* Primary Button (High-precision action pill) */
@@ -119,7 +162,7 @@ body {
 
 .btn-primary:hover {
   background: linear-gradient(180deg, #FF7733 0%, #FF5500 100%);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 18px rgba(255, 85, 0, 0.4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 4px 18px rgba(255, 85, 0, 0.45);
   transform: translateY(-1px);
 }
 
@@ -147,7 +190,7 @@ body {
 }
 
 .btn-glass:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.09);
   border-color: var(--border-hover);
   transform: translateY(-1px);
 }
@@ -166,27 +209,39 @@ body {
 }
 
 .badge-tag-cadmium {
-  background: rgba(255, 85, 0, 0.1);
+  background: rgba(255, 85, 0, 0.12);
   color: #FF8844;
-  border: 1px solid rgba(255, 85, 0, 0.25);
+  border: 1px solid rgba(255, 85, 0, 0.28);
 }
 
 .badge-tag-emerald {
-  background: rgba(16, 185, 129, 0.1);
-  color: #34D399;
-  border: 1px solid rgba(16, 185, 129, 0.25);
+  background: rgba(0, 229, 153, 0.11);
+  color: #00E599;
+  border: 1px solid rgba(0, 229, 153, 0.28);
 }
 
 .badge-tag-critical {
-  background: rgba(239, 68, 68, 0.12);
-  color: #F87171;
-  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(255, 59, 92, 0.13);
+  color: #FF6B84;
+  border: 1px solid rgba(255, 59, 92, 0.3);
 }
 
 .badge-tag-muted {
   background: rgba(255, 255, 255, 0.05);
   color: #94A3B8;
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Animated SVG Laser Filament Flow */
+@keyframes svgDashFlow {
+  to {
+    stroke-dashoffset: -48;
+  }
+}
+
+.svg-flow-line {
+  stroke-dasharray: 8 6;
+  animation: svgDashFlow 1.6s linear infinite;
 }
 
 /* Modern Range Slider */
@@ -219,16 +274,16 @@ input[type="range"]::-webkit-slider-thumb:hover {
 
 /* Code Highlighting in Terminal / Diff */
 .code-diff-remove {
-  background: rgba(239, 68, 68, 0.12);
-  color: #FCA5A5;
-  border-left: 2px solid #EF4444;
+  background: rgba(255, 59, 92, 0.12);
+  color: #FDA4AF;
+  border-left: 2px solid #FF3B5C;
   padding-left: 8px;
 }
 
 .code-diff-add {
-  background: rgba(16, 185, 129, 0.12);
-  color: #86EFAC;
-  border-left: 2px solid #10B981;
+  background: rgba(0, 229, 153, 0.12);
+  color: #6EE7B7;
+  border-left: 2px solid #00E599;
   padding-left: 8px;
 }
 
