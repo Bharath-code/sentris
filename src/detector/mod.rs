@@ -5,7 +5,7 @@ pub mod patterns;
 
 use crate::error::SentrisError;
 use crate::model::{Finding, Severity};
-use regex::Regex;
+use regex::{Regex, RegexSet};
 use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
@@ -20,6 +20,7 @@ pub struct CompiledRule {
 
 pub struct DetectorEngine {
     rules: Vec<CompiledRule>,
+    regex_set: RegexSet,
 }
 
 impl DetectorEngine {
@@ -27,9 +28,11 @@ impl DetectorEngine {
         let raw_rules = patterns::get_rules();
         let custom_count = config.map(|c| c.rules.len()).unwrap_or(0);
         let mut compiled = Vec::with_capacity(raw_rules.len() + custom_count);
+        let mut pattern_strings = Vec::with_capacity(raw_rules.len() + custom_count);
 
         for rule in raw_rules {
             let re = Regex::new(rule.pattern)?;
+            pattern_strings.push(rule.pattern.to_string());
             compiled.push(CompiledRule {
                 rule_id: rule.rule_id.to_string(),
                 name: rule.name.to_string(),
@@ -43,6 +46,7 @@ impl DetectorEngine {
         if let Some(cfg) = config {
             for custom in &cfg.rules {
                 let re = Regex::new(&custom.pattern)?;
+                pattern_strings.push(custom.pattern.clone());
                 compiled.push(CompiledRule {
                     rule_id: custom.rule_id.clone(),
                     name: custom.name.clone(),
@@ -54,12 +58,28 @@ impl DetectorEngine {
             }
         }
 
-        Ok(Self { rules: compiled })
+        let regex_set = RegexSet::new(&pattern_strings)?;
+
+        Ok(Self {
+            rules: compiled,
+            regex_set,
+        })
     }
 
     #[allow(dead_code)]
     pub fn new() -> Result<Self, SentrisError> {
         Self::with_config(None)
+    }
+
+    /// Extracts the raw secret token from a line of code using the compiled rule's capture group
+    pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
+        if let Some(rule) = self.rules.iter().find(|r| r.rule_id == rule_id) {
+            if let Some(caps) = rule.regex.captures(line) {
+                let mat = caps.get(1).or_else(|| caps.get(0))?;
+                return Some(mat.as_str().to_string());
+            }
+        }
+        None
     }
 
     /// Scans a single line of text with custom line number and optional commit hash
@@ -72,6 +92,12 @@ impl DetectorEngine {
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
+        // Fast-path DFA check: skip lines that don't match any rule pattern
+        let matched_indices = self.regex_set.matches(line);
+        if !matched_indices.matched_any() {
+            return findings;
+        }
+
         // Check for inline suppression comments (supports multi-tool ecosystem standards)
         if line.contains("sentris-ignore")
             || line.contains("rustscan-ignore")
@@ -83,8 +109,15 @@ impl DetectorEngine {
             return findings;
         }
 
-        for rule in &self.rules {
-            for mat in rule.regex.find_iter(line) {
+        let mut raw_hits: Vec<(usize, usize, Finding)> = Vec::new();
+
+        for rule_idx in matched_indices.into_iter() {
+            let rule = &self.rules[rule_idx];
+            for caps in rule.regex.captures_iter(line) {
+                let mat = match caps.get(1).or_else(|| caps.get(0)) {
+                    Some(m) => m,
+                    None => continue,
+                };
                 let matched_str = mat.as_str();
 
                 // Check Shannon entropy threshold
@@ -110,20 +143,41 @@ impl DetectorEngine {
                 let column = mat.start() + 1;
                 let redacted = Finding::mask_secret(matched_str);
 
-                findings.push(Finding {
-                    rule_id: rule.rule_id.clone(),
-                    description: rule.description.clone(),
-                    severity: rule.severity,
-
-                    file_path: file_path.to_string(),
-                    line_number,
-                    column,
-                    redacted_match: redacted,
-                    entropy,
-                    fingerprint,
-                    commit_hash: commit_hash.clone(),
-                });
+                raw_hits.push((
+                    mat.start(),
+                    mat.end(),
+                    Finding {
+                        rule_id: rule.rule_id.clone(),
+                        description: rule.description.clone(),
+                        severity: rule.severity,
+                        file_path: file_path.to_string(),
+                        line_number,
+                        column,
+                        redacted_match: redacted,
+                        entropy,
+                        fingerprint,
+                        commit_hash: commit_hash.clone(),
+                    },
+                ));
             }
+        }
+
+        // Deduplicate overlapping matches: if a specific rule matches a span, suppress generic-api-key on the same span
+        for (i, (start, end, finding)) in raw_hits.iter().enumerate() {
+            if finding.rule_id == "generic-api-key" {
+                let overlapped_by_specific = raw_hits.iter().enumerate().any(
+                    |(j, (other_start, other_end, other_finding))| {
+                        i != j
+                            && other_finding.rule_id != "generic-api-key"
+                            && start < other_end
+                            && end > other_start
+                    },
+                );
+                if overlapped_by_specific {
+                    continue;
+                }
+            }
+            findings.push(finding.clone());
         }
 
         findings
@@ -262,5 +316,56 @@ mod tests {
         assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].rule_id, "anthropic-api-key");
         assert_eq!(findings[0].severity, Severity::Critical);
+    }
+
+    #[test]
+    fn test_overlapping_rule_deduplication_and_capture_extraction() {
+        let engine = DetectorEngine::new().unwrap();
+        // Previously matched both stripe-secret-key and generic-api-key due to `stripeApiKey`
+        let line = concat!(
+            "const stripeApiKey = \"",
+            "sk_live_",
+            "test_mock_1234567890abcdef\";\n"
+        );
+        let findings = engine.scan_text(line, "sample_leak.ts");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "stripe-secret-key");
+
+        // Verify generic-api-key extracts only the secret token inside quotes, not `api_key = "..."`
+        let generic_line = concat!(
+            "const my_api_key = \"",
+            "xK9mP2vL8qR4tW7z",
+            "N1bY5jC3dF6hT0sU8yA2\";\n"
+        );
+        let generic_findings = engine.scan_text(generic_line, "app.ts");
+        assert_eq!(generic_findings.len(), 1);
+        assert_eq!(generic_findings[0].rule_id, "generic-api-key");
+        assert!(generic_findings[0].redacted_match.starts_with("xK9mP2"));
+        assert_eq!(
+            engine.extract_raw_secret(generic_line, "generic-api-key"),
+            Some("xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2".to_string())
+        );
+    }
+
+    #[test]
+    fn test_modern_2026_ai_and_cloud_rules() {
+        let engine = DetectorEngine::new().unwrap();
+        let groq_line = concat!(
+            "export GROQ_API_KEY=\"",
+            "gsk_",
+            "aB8kM9xL2qR5tW7zP1nY3vF6hJ0sD4gE7jK9mN2pQ4rT6vX8zA1b\";\n"
+        );
+        let findings = engine.scan_text(groq_line, ".env");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "groq-api-key");
+
+        let supabase_line = concat!(
+            "SUPABASE_TOKEN=\"",
+            "sbp_",
+            "9f8e7d6c5b4a32109f8e7d6c5b4a32109f8e7d6c\"\n"
+        );
+        let sb_findings = engine.scan_text(supabase_line, ".env");
+        assert_eq!(sb_findings.len(), 1);
+        assert_eq!(sb_findings[0].rule_id, "supabase-access-token");
     }
 }

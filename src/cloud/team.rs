@@ -102,7 +102,7 @@ impl TeamInfo {
         summary_table.add_row(vec![
             Cell::new("Billing Tier"),
             Cell::new(&self.tier).fg(if no_color { Color::Reset } else { Color::Green }),
-            Cell::new("$8 / seat / month (Self-serve Pro)"),
+            Cell::new("$8 / seat / month (Self-serve Pro) • $12/mo monthly"),
         ]);
         summary_table.add_row(vec![
             Cell::new("Seat Utilization"),

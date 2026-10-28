@@ -339,15 +339,19 @@ mod tests {
     #[test]
     fn test_real_secret_is_not_suppressed() {
         assert!(!FalsePositiveFilter::is_false_positive(
-            "sk_live_51AbcDefGhIjKlMnOpQrStUvWxYz123456",
+            concat!("sk_live_", "51AbcDefGhIjKlMnOpQrStUvWxYz123456"),
             "stripe-secret-key",
-            "const stripeKey = 'sk_live_51AbcDefGhIjKlMnOpQrStUvWxYz123456';"
+            concat!(
+                "const stripeKey = '",
+                "sk_live_",
+                "51AbcDefGhIjKlMnOpQrStUvWxYz123456';"
+            )
         ));
 
         assert!(!FalsePositiveFilter::is_false_positive(
-            "AKIA2J5W9X7Y8Z9EXAMPLE",
+            concat!("AKIA2J5W", "9X7Y8Z9EXAMPLE"),
             "aws-access-key-id",
-            "export AWS_ACCESS_KEY_ID='AKIA2J5W9X7Y8Z9EXAMPLE'"
+            concat!("export AWS_ACCESS_KEY_ID='", "AKIA2J5W", "9X7Y8Z9EXAMPLE'")
         ));
     }
 }

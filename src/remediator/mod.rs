@@ -31,6 +31,55 @@ impl Remediator {
         }
     }
 
+    /// Maps a secret rule ID to its canonical environment variable name
+    pub fn env_var_name_for_rule(rule_id: &str) -> &'static str {
+        match rule_id {
+            "stripe-secret-key" | "stripe-restricted-key" => "STRIPE_SECRET_KEY",
+            "stripe-webhook-secret" => "STRIPE_WEBHOOK_SECRET",
+            "aws-access-key-id" => "AWS_ACCESS_KEY_ID",
+            "aws-secret-access-key" => "AWS_SECRET_ACCESS_KEY",
+            "google-api-key" => "GOOGLE_API_KEY",
+            "azure-storage-account-key" => "AZURE_STORAGE_KEY",
+            "digitalocean-access-token" => "DIGITALOCEAN_ACCESS_TOKEN",
+            "github-pat" | "github-fine-grained-pat" | "github-oauth-access-token" => {
+                "GITHUB_TOKEN"
+            }
+            "gitlab-pat" => "GITLAB_TOKEN",
+            "npm-access-token" => "NPM_TOKEN",
+            "pypi-upload-token" => "PYPI_API_TOKEN",
+            "openai-api-key" => "OPENAI_API_KEY",
+            "anthropic-api-key" => "ANTHROPIC_API_KEY",
+            "huggingface-token" => "HF_TOKEN",
+            "cohere-api-key" => "COHERE_API_KEY",
+            "groq-api-key" => "GROQ_API_KEY",
+            "replicate-api-token" => "REPLICATE_API_TOKEN",
+            "perplexity-api-key" => "PERPLEXITY_API_KEY",
+            "slack-bot-token" => "SLACK_BOT_TOKEN",
+            "slack-user-token" => "SLACK_USER_TOKEN",
+            "slack-webhook-url" => "SLACK_WEBHOOK_URL",
+            "discord-bot-token" => "DISCORD_BOT_TOKEN",
+            "discord-webhook-url" => "DISCORD_WEBHOOK_URL",
+            "telegram-bot-token" => "TELEGRAM_BOT_TOKEN",
+            "twilio-api-key" => "TWILIO_API_KEY",
+            "sendgrid-api-key" => "SENDGRID_API_KEY",
+            "mailchimp-api-key" => "MAILCHIMP_API_KEY",
+            "postgres-connection-uri" | "mysql-connection-uri" => "DATABASE_URL",
+            "mongodb-connection-uri" => "MONGODB_URI",
+            "redis-connection-uri" => "REDIS_URL",
+            "datadog-api-key" => "DD_API_KEY",
+            "sentry-dsn" => "SENTRY_DSN",
+            "segment-write-key" => "SEGMENT_WRITE_KEY",
+            "shopify-access-token" => "SHOPIFY_ACCESS_TOKEN",
+            "hashicorp-vault-token" => "VAULT_TOKEN",
+            "supabase-access-token" => "SUPABASE_ACCESS_TOKEN",
+            "resend-api-key" => "RESEND_API_KEY",
+            "linear-api-key" => "LINEAR_API_KEY",
+            "planetscale-token" => "PLANETSCALE_TOKEN",
+            "posthog-api-key" => "POSTHOG_API_KEY",
+            _ => "API_SECRET_KEY",
+        }
+    }
+
     /// Creates an atomic git backup branch prior to any file mutations
     fn create_backup_branch() -> Result<String, SentrisError> {
         let timestamp = chrono_compact_timestamp();
@@ -48,7 +97,7 @@ impl Remediator {
         Ok("local-working-tree".to_string())
     }
 
-    /// Executes the 7-step safe dual-key autonomous remediation workflow
+    /// Executes the 7-step safe dual-key autonomous remediation workflow (defaulting to Safe Local Extraction)
     pub fn remediate_finding(
         &self,
         finding: &Finding,
@@ -56,6 +105,19 @@ impl Remediator {
         dry_run: bool,
         backend_name: Option<&str>,
         offline: bool,
+    ) -> Result<String, SentrisError> {
+        self.remediate_finding_with_mode(finding, raw_secret, dry_run, backend_name, offline, false)
+    }
+
+    /// Executes the 7-step autonomous remediation workflow with explicit extraction vs. provider rotation mode
+    pub fn remediate_finding_with_mode(
+        &self,
+        finding: &Finding,
+        raw_secret: &str,
+        dry_run: bool,
+        backend_name: Option<&str>,
+        offline: bool,
+        rotate: bool,
     ) -> Result<String, SentrisError> {
         let session_id = format!("rm_{}", &finding.fingerprint[..8]);
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
@@ -133,9 +195,13 @@ impl Remediator {
         let backup_branch = Self::create_backup_branch()?;
         println!("{} ({})", "SAVED".green(), backup_branch.dimmed());
 
-        // Step 3: Provision Replacement Key
+        // Step 3: Provision Replacement Key or Extract Working Credential
         print!("  [3/7] 🔑 Provisioning replacement API credential... ");
-        let new_key = if offline {
+        let new_key = if !rotate && !dry_run {
+            // Safe Local Extraction default: preserve the working credential when moving to .env/vault
+            // so the developer's local application never breaks.
+            raw_secret.to_string()
+        } else if offline {
             format!("sec_replacement_{}", &finding.fingerprint[..16])
         } else if let Some(verifier) = matched_verifier {
             verifier.rotate(raw_secret, dry_run)?
@@ -144,7 +210,15 @@ impl Remediator {
         };
         let masked_new_key = Finding::mask_secret(&new_key);
 
-        println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
+        if !rotate && !dry_run {
+            println!(
+                "{} ({} • extracted working key; pass --rotate to roll via API)",
+                "PROVISIONED".green(),
+                masked_new_key.cyan()
+            );
+        } else {
+            println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
+        }
 
         // Step 4: Inject into selected secret backend and verify gitignore
         let backend_choice = backend_name.unwrap_or("env");
@@ -153,13 +227,7 @@ impl Remediator {
             "  [4/7] 🔒 Securing credential into {} backend... ",
             backend_driver.backend_name().cyan()
         );
-        let env_var_name = match finding.rule_id.as_str() {
-            "stripe-secret-key" | "stripe-restricted-key" => "STRIPE_SECRET_KEY",
-            "aws-access-key-id" => "AWS_ACCESS_KEY_ID",
-            "aws-secret-access-key" => "AWS_SECRET_ACCESS_KEY",
-            "github-pat" => "GITHUB_TOKEN",
-            _ => "API_SECRET_KEY",
-        };
+        let env_var_name = Self::env_var_name_for_rule(&finding.rule_id);
 
         backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
         println!("{} ({}=***)", "INJECTED".green(), env_var_name);

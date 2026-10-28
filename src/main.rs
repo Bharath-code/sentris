@@ -5,6 +5,7 @@ mod config;
 mod detector;
 mod error;
 mod git;
+pub mod mcp;
 mod model;
 mod remediator;
 mod reporter;
@@ -351,6 +352,7 @@ fn main() {
             dry_run,
             yes,
             backend,
+            rotate,
         } => {
             let scanner = match Scanner::new() {
                 Ok(s) => s,
@@ -448,17 +450,18 @@ fn main() {
             }
 
             let target_line = lines[finding.line_number - 1];
-            // Extract the raw secret token using regex pattern matching
-            let raw_secret = if let Some(mat) = target_line.split(&['"', '\''][..]).find(|part| {
-                part.starts_with("sk_live_")
-                    || part.starts_with("rk_live_")
-                    || part.starts_with("AKIA")
-                    || part.starts_with("ghp_")
-            }) {
-                mat.trim()
-            } else {
-                target_line.trim()
-            };
+            // Extract the exact raw secret token using the detector rule's capture group
+            let raw_secret_owned = scanner
+                .extract_raw_secret(target_line, &finding.rule_id)
+                .unwrap_or_else(|| {
+                    target_line
+                        .split(&['"', '\'', '`'][..])
+                        .nth(1)
+                        .unwrap_or(target_line)
+                        .trim()
+                        .to_string()
+                });
+            let raw_secret = raw_secret_owned.as_str();
 
             // Interactive confirmation gate (Stripe CLI / Terraform standard)
             if !dry_run && !yes {
@@ -518,15 +521,36 @@ fn main() {
             }
 
             let remediator = Remediator::new();
-            if let Err(err) = remediator.remediate_finding(
+            match remediator.remediate_finding_with_mode(
                 finding,
                 raw_secret,
                 dry_run,
                 Some(&backend),
                 cli.offline,
+                rotate,
             ) {
-                eprintln!("{} Remediation failed: {}", "ERROR:".red().bold(), err);
-                process::exit(1);
+                Ok(session_id) => {
+                    if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json")
+                    {
+                        let _ = ledger.record_event(
+                            AuditAction::SecretRemediated {
+                                session_id,
+                                rule_id: finding.rule_id.clone(),
+                                backend: backend.clone(),
+                            },
+                            serde_json::json!({
+                                "file_path": finding.file_path,
+                                "line_number": finding.line_number,
+                                "dry_run": dry_run,
+                            }),
+                        );
+                        let _ = ledger.save();
+                    }
+                }
+                Err(err) => {
+                    eprintln!("{} Remediation failed: {}", "ERROR:".red().bold(), err);
+                    process::exit(1);
+                }
             }
         }
 
@@ -646,6 +670,21 @@ fn main() {
                     println!("Review the step-by-step scrub guide at:");
                     println!("  👉 {}", report.playbook_path.display().to_string().bold());
                     println!();
+                    if let Ok(mut ledger) = AuditLedger::load_or_init(".sentris/audit_ledger.json")
+                    {
+                        let _ = ledger.record_event(
+                            AuditAction::QuarantineCreated {
+                                finding_id: report.session_id.clone(),
+                                branch: report.branch_name.clone(),
+                            },
+                            serde_json::json!({
+                                "target_file": report.target_file,
+                                "line_number": report.line_number,
+                                "rule_id": report.rule_id,
+                            }),
+                        );
+                        let _ = ledger.save();
+                    }
                 }
                 Err(err) => {
                     eprintln!(
@@ -712,23 +751,79 @@ fn main() {
                 report.findings.retain(|f| f.severity >= min_sev);
             }
 
+            let findings_snapshot = report.findings.clone();
             match crate::tui::run_interactive_review(report.findings) {
-                Ok(Some(crate::tui::TuiAction::Remediate(_idx))) => {
+                Ok(Some(crate::tui::TuiAction::Remediate(idx))) => {
                     println!(
                         "{}",
                         "✔ Initiating autonomous remediation workflow for selected finding..."
                             .green()
                             .bold()
                     );
+                    if let Some(finding) = findings_snapshot.get(idx) {
+                        if let Ok(content) = fs::read_to_string(&finding.file_path) {
+                            let lines: Vec<&str> = content.lines().collect();
+                            if finding.line_number > 0 && finding.line_number <= lines.len() {
+                                let target_line = lines[finding.line_number - 1];
+                                let raw_secret = scanner
+                                    .extract_raw_secret(target_line, &finding.rule_id)
+                                    .unwrap_or_else(|| target_line.trim().to_string());
+                                let remediator = Remediator::new();
+                                let _ = remediator.remediate_finding(
+                                    finding,
+                                    &raw_secret,
+                                    false,
+                                    Some("env"),
+                                    cli.offline,
+                                );
+                            }
+                        }
+                    }
                 }
-                Ok(Some(crate::tui::TuiAction::AddToBaseline(_idx))) => {
+                Ok(Some(crate::tui::TuiAction::AddToBaseline(idx))) => {
+                    if let Some(finding) = findings_snapshot.get(idx) {
+                        let baseline_path = std::path::Path::new(".sentris-baseline.json");
+                        let commit = GitManager::get_head_commit().ok().flatten();
+                        let mut base_file = BaselineFile::load_from_path(baseline_path)
+                            .unwrap_or_else(|_| BaselineFile::from_findings(&[], commit.clone()));
+                        base_file.add_finding(finding);
+                        let _ = base_file.save_to_path(baseline_path);
+                    }
                     println!(
                         "{}",
-                        "✔ Finding marked for baseline snapshot recording.".green()
+                        "✔ Finding recorded into .sentris-baseline.json snapshot.".green()
                     );
                 }
-                Ok(Some(crate::tui::TuiAction::IgnoreFinding(_idx))) => {
-                    println!("{}", "✔ Finding marked as ignored.".yellow());
+                Ok(Some(crate::tui::TuiAction::IgnoreFinding(idx))) => {
+                    if let Some(finding) = findings_snapshot.get(idx) {
+                        if let Ok(content) = fs::read_to_string(&finding.file_path) {
+                            let mut lines: Vec<String> =
+                                content.lines().map(|s| s.to_string()).collect();
+                            if finding.line_number > 0 && finding.line_number <= lines.len() {
+                                let ext = std::path::Path::new(&finding.file_path)
+                                    .extension()
+                                    .and_then(|s| s.to_str())
+                                    .unwrap_or("")
+                                    .to_lowercase();
+                                let comment_suffix = match ext.as_str() {
+                                    "py" | "sh" | "bash" | "zsh" | "rb" | "yml" | "yaml"
+                                    | "toml" | "env" => " # sentris-ignore",
+                                    _ => " // sentris-ignore",
+                                };
+                                if !lines[finding.line_number - 1].contains("sentris-ignore") {
+                                    lines[finding.line_number - 1].push_str(comment_suffix);
+                                    let _ = fs::write(
+                                        &finding.file_path,
+                                        format!("{}\n", lines.join("\n")),
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    println!(
+                        "{}",
+                        "✔ Inline 'sentris-ignore' suppression applied to finding.".yellow()
+                    );
                 }
                 Ok(None) => {}
                 Err(err) => {
@@ -1145,6 +1240,17 @@ fn main() {
                     println!("{}", team.render_terminal(no_color));
                     println!("{}", "\nℹ️  To link your real team workspace, run `sentris auth login --token <TOKEN>`.".dimmed());
                 }
+            }
+        }
+
+        Commands::Mcp { print_config } => {
+            if print_config {
+                println!("{}", crate::mcp::McpServer::generate_config_snippet());
+                return;
+            }
+            if let Err(err) = crate::mcp::McpServer::run_stdio_loop(cli.offline) {
+                eprintln!("{} MCP server error: {}", "ERROR:".red().bold(), err);
+                process::exit(1);
             }
         }
     }

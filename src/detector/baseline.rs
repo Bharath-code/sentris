@@ -124,6 +124,19 @@ impl BaselineFile {
         })
     }
 
+    /// Appends a single finding to this baseline if not already suppressed.
+    pub fn add_finding(&mut self, finding: &Finding) {
+        if !self.is_suppressed(finding) {
+            self.findings.push(BaselineRecord {
+                fingerprint: finding.fingerprint.clone(),
+                rule_id: finding.rule_id.clone(),
+                file_path: finding.file_path.clone(),
+                line_number: finding.line_number,
+                recorded_at: current_utc_timestamp(),
+            });
+        }
+    }
+
     /// Filters a list of findings, returning active un-suppressed findings and the count of suppressed findings.
     pub fn filter_findings(&self, findings: Vec<Finding>) -> (Vec<Finding>, usize) {
         let mut active = Vec::new();

@@ -99,6 +99,10 @@ pub enum Commands {
         /// Secret store backend to provision replacement into: env, vault, aws, doppler
         #[arg(long, default_value = "env")]
         backend: String,
+
+        /// Rotate the credential via provider API instead of safe local extraction
+        #[arg(long, default_value_t = false)]
+        rotate: bool,
     },
 
     /// Revert a previous remediation session and restore original files
@@ -198,6 +202,13 @@ pub enum Commands {
 
     /// View team license utilization, seat allocation ($8/seat Pro tier), and active member roster
     Team,
+
+    /// Start Model Context Protocol (MCP) JSON-RPC 2.0 server over stdio for AI coding agents
+    Mcp {
+        /// Print ready-to-paste MCP configuration JSON for Cursor, Claude Code, and Antigravity
+        #[arg(long, default_value_t = false)]
+        print_config: bool,
+    },
 }
 
 #[derive(Subcommand, Debug)]

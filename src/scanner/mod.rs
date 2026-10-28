@@ -24,6 +24,11 @@ impl Scanner {
         Ok(Self { detector, config })
     }
 
+    /// Extracts the raw secret token from a line using the compiled rule's regex capture
+    pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
+        self.detector.extract_raw_secret(line, rule_id)
+    }
+
     /// Scans a target path recursively using Rayon parallelism and the `ignore` crate.
     pub fn scan_path<P: AsRef<Path>>(&self, root_path: P) -> Result<ScanReport, SentrisError> {
         let start_time = Instant::now();

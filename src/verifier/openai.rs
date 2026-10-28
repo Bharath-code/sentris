@@ -201,7 +201,10 @@ mod tests {
         // Calling verify_live with a non-mock key in offline/sandboxed test environment
         // exercises network transport error handling gracefully returning Unverified.
         let res = verifier
-            .verify_live("sk-proj-unmocked-token-for-network-probe-1234567890")
+            .verify_live(concat!(
+                "sk-proj-",
+                "unmocked-token-for-network-probe-1234567890"
+            ))
             .unwrap();
         match res {
             LiveStatus::Unverified(msg) => {
