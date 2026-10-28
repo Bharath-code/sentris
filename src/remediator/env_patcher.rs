@@ -14,7 +14,10 @@ impl EnvPatcher {
     pub fn ensure_env_gitignored_in(base_dir: &Path) -> Result<(), SentrisError> {
         let gitignore_path = base_dir.join(".gitignore");
         if !gitignore_path.exists() {
-            fs::write(&gitignore_path, ".env\n.env.*\n*.log\n")?;
+            fs::write(
+                &gitignore_path,
+                ".env\n.env.*\n!.env.example\n.sentris/rollback_ledger.json\n*.log\n",
+            )?;
             return Ok(());
         }
 
@@ -27,6 +30,12 @@ impl EnvPatcher {
         }
         if !lines.contains(&".env.*") {
             additions.push(".env.*");
+        }
+        if !lines.contains(&"!.env.example") {
+            additions.push("!.env.example");
+        }
+        if !lines.contains(&".sentris/rollback_ledger.json") {
+            additions.push(".sentris/rollback_ledger.json");
         }
 
         if !additions.is_empty() {

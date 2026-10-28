@@ -252,7 +252,7 @@ pub enum Commands {
         setup: bool,
 
         /// Target workspace directory for --setup (defaults to current directory)
-        #[arg(long, default_value = ".")]
+        #[arg(default_value = ".")]
         path: PathBuf,
     },
 }

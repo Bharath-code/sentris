@@ -86,8 +86,11 @@ impl Scanner {
                     None => return WalkState::Continue,
                 };
 
-                // Skip .git internal directory tree immediately
-                if entry.path().components().any(|c| c.as_os_str() == ".git") {
+                // Skip .git and .sentris internal state directory trees immediately
+                if entry.path().components().any(|c| {
+                    let s = c.as_os_str();
+                    s == ".git" || s == ".sentris" || s == ".sentris-baseline.json"
+                }) {
                     files_ignored.fetch_add(1, Ordering::Relaxed);
                     return WalkState::Skip;
                 }
