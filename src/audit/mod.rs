@@ -145,7 +145,7 @@ impl AuditLedger {
         action: AuditAction,
         details: serde_json::Value,
     ) -> Result<&AuditRecord, SentrisError> {
-        let salt = get_audit_salt();
+        let salt = get_audit_salt()?;
         self.record_event_with_salt(action, details, &salt)
     }
 
@@ -198,8 +198,42 @@ impl AuditLedger {
 
     /// Verifies the cryptographic integrity of the entire audit chain.
     pub fn verify_integrity(&self) -> Result<bool, SentrisError> {
-        let salt = get_audit_salt();
-        self.verify_integrity_with_salt(&salt)
+        let salt = get_audit_salt()?;
+        if !self.verify_integrity_with_salt(&salt)? {
+            return Ok(false);
+        }
+        self.matches_anchor()
+    }
+
+    /// Per-ledger anchor outside the repo: (record count, last entry hash) at the last save.
+    /// Detects truncation or deletion, which a self-contained hash chain cannot.
+    fn anchor_path(&self) -> Result<PathBuf, SentrisError> {
+        let abs = if self.file_path.is_absolute() {
+            self.file_path.clone()
+        } else {
+            std::env::current_dir()?.join(&self.file_path)
+        };
+        let id = hex::encode(sha2::Sha256::digest(abs.to_string_lossy().as_bytes()));
+        Ok(crate::keystore::state_dir()?
+            .join("audit-heads")
+            .join(format!("{}.head", &id[..16])))
+    }
+
+    fn matches_anchor(&self) -> Result<bool, SentrisError> {
+        let Ok(raw) = fs::read_to_string(self.anchor_path()?) else {
+            return Ok(true);
+        };
+        let Some((count, hash)) = raw.trim().split_once(':') else {
+            return Ok(false);
+        };
+        let Ok(count) = count.parse::<usize>() else {
+            return Ok(false);
+        };
+        Ok(count == 0
+            || self
+                .records
+                .get(count - 1)
+                .is_some_and(|r| crate::keystore::ct_eq(&r.entry_hash, hash)))
     }
 
     /// Verifies the cryptographic integrity using an explicit salt.
@@ -228,14 +262,14 @@ impl AuditLedger {
                 &record.action,
                 &record.previous_hash,
             )?;
-            if record.entry_hash != computed_entry_hash {
+            if !crate::keystore::ct_eq(&record.entry_hash, &computed_entry_hash) {
                 return Ok(false);
             }
 
             // 4. Check HMAC signature recalculation
             let computed_hmac =
                 AuditRecord::compute_hmac_signature(&record.entry_hash, &record.details, salt)?;
-            if record.hmac_signature != computed_hmac {
+            if !crate::keystore::ct_eq(&record.hmac_signature, &computed_hmac) {
                 return Ok(false);
             }
 
@@ -246,6 +280,15 @@ impl AuditLedger {
         Ok(true)
     }
 
+    #[cfg(test)]
+    pub(crate) fn save_without_anchor_for_test(&self) {
+        fs::write(
+            &self.file_path,
+            serde_json::to_string_pretty(&self.records).unwrap(),
+        )
+        .unwrap();
+    }
+
     /// Saves the ledger to its configured file path.
     pub fn save(&self) -> Result<(), SentrisError> {
         if let Some(parent) = self.file_path.parent() {
@@ -254,7 +297,18 @@ impl AuditLedger {
             }
         }
         let serialized = serde_json::to_string_pretty(&self.records)?;
-        fs::write(&self.file_path, serialized)?;
+        if self.file_path.exists() {
+            crate::fsutil::write_atomic(&self.file_path, &serialized)?;
+        } else {
+            crate::fsutil::reject_symlinks(&self.file_path)?;
+            fs::write(&self.file_path, serialized)?;
+        }
+        if let (Ok(anchor), Some(last)) = (self.anchor_path(), self.records.last()) {
+            let _ = crate::remediator::backend::write_private(
+                &anchor,
+                &format!("{}:{}", self.records.len(), last.entry_hash),
+            );
+        }
         Ok(())
     }
 }

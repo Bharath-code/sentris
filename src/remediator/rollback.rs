@@ -182,6 +182,9 @@ mod tests {
     // Tests share process-global cwd/env, so run the scenarios sequentially in one test
     #[test]
     fn rollback_scenarios() {
+        let _guard = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let state = tempfile::tempdir().unwrap();
         std::env::set_var("SENTRIS_STATE_DIR", state.path());
         let dir = tempfile::tempdir().unwrap();

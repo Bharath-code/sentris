@@ -4,6 +4,9 @@ use tempfile::tempdir;
 
 #[test]
 fn test_audit_action_serialization() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let actions = vec![
         AuditAction::ScanCompleted {
             files_scanned: 100,
@@ -34,6 +37,9 @@ fn test_audit_action_serialization() {
 
 #[test]
 fn test_creation_of_multiple_audit_entries() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let dir = tempdir().unwrap();
     let ledger_path = dir.path().join("audit.json");
     let mut ledger = AuditLedger::load_or_init(&ledger_path).unwrap();
@@ -105,6 +111,9 @@ fn test_creation_of_multiple_audit_entries() {
 
 #[test]
 fn test_verification_of_hash_chain_integrity() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let dir = tempdir().unwrap();
     let ledger_path = dir.path().join("audit.json");
     let mut ledger = AuditLedger::load_or_init(&ledger_path).unwrap();
@@ -153,6 +162,9 @@ fn test_verification_of_hash_chain_integrity() {
 
 #[test]
 fn test_tamper_detection_index() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -183,6 +195,9 @@ fn test_tamper_detection_index() {
 
 #[test]
 fn test_tamper_detection_timestamp() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -213,6 +228,9 @@ fn test_tamper_detection_timestamp() {
 
 #[test]
 fn test_tamper_detection_action() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -247,6 +265,9 @@ fn test_tamper_detection_action() {
 
 #[test]
 fn test_tamper_detection_details() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -277,6 +298,9 @@ fn test_tamper_detection_details() {
 
 #[test]
 fn test_tamper_detection_previous_hash() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -308,6 +332,9 @@ fn test_tamper_detection_previous_hash() {
 
 #[test]
 fn test_tamper_detection_entry_hash() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -339,6 +366,9 @@ fn test_tamper_detection_entry_hash() {
 
 #[test]
 fn test_tamper_detection_hmac_signature() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -370,6 +400,9 @@ fn test_tamper_detection_hmac_signature() {
 
 #[test]
 fn test_tamper_detection_deletion_and_reordering() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -416,12 +449,18 @@ fn test_tamper_detection_deletion_and_reordering() {
 
 #[test]
 fn test_empty_ledger_integrity() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let ledger = AuditLedger::default();
     assert!(ledger.verify_integrity().unwrap());
 }
 
 #[test]
 fn test_export_vanta_evidence_pack_soc2_controls() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let dir = tempdir().unwrap();
     let ledger_path = dir.path().join("audit_ledger.json");
     let vanta_path = dir.path().join("vanta-evidence.json");
@@ -474,4 +513,82 @@ fn test_export_vanta_evidence_pack_soc2_controls() {
         parsed["control_attestations"]["ISO27001_A.8.24"]["broken_links"],
         0
     );
+}
+
+#[test]
+fn key_is_random_outside_repo_and_anchor_catches_truncation() {
+    let _guard = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    std::env::remove_var("SENTRIS_AUDIT_SALT");
+    let state = tempdir().unwrap();
+    std::env::set_var("SENTRIS_STATE_DIR", state.path());
+    let repo = tempdir().unwrap();
+    let path = repo.path().join(".sentris").join("audit_ledger.json");
+
+    let mut ledger = AuditLedger::load_or_init(&path).unwrap();
+    for i in 0..3 {
+        ledger
+            .record_event(
+                AuditAction::ScanCompleted {
+                    files_scanned: i,
+                    findings_count: 0,
+                    duration_ms: 1,
+                },
+                serde_json::json!({"n": i}),
+            )
+            .unwrap();
+    }
+    ledger.save().unwrap();
+    assert!(ledger.verify_integrity().unwrap());
+
+    // Key is 32 random bytes in the state dir (0600), not derived from repo path or user
+    let key = fs::read_to_string(state.path().join("audit.key")).unwrap();
+    assert_eq!(key.trim().len(), 64);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = fs::metadata(state.path().join("audit.key"))
+            .unwrap()
+            .permissions()
+            .mode();
+        assert_eq!(mode & 0o777, 0o600);
+    }
+
+    // An attacker who can edit the repo cannot recompute HMACs without the key
+    let mut forged = AuditLedger::load_or_init(&path).unwrap();
+    forged.records[1].details = serde_json::json!({"n": "forged"});
+    assert!(!forged.verify_integrity().unwrap());
+
+    // Dropping the tail leaves a self-consistent chain; the external anchor still catches it
+    let mut truncated = AuditLedger::load_or_init(&path).unwrap();
+    truncated.records.truncate(1);
+    truncated.save_without_anchor_for_test();
+    let reloaded = AuditLedger::load_or_init(&path).unwrap();
+    assert!(reloaded
+        .verify_integrity_with_salt(&crate::audit::get_audit_salt().unwrap())
+        .unwrap());
+    assert!(!reloaded.verify_integrity().unwrap());
+
+    // Wiping the ledger entirely is caught too
+    fs::remove_file(&path).unwrap();
+    assert!(!AuditLedger::load_or_init(&path)
+        .unwrap()
+        .verify_integrity()
+        .unwrap());
+
+    // Moving the repo (new path, same key) still verifies a fresh chain
+    let moved = repo.path().join("moved.json");
+    let mut m = AuditLedger::load_or_init(&moved).unwrap();
+    m.record_event(
+        AuditAction::ScanCompleted {
+            files_scanned: 1,
+            findings_count: 0,
+            duration_ms: 1,
+        },
+        serde_json::json!({}),
+    )
+    .unwrap();
+    assert!(m.verify_integrity().unwrap());
+    std::env::remove_var("SENTRIS_STATE_DIR");
 }

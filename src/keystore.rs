@@ -53,6 +53,10 @@ pub fn ct_eq(a: &str, b: &str) -> bool {
     diff == 0
 }
 
+/// Serializes tests that point `SENTRIS_STATE_DIR` at their own temp dir (process-global env).
+#[cfg(test)]
+pub(crate) static TEST_ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;

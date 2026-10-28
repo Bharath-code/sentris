@@ -36,39 +36,15 @@ pub fn hmac_sha256(key: &[u8], message: &[u8]) -> [u8; 32] {
     outer_hash.into()
 }
 
-/// Retrieves a persistent or deterministic salt for HMAC signature verification.
-/// Prioritizes `SENTRIS_AUDIT_SALT` environment variable, then repository or machine salt.
-pub fn get_audit_salt() -> Vec<u8> {
+/// HMAC key for the audit chain: `SENTRIS_AUDIT_SALT` (CI), else a random per-user key kept outside the repo (0600).
+/// It is never derived from guessable inputs such as the repo path or username.
+pub fn get_audit_salt() -> Result<Vec<u8>, crate::error::SentrisError> {
     if let Ok(salt) = std::env::var("SENTRIS_AUDIT_SALT") {
         if !salt.is_empty() {
-            return salt.into_bytes();
+            return Ok(salt.into_bytes());
         }
     }
-
-    let mut material = String::new();
-    if let Ok(repo_root) = crate::git::GitManager::find_git_root() {
-        material.push_str(&repo_root.to_string_lossy());
-    } else if let Ok(current_dir) = std::env::current_dir() {
-        material.push_str(&current_dir.to_string_lossy());
-    }
-
-    material.push(':');
-    if let Ok(user) = std::env::var("USER").or_else(|_| std::env::var("USERNAME")) {
-        material.push_str(&user);
-    }
-    material.push(':');
-    if let Ok(hostname) = std::env::var("HOSTNAME") {
-        material.push_str(&hostname);
-    }
-
-    if material.trim_matches(':').is_empty() {
-        material = "sentris-soc2-audit-chain-default-salt".to_string();
-    }
-
-    let mut hasher = Sha256::new();
-    hasher.update(b"sentris-audit-salt-v1:");
-    hasher.update(material.as_bytes());
-    hasher.finalize().to_vec()
+    crate::keystore::key("audit")
 }
 
 #[cfg(test)]
