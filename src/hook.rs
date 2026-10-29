@@ -31,8 +31,7 @@ const GIT_SAFE: &[&str] = &[
 ];
 /// Commands that only read their arguments, so naming the scanner config is harmless.
 const READ_ONLY: &[&str] = &[
-    "cat", "less", "more", "head", "tail", "bat", "batcat", "grep", "egrep", "rg", "ag", "ls",
-    "stat", "wc", "file", "diff",
+    "cat", "head", "tail", "grep", "egrep", "ls", "stat", "wc", "diff",
 ];
 const SECRET_DIRS: &[&str] = &[".ssh", ".gnupg", ".aws"];
 const SCANNER_CONFIG: &str = ".sentris.toml";
@@ -191,8 +190,16 @@ fn bash_edits_scanner_config(command: &str) -> bool {
             .map_or("", |h| h.rsplit('/').next().unwrap_or(h));
         let names_config = segment
             .replace(['\'', '"', '\\'], "")
-            .split(|c: char| !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/')))
-            .any(|piece| !piece.is_empty() && is_scanner_config(piece));
+            .split(|c: char| {
+                !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | '*' | '?'))
+            })
+            .any(|piece| {
+                let base = piece.rsplit('/').next().unwrap_or(piece);
+                !piece.is_empty()
+                    && (is_scanner_config(piece)
+                        || (base.contains(['*', '?'])
+                            && wildcard_match(base.as_bytes(), SCANNER_CONFIG.as_bytes())))
+            });
         names_config && (segment.contains('>') || !READ_ONLY.contains(&head))
     })
 }
@@ -618,5 +625,22 @@ mod tests {
                 "{cmd}"
             );
         }
+    }
+
+    #[test]
+    fn config_guard_covers_wildcards_and_exec_capable_readers() {
+        for cmd in [
+            "rm .sentris.*",
+            "sed -i s/a/b/ .s*ris.toml",
+            "mv ./.sentris.t?ml /tmp/x",
+            "rg --pre ./evil.sh x .sentris.toml",
+            "less .sentris.toml",
+        ] {
+            denied(tool("Bash", json!({"command": cmd})));
+        }
+        assert_eq!(
+            tool("Bash", json!({"command": "cat .sentris.t*"})),
+            Verdict::Allow
+        );
     }
 }
