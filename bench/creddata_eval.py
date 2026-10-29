@@ -6,7 +6,7 @@ Setup (once): clone https://github.com/Samsung/CredData into bench/work/creddata
 finding on a line in [LineStart, LineEnd] of that file. Findings on lines CredData never labeled are counted
 separately because the dataset cannot say whether they are true or false.
 """
-import csv, json, os, platform, re, subprocess, sys, tempfile, time
+import atexit, csv, json, os, platform, re, shutil, subprocess, sys, tempfile, time
 from collections import defaultdict
 from pathlib import Path
 
@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parent.parent
 CD = ROOT / "bench" / "work" / "creddata"
 DATA = CD / "data"
 IS_MAC = platform.system() == "Darwin"
+BASE = CD  # main() points this at the scanned copy
 
 
 def load_rows():
@@ -28,7 +29,7 @@ def load_rows():
 
 def rel(p):
     p = os.path.abspath(p if os.path.isabs(p) else ROOT / p)
-    return os.path.relpath(p, CD)
+    return os.path.relpath(p, BASE)
 
 
 def stream_json(text):
@@ -50,7 +51,7 @@ def parse(tool, out, report):
     if tool == "Sentris":
         for f in json.loads(out)["findings"]:
             hits.add((rel(f["file_path"]), f["line_number"]))
-    elif tool == "Gitleaks":
+    elif tool in ("Gitleaks", "Betterleaks"):
         for f in json.loads(Path(report).read_text() or "[]"):
             hits.add((rel(f["File"]), f["StartLine"]))
     elif tool == "TruffleHog":
@@ -78,6 +79,7 @@ def timed(cmd):
 def tools(report):
     t = {"Sentris": [str(ROOT / "target/release/sentris"), "scan", str(DATA), "-f", "json"]}
     for name, exe, args in (("Gitleaks", "gitleaks", ["dir", str(DATA), "--no-banner", "-l", "error", "-r", report]),
+                            ("Betterleaks", "betterleaks", ["dir", str(DATA), "--no-banner", "-l", "error", "-r", report]),
                             ("TruffleHog", "trufflehog", ["filesystem", str(DATA), "--no-update", "--no-verification", "--json"]),
                             ("Kingfisher", "kingfisher", ["scan", str(DATA), "--no-validate", "--format", "json"])):
         path = ROOT / "bench" / ".tools" / exe
@@ -87,9 +89,16 @@ def tools(report):
 
 
 def main():
+    global BASE, DATA
     if not DATA.exists():
         sys.exit("CredData not prepared: see bench/README.md")
     rows = load_rows()
+    # Scan a copy outside any git work tree: scanners that honor .gitignore (Sentris) would otherwise skip about a fifth of the files
+    # because CredData's .gitignore and ours match paths under bench/work, while gitleaks-style `dir` scans ignore it.
+    BASE = Path(tempfile.mkdtemp(prefix="creddata-"))
+    atexit.register(shutil.rmtree, BASE, True)
+    shutil.copytree(DATA, BASE / "data")
+    DATA = BASE / "data"
     report = tempfile.mktemp(suffix=".json")
     splits = {"all": lambda repo: True, "dev": lambda repo: int(repo, 16) % 2 == 0, "heldout": lambda repo: int(repo, 16) % 2 == 1}
     results = {k: [] for k in splits}

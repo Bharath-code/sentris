@@ -36,9 +36,11 @@ def version_of(cmd):
 def tool_specs(pins, report):
     sentris = str(ROOT / "target" / "release" / "sentris")
     specs = [("Sentris", sentris, lambda p: [sentris, "scan", str(p), "-f", "json"], None)]
-    gl, th, kf = locate("gitleaks"), locate("trufflehog"), locate("kingfisher")
+    gl, bl, th, kf = locate("gitleaks"), locate("betterleaks"), locate("trufflehog"), locate("kingfisher")
     if gl:
         specs.append(("Gitleaks", gl, lambda p: [gl, "dir", str(p), "--no-banner", "-l", "error", "-r", report], pins["GITLEAKS_VERSION"]))
+    if bl:
+        specs.append(("Betterleaks", bl, lambda p: [bl, "dir", str(p), "--no-banner", "-l", "error", "-r", report], pins["BETTERLEAKS_VERSION"]))
     if th:
         specs.append(("TruffleHog", th, lambda p: [th, "filesystem", str(p), "--no-update", "--no-verification", "--json"], pins["TRUFFLEHOG_VERSION"]))
     if kf:
@@ -113,7 +115,7 @@ def main():
 
     results, skipped = [], []
     specs = tool_specs(pins, report)
-    for want in ("Gitleaks", "TruffleHog", "Kingfisher"):
+    for want in ("Gitleaks", "Betterleaks", "TruffleHog", "Kingfisher"):
         if not any(s[0] == want for s in specs):
             skipped.append(want)
 

@@ -37,6 +37,7 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 | Remediation into Vault / AWS Secrets Manager / Doppler | Implemented, not yet integration-tested against live services. 1Password and Infisical are opt-in (`SENTRIS_ALLOW_ARGV_SECRETS=1`). |
 | **Provider key rotation (`--rotate`)** | **AWS IAM access keys only.** Creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Tested against a CLI stub, **not yet against a real AWS account**. Every other provider: not supported, the leaked key stays valid until you revoke it. |
 | **Exposure probes (`scan --probe`)** | Stripe (balance), GitHub (scopes, org membership) and AWS (policies attached to the key's owning IAM user, read through *your* AWS credentials) report what a leaked key can reach as a risk tier. Read-only calls; a tier is a capability judgement, not a loss estimate, and a dollar figure appears only when Stripe returns a balance. AWS does not read inline policy contents, permission boundaries or SCPs. Tested against recorded-shape fixtures and a CLI stub, **not yet against live accounts**. |
+| Import from Betterleaks / Gitleaks (`--from-report`) | Working for `scan` and `fix`: JSON report in, entries re-verified against the file, then probe/rank/remediate/rollback as usual. Tested against real Betterleaks 1.9.0 output and a CLI stub; not available in the MCP tools yet. |
 | Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
 | Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
 | Benchmarks | Numbers in this README come from the author's machine; a reproducible script is planned. |
@@ -45,7 +46,7 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 
 ## ⚡ Why Sentris Exists (The 2026 Reality)
 
-Legacy secret scanners (`Gitleaks`, `TruffleHog`, `GitGuardian`, `MongoDB Kingfisher`) either:
+Legacy secret scanners (`Gitleaks`, `Betterleaks`, `TruffleHog`, `GitGuardian`, `MongoDB Kingfisher`) either:
 1. **Only scream `EXIT 1`** and leave you with a 45-minute Friday afternoon scramble, or
 2. **Immediately kill the live API key** (`kingfisher revoke`), which **crashes your running local app or production service**.
 
@@ -141,22 +142,22 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
 
 ## 📊 14-Dimension Competitive Matrix
 
-| Dimension | Sentris (Ours) | MongoDB Kingfisher (Rust OSS) | GitGuardian (SaaS + ggshield) | TruffleHog v3 (Go OSS + Ent) | GitHub Secret Protection | Semgrep Secrets | Gitleaks v8 (Go OSS) |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) |
-| **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` |
-| **Detection Engine** | **110+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules |
-| **Live API Verification** | **Yes (`--verify` w/ zero-egress `--offline` default)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No |
-| **Post-Detection Action** | **Extracts to `.env`/Vault/1Password/Infisical + Patches Code** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table |
-| **Local Dev App Safety** | **Safe Local Extraction + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual |
-| **Polyglot Code Patching** | **7+ Languages + Multi-Line PEM Block Replacement** | None | None | None | None | Partial (PR comment) | None |
-| **Atomic Rollback (`undo`)** | **`sentris rollback` (Byte-exact restore)** | None | None | None | None | None | None |
-| **Zero-Knowledge Privacy** | **100% Local + Salted `zk_<sha256>` Only + RAM Zeroization** | Local CLI | Uploads code snippets to SaaS | Local OSS / Cloud Ent. | Hosted on GitHub Cloud | Cloud-dependent rules | 100% Local |
-| **SOC 2 / ISO 27001 Proof** | **HMAC-SHA256 Hash Chain + 1-Click Vanta JSON** | None | Enterprise PDF (`USD 20k+/yr`) | Enterprise Dashboard | GitHub Audit Log | Enterprise Dashboard | None |
-| **Interactive Terminal UI** | **Split-Pane Ratatui TUI (`sentris review`) w/ Diff Preview** | None | None | None | None | None | None |
-| **AI Agent & IDE Native** | **Built-in MCP Server (`sentris mcp`) + LSP (`sentris lsp`)** | None | Cloud MCP (Requires SaaS) | None | Copilot-only | Editor plugin (Cloud) | None |
-| **Historical Git Scrub** | **Zone 3 Quarantine Branch + Coordinated Playbook** | Manual | Guided docs only | Manual | Manual | Manual | Manual |
-| **Pricing** | **Free OSS • `USD 8/seat` Pro • `USD 2k/yr` Enterprise** | Free (Apache-2.0) | `USD 18–25+/dev/mo` | Free AGPLv3, `USD 25k+/yr` Ent. | `USD 19/committer/mo` | `USD 20–40/dev/mo` | Free (MIT) |
+| Dimension | Sentris (Ours) | MongoDB Kingfisher (Rust OSS) | GitGuardian (SaaS + ggshield) | TruffleHog v3 (Go OSS + Ent) | GitHub Secret Protection | Semgrep Secrets | Gitleaks v8 (Go OSS) | Betterleaks v1.9 (Go OSS) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) | Go, no CGO, parallel git scanning |
+| **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` | Measured in `bench/` |
+| **Detection Engine** | **110+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules | 463 TOML rules + BPE token-efficiency filter + CEL filters |
+| **Live API Verification** | **Yes (`--verify` w/ zero-egress `--offline` default)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No | Yes (opt-in `--validation`, CEL rules; 218 rules carry validation) |
+| **Post-Detection Action** | **Extracts to `.env`/Vault/1Password/Infisical + Patches Code** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table | Prints report (json/csv/junit/sarif); no remediation |
+| **Local Dev App Safety** | **Safe Local Extraction + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual | Manual |
+| **Polyglot Code Patching** | **7+ Languages + Multi-Line PEM Block Replacement** | None | None | None | None | Partial (PR comment) | None | None |
+| **Atomic Rollback (`undo`)** | **`sentris rollback` (Byte-exact restore)** | None | None | None | None | None | None | None |
+| **Zero-Knowledge Privacy** | **100% Local + Salted `zk_<sha256>` Only + RAM Zeroization** | Local CLI | Uploads code snippets to SaaS | Local OSS / Cloud Ent. | Hosted on GitHub Cloud | Cloud-dependent rules | 100% Local | 100% Local (validation calls go to providers) |
+| **SOC 2 / ISO 27001 Proof** | **HMAC-SHA256 Hash Chain + 1-Click Vanta JSON** | None | Enterprise PDF (`USD 20k+/yr`) | Enterprise Dashboard | GitHub Audit Log | Enterprise Dashboard | None | None |
+| **Interactive Terminal UI** | **Split-Pane Ratatui TUI (`sentris review`) w/ Diff Preview** | None | None | None | None | None | None | None |
+| **AI Agent & IDE Native** | **Built-in MCP Server (`sentris mcp`) + LSP (`sentris lsp`)** | None | Cloud MCP (Requires SaaS) | None | Copilot-only | Editor plugin (Cloud) | None | CLI designed for agents; no MCP server or LSP in v1.9.0 |
+| **Historical Git Scrub** | **Zone 3 Quarantine Branch + Coordinated Playbook** | Manual | Guided docs only | Manual | Manual | Manual | Manual | Manual |
+| **Pricing** | **Free OSS • `USD 8/seat` Pro • `USD 2k/yr` Enterprise** | Free (Apache-2.0) | `USD 18–25+/dev/mo` | Free AGPLv3, `USD 25k+/yr` Ent. | `USD 19/committer/mo` | `USD 20–40/dev/mo` | Free (MIT) | Free (MIT) |
 
 ---
 
@@ -209,6 +210,14 @@ sentris review
 
 # 1-command migration from legacy .gitleaks.toml rules & allowlists
 sentris migrate-gitleaks .gitleaks.toml
+
+# Keep Betterleaks (or Gitleaks) as the detector; Sentris probes, ranks and fixes what it found.
+# Each report entry is re-checked against the file; paths outside the working directory are dropped.
+# Never pass --validation to Betterleaks on an untrusted repo without -c <your config>: it auto-loads the repo's own
+# .betterleaks.toml, whose validation rules can send found secrets to any URL.
+betterleaks dir . -f json -r report.json
+sentris scan --from-report report.json --probe --fail-on high
+sentris fix --from-report report.json --all --yes
 
 # CI/CD outputs: SARIF 2.1.0, GitLab Secret Detection v15.0.7, GitHub Actions, JSON
 sentris scan --format sarif --fail-on-secret > results.sarif
@@ -380,9 +389,19 @@ sentris sync
 
 > 📄 **Full Benchmark & Systems Architecture Report:** See [**`docs/BENCHMARKS-AND-ARCHITECTURE.md`**](docs/BENCHMARKS-AND-ARCHITECTURE.md) for complete binary footprint, RSS memory hygiene, throughput across 1,000–5,000 files, and subsystem latency breakdowns.
 
-Numbers are generated, never hand-typed: `bench/run.sh` builds Sentris, runs every installed scanner (gitleaks, TruffleHog, Kingfisher via `bench/fetch-tools.sh`, pinned versions) on the same pinned public checkout (django 5.1.4, about 6,800 files) and on the labeled detection corpus (`tests/corpus_test.rs`), then writes [`bench/results/latest.md`](bench/results/latest.md) with wall-clock median, peak RSS, hardware, versions and exact commands.
+Numbers are generated, never hand-typed: `bench/run.sh` builds Sentris, runs every installed scanner (gitleaks, Betterleaks, TruffleHog, Kingfisher via `bench/fetch-tools.sh`, pinned versions) on the same pinned public checkout (django 5.1.4, about 6,800 files) and on the labeled detection corpus (`tests/corpus_test.rs`), then writes [`bench/results/latest.md`](bench/results/latest.md) with wall-clock median, peak RSS, hardware, versions and exact commands.
 
 The corpus is authored by this project, so its recall column is a regression gauge, not a neutral ranking. The latest committed run covers only the tools listed in that file.
+
+**Independent datasets, Betterleaks 1.9.0 vs Sentris** (defaults for every tool, no live validation; [`creddata.md`](bench/results/creddata.md), [`prowlbench.md`](bench/results/prowlbench.md)):
+
+| Dataset / split | Sentris P / R / F1 | Betterleaks P / R / F1 |
+|---|---|---|
+| CredData, held-out repos | 0.928 / 0.375 / 0.534 | 0.691 / 0.363 / 0.475 |
+| CredData, all | 0.954 / 0.622 / 0.753 | 0.812 / 0.565 / 0.667 |
+| ProwlBench, all | 0.955 / 0.678 / 0.793 | 0.931 / 0.540 / 0.684 |
+
+A first run had Betterleaks ahead on held-out recall (0.363 vs 0.278). Two causes: the harness scanned CredData inside a git work tree, so Sentris skipped about a fifth of the files because of `.gitignore` (the harness now scans a copy outside git), and Sentris had no rule for unquoted passwords or opaque Bearer tokens (added as `password-unquoted` and `bearer-token`, tuned on the dev split only, then scored once on held-out). Treat the held-out recall margin as small (1.2 points); the precision gap is not. Sentris still skips gitignored files when run inside a repo that ignores them; Betterleaks and Gitleaks `dir` scans do not. If you already run Betterleaks, `sentris scan --from-report` and `sentris fix --from-report` take its findings and add probing, ranking and remediation (below).
 
 --- | :---: | :---: | :---: | :---: |
 | **Staged Git Index Diff (`--staged`)** | **`11ms`** | `45ms` | `180ms` | `850ms` |
