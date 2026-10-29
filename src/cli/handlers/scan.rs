@@ -19,6 +19,7 @@ use crate::scanner::Scanner;
 pub fn handle_scan(
     cli: &Cli,
     path: PathBuf,
+    from_report: Option<PathBuf>,
     staged: bool,
     git_history: bool,
     since: Option<String>,
@@ -33,8 +34,12 @@ pub fn handle_scan(
     probe: bool,
     fail_on: Option<RiskTier>,
 ) {
-    let scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
-    let mut report = run_scan(&scanner, since.as_deref(), git_history, staged, &path);
+    let mut scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
+    let mut report = match &from_report {
+        Some(file) => import_report(cli, &mut scanner, file),
+        None => run_scan(&scanner, since.as_deref(), git_history, staged, &path),
+    };
+    let path = from_report.unwrap_or(path);
 
     if let Some(min_sev) = min_severity {
         report.findings.retain(|f| f.severity >= min_sev);
@@ -87,6 +92,21 @@ pub fn handle_scan(
         );
         process::exit(1);
     }
+}
+
+/// Loads findings from a Betterleaks/Gitleaks report and hands their secrets to `scanner` for probing and remediation.
+pub(super) fn import_report(cli: &Cli, scanner: &mut Scanner, file: &Path) -> ScanReport {
+    let root =
+        std::env::current_dir().unwrap_or_else(|err| die("Cannot read working directory", err));
+    let imported =
+        crate::import::load(file, &root).unwrap_or_else(|err| die("Failed to import report", err));
+    if !cli.quiet {
+        for note in &imported.skipped {
+            eprintln!("{} skipped {note}", "warning:".yellow().bold());
+        }
+    }
+    scanner.use_imported_secrets(imported.secrets);
+    imported.report
 }
 
 fn run_scan(

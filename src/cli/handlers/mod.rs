@@ -44,6 +44,7 @@ pub fn execute(cli: Cli) {
     match command {
         Commands::Scan {
             path,
+            from_report,
             staged,
             git_history,
             since,
@@ -60,6 +61,7 @@ pub fn execute(cli: Cli) {
         } => scan::handle_scan(
             &cli,
             path,
+            from_report,
             staged,
             git_history,
             since,
@@ -83,7 +85,17 @@ pub fn execute(cli: Cli) {
             backend,
             rotate,
             all,
-        } => remediate::handle_remediate(&cli, finding_id, dry_run, yes, backend, rotate, all),
+            from_report,
+        } => remediate::handle_remediate(
+            &cli,
+            finding_id,
+            dry_run,
+            yes,
+            backend,
+            rotate,
+            all,
+            from_report,
+        ),
         Commands::Rollback { session } => remediate::handle_rollback(&cli, session),
         Commands::Hook {
             print_config,

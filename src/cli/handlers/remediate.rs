@@ -13,6 +13,7 @@ use crate::remediator::Remediator;
 use crate::rotator::RotationLedger;
 use crate::scanner::Scanner;
 
+#[allow(clippy::too_many_arguments)]
 pub fn handle_remediate(
     cli: &Cli,
     finding_id: Option<String>,
@@ -21,13 +22,17 @@ pub fn handle_remediate(
     backend: String,
     rotate: bool,
     all: bool,
+    from_report: Option<PathBuf>,
 ) {
     let agent_mode = cli.is_agent_mode();
-    let scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
+    let mut scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let scan_target = scan_target_for(finding_id.as_deref());
-    let report = scanner
-        .scan_path(&scan_target)
-        .unwrap_or_else(|err| die("Failed to scan target", err));
+    let report = match &from_report {
+        Some(file) => super::scan::import_report(cli, &mut scanner, file),
+        None => scanner
+            .scan_path(&scan_target)
+            .unwrap_or_else(|err| die("Failed to scan target", err)),
+    };
 
     if report.findings.is_empty() {
         print_clean(agent_mode);
