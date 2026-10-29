@@ -204,7 +204,9 @@ impl AuditLedger {
         };
 
         self.records.push(record);
-        Ok(self.records.last().unwrap())
+        self.records
+            .last()
+            .ok_or_else(|| SentrisError::Audit("audit chain empty after append".into()))
     }
 
     /// Verifies the cryptographic integrity of the entire audit chain.

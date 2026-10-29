@@ -313,8 +313,11 @@ pub fn handle_rollback(cli: &Cli, session: Option<String>) {
         return;
     }
 
-    let target_session =
-        session.unwrap_or_else(|| ledger.transactions.last().unwrap().session_id.clone());
+    let Some(target_session) =
+        session.or_else(|| ledger.transactions.last().map(|t| t.session_id.clone()))
+    else {
+        return;
+    };
 
     match ledger.revert(&target_session) {
         Ok(msg) => {

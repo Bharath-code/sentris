@@ -3,8 +3,17 @@ pub mod cloud;
 pub mod remediate;
 pub mod review;
 pub mod scan;
+mod scan_output;
+
+use owo_colors::OwoColorize;
 
 use crate::cli::{Cli, Commands};
+
+/// Prints `ERROR: <context>: <err>` to stderr and exits with status 1.
+pub(super) fn die(context: &str, err: impl std::fmt::Display) -> ! {
+    eprintln!("{} {}: {}", "ERROR:".red().bold(), context, err);
+    std::process::exit(1)
+}
 
 /// Dispatches the parsed CLI subcommand to its modular handler.
 pub fn execute(cli: Cli) {
