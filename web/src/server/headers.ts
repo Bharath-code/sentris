@@ -23,10 +23,14 @@ export const SECURITY_HEADERS: Record<string, string> = {
   'Cross-Origin-Opener-Policy': 'same-origin',
 }
 
+// Per-user HTML, server-function payloads and auth/API responses must never sit in a shared or back/forward cache
+const PRIVATE_PATH = /^\/(app|_serverFn|api)(\/|$)/
+
 // Responses from fetch() and Response.redirect() have immutable headers, so copy before setting
-export function withSecurityHeaders(res: Response): Response {
+export function withSecurityHeaders(res: Response, pathname = ''): Response {
   const out = new Response(res.body, res)
   for (const [k, v] of Object.entries(SECURITY_HEADERS)) out.headers.set(k, v)
+  if (PRIVATE_PATH.test(pathname) && !out.headers.has('Cache-Control')) out.headers.set('Cache-Control', 'private, no-store')
   return out
 }
 

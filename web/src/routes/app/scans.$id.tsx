@@ -8,10 +8,19 @@ export const Route = createFileRoute('/app/scans/$id')({
   validateSearch: z.object({ offset: z.number().int().min(0).max(1_000_000).optional() }),
   loaderDeps: ({ search }) => ({ offset: search.offset ?? 0 }),
   loader: ({ params, deps }) => getScan({ data: { id: params.id, offset: deps.offset } }),
+  // Scans never change after ingest; invalidate() still refreshes on demand
+  staleTime: Infinity,
   component: ScanDetail,
-  errorComponent: () => (
+  notFoundComponent: () => (
     <main className="container-page py-16 text-center text-muted">
       Scan not found. <Link to="/app" className="underline underline-offset-4">Back to dashboard</Link>
+    </main>
+  ),
+  errorComponent: ({ reset }) => (
+    <main className="container-page py-16 text-center text-muted">
+      Could not load this scan.{' '}
+      <button onClick={reset} className="underline underline-offset-4">Try again</button> or{' '}
+      <Link to="/app" className="underline underline-offset-4">go back to the dashboard</Link>.
     </main>
   ),
 })

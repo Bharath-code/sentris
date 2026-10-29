@@ -15,6 +15,15 @@ test('every response, even an immutable redirect, gets the full header set', () 
   }
 })
 
+test('per-user paths are no-store, public pages and explicit cache headers are left alone', () => {
+  for (const p of ['/app', '/app/scans/scn_1', '/_serverFn/abc', '/api/v1/me', '/api/auth/get-session']) {
+    assert.equal(withSecurityHeaders(new Response('x'), p).headers.get('Cache-Control'), 'private, no-store', p)
+  }
+  for (const p of ['/', '/pricing', '/login', '/application']) assert.equal(withSecurityHeaders(new Response('x'), p).headers.get('Cache-Control'), null, p)
+  const own = withSecurityHeaders(new Response('x', { headers: { 'Cache-Control': 'no-cache' } }), '/api/v1/me')
+  assert.equal(own.headers.get('Cache-Control'), 'no-cache')
+})
+
 test('CSP forbids framing, plugins, foreign scripts and base injection', () => {
   const csp = SECURITY_HEADERS['Content-Security-Policy']
   for (const d of ["frame-ancestors 'none'", "object-src 'none'", "base-uri 'self'", "default-src 'self'", "connect-src 'self'"]) assert.ok(csp.includes(d), d)

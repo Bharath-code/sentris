@@ -1,6 +1,6 @@
 import { createMiddleware, createServerFn } from '@tanstack/react-start'
 import { getRequest, getRequestHeaders } from '@tanstack/react-start/server'
-import { redirect } from '@tanstack/react-router'
+import { notFound, redirect } from '@tanstack/react-router'
 import { and, eq } from 'drizzle-orm'
 import { z } from 'zod'
 import { env } from 'cloudflare:workers'
@@ -10,7 +10,7 @@ import { ensureOrg } from '@/server/org'
 import { assertConfig } from '@/server/config'
 import { sameOrigin } from '@/server/guards'
 import { createApiKey } from '@/server/keys'
-import { getOverviewData, getScanPage } from '@/server/overview-core'
+import { ScanNotFound, getOverviewData, getScanPage } from '@/server/overview-core'
 import { createCheckout, portalLink } from '@/server/billing'
 
 export const getViewer = createServerFn({ method: 'GET' }).handler(async () => {
@@ -39,7 +39,13 @@ export const getOverview = createServerFn({ method: 'GET' })
 export const getScan = createServerFn({ method: 'GET' })
   .middleware([authed])
   .validator(z.object({ id: z.string().max(40), offset: z.number().int().min(0).max(1_000_000).default(0) }))
-  .handler(({ data, context: { org } }) => getScanPage(db, org.id, data.id, data.offset))
+  .handler(async ({ data, context: { org } }) => {
+    try {
+      return await getScanPage(db, org.id, data.id, data.offset)
+    } catch (e) {
+      throw e instanceof ScanNotFound ? notFound() : e
+    }
+  })
 
 export const createKey = createServerFn({ method: 'POST' })
   .middleware([authed])
