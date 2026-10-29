@@ -5,6 +5,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No rele
 ## [Unreleased]
 
 ### Added
+- Release pipeline (`release.yml`): 5 targets, SHA256SUMS, CycloneDX SBOM, build provenance attestations; installer verifies checksums
 - 115 detection rules including vendor token formats, URL basic auth, password literals and keyed secrets
 - Git history scan, SARIF output, MCP server, LSP
 - Reproducible benchmark harness (`bench/`) against gitleaks, trufflehog and kingfisher with pinned versions
@@ -20,6 +21,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No rele
 - Fake `--rotate` implementations and unverified marketing claims
 
 ### Security
+- Updated rustls, rustls-webpki and webpki-roots to clear RUSTSEC-2026-0346/0347/0348/0349/0381/0382
+- `cargo audit` and `cargo deny` run in CI (`audit.yml`) and gate releases
 - MCP workspace confinement, write gate and confirm tokens
 - Rollback ledger integrity and tamper-evident audit chain
 - Secrets passed to backends via stdin or private temp files, never argv

@@ -35,18 +35,24 @@ runs:
       run: |
         OS="$(uname -s)"
         ARCH="$(uname -m)"
-        case "$OS" in
-          Linux) TARGET="x86_64-unknown-linux-musl" ;;
-          Darwin) TARGET="aarch64-apple-darwin" ;;
-          *) echo "Unsupported runner OS: $OS"; exit 1 ;;
+        case "$OS-$ARCH" in
+          Linux-x86_64) TARGET="x86_64-unknown-linux-musl" ;;
+          Linux-aarch64|Linux-arm64) TARGET="aarch64-unknown-linux-gnu" ;;
+          Darwin-arm64) TARGET="aarch64-apple-darwin" ;;
+          Darwin-x86_64) TARGET="x86_64-apple-darwin" ;;
+          *) echo "Unsupported runner: $OS-$ARCH"; exit 1 ;;
         esac
 
-        URL="https://github.com/Bharath-code/sentris/releases/download/${{ inputs.version }}/sentris-${{ inputs.version }}-${TARGET}.tar.gz"
+        ARCHIVE="sentris-${{ inputs.version }}-${TARGET}.tar.gz"
+        BASE="https://github.com/Bharath-code/sentris/releases/download/${{ inputs.version }}"
         TMP_DIR="$(mktemp -d)"
-        curl -fsSL "$URL" -o "${TMP_DIR}/sentris.tar.gz"
-        tar -xzf "${TMP_DIR}/sentris.tar.gz" -C "$TMP_DIR"
-        sudo mv "${TMP_DIR}/sentris" /usr/local/bin/sentris
-        chmod +x /usr/local/bin/sentris
+        curl -fsSL "${BASE}/${ARCHIVE}" -o "${TMP_DIR}/${ARCHIVE}"
+        curl -fsSL "${BASE}/SHA256SUMS" -o "${TMP_DIR}/SHA256SUMS"
+        (cd "$TMP_DIR" && grep " ${ARCHIVE}\$" SHA256SUMS | shasum -a 256 -c -)
+        mkdir "${TMP_DIR}/x"
+        tar -xzf "${TMP_DIR}/${ARCHIVE}" -C "${TMP_DIR}/x"
+        sudo mv "${TMP_DIR}/x/sentris" /usr/local/bin/sentris
+        sudo chmod +x /usr/local/bin/sentris
         rm -rf "$TMP_DIR"
         sentris --version
 

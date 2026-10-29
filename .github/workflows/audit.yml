@@ -1,0 +1,26 @@
+name: Supply Chain
+
+on:
+  push:
+    branches: [ "master" ]
+    paths: [ "Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/audit.yml" ]
+  pull_request:
+    paths: [ "Cargo.toml", "Cargo.lock", "deny.toml", ".github/workflows/audit.yml" ]
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    name: cargo audit + cargo deny
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+      - run: cargo audit --deny warnings --ignore RUSTSEC-2025-0119
+      - run: cargo deny check

@@ -1,89 +1,104 @@
-name: Release Pipeline
+name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: [ "v*" ]
 
 permissions:
-  contents: write
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
 
 jobs:
-  build-release:
-    name: Build (${{ matrix.target }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: false
-          - target: x86_64-unknown-linux-musl
-            os: ubuntu-latest
-            use_cross: true
-          - target: aarch64-unknown-linux-gnu
-            os: ubuntu-latest
-            use_cross: true
-          - target: x86_64-apple-darwin
-            os: macos-13
-            use_cross: false
-          - target: aarch64-apple-darwin
-            os: macos-latest
-            use_cross: false
-          - target: x86_64-pc-windows-msvc
-            os: windows-latest
-            use_cross: false
-
+  verify:
+    name: Verify tag, tests, advisories
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Tag must match Cargo.toml version
+        run: |
+          CARGO_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          [ "v${CARGO_VERSION}" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != Cargo.toml v${CARGO_VERSION}"; exit 1; }
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+      - run: cargo audit --deny warnings --ignore RUSTSEC-2025-0119
+      - run: cargo deny check
+      - run: cargo test --locked
 
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
+  build:
+    name: Build (${{ matrix.target }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { target: aarch64-apple-darwin,       os: macos-latest,     smoke: true }
+          - { target: x86_64-apple-darwin,        os: macos-latest,     smoke: false }
+          - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest,    smoke: true }
+          - { target: aarch64-unknown-linux-gnu,  os: ubuntu-24.04-arm, smoke: true }
+          - { target: x86_64-pc-windows-msvc,     os: windows-latest,   smoke: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-
-      - name: Install cross (for cross-compilation)
-        if: matrix.use_cross
-        run: cargo install cross --git https://github.com/cross-rs/cross
-
-      - name: Build Target Binary
-        run: |
-          if [ "${{ matrix.use_cross }}" = "true" ]; then
-            cross build --release --target ${{ matrix.target }}
-          else
-            cargo build --release --target ${{ matrix.target }}
-          fi
+      - name: musl toolchain
+        if: contains(matrix.target, 'musl')
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: cargo build --release --locked --target ${{ matrix.target }}
+      - name: Package
         shell: bash
-
-      - name: Package Binary & Compute Checksum
+        run: scripts/package.sh "${{ matrix.target }}" "${GITHUB_REF_NAME}"
+      - name: Smoke test packaged binary
+        if: matrix.smoke
         shell: bash
         run: |
-          TAG_NAME=${GITHUB_REF#refs/tags/}
-          ARCHIVE_NAME="sentris-${TAG_NAME}-${{ matrix.target }}"
-          BIN_NAME="sentris"
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            BIN_NAME="sentris.exe"
-          fi
-
-          mkdir dist
-          cp "target/${{ matrix.target }}/release/${BIN_NAME}" "dist/"
-          cd dist
-
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            7z a "${ARCHIVE_NAME}.zip" "${BIN_NAME}"
-            certutil -hashfile "${ARCHIVE_NAME}.zip" SHA256 | findstr -v "hash" | findstr -v "CertUtil" > "${ARCHIVE_NAME}.zip.sha256"
-          else
-            tar -czvf "${ARCHIVE_NAME}.tar.gz" "${BIN_NAME}"
-            shasum -a 256 "${ARCHIVE_NAME}.tar.gz" > "${ARCHIVE_NAME}.tar.gz.sha256"
-          fi
-
-      - name: Upload Release Artifacts
-        uses: softprops/action-gh-release@v2
+          mkdir smoke && cd smoke
+          case "${{ matrix.target }}" in
+            *windows*) 7z x -bso0 ../dist/sentris-*.zip && ./sentris.exe --version ;;
+            *) tar -xzf ../dist/sentris-*.tar.gz && ./sentris --version ;;
+          esac
+      - uses: actions/upload-artifact@v4
         with:
-          files: |
-            dist/*.tar.gz
-            dist/*.zip
-            dist/*.sha256
+          name: dist-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Checksums, SBOM, attestation, release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: dist-*
+          merge-multiple: true
+      - uses: dtolnay/rust-toolchain@stable
+      - name: SBOM (CycloneDX)
+        run: |
+          cargo install --locked cargo-cyclonedx
+          cargo cyclonedx --format json --spec-version 1.5
+          mv sentris.cdx.json "dist/sentris-${GITHUB_REF_NAME}.sbom.cdx.json"
+      - name: SHA256SUMS
+        run: cd dist && sha256sum sentris-*.tar.gz sentris-*.zip > SHA256SUMS && cat SHA256SUMS
+      - uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: "dist/sentris-*"
+      - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PRE=""
+          case "${GITHUB_REF_NAME}" in v0.*|*-*) PRE="--prerelease" ;; esac
+          gh release create "${GITHUB_REF_NAME}" dist/* --verify-tag --generate-notes --title "${GITHUB_REF_NAME}" $PRE
