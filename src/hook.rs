@@ -59,14 +59,56 @@ pub fn is_sensitive_path(path: &str) -> bool {
         .is_some_and(|(_, ext)| SECRET_FILE_EXTENSIONS.contains(&ext))
 }
 
-/// `*` and `?` wildcards over one file name.
+/// `*` and `?` wildcards over one file name; iterative with single-star backtracking, so cost is O(pattern x name).
 fn wildcard_match(pat: &[u8], name: &[u8]) -> bool {
-    match pat.split_first() {
-        None => name.is_empty(),
-        Some((b'*', rest)) => (0..=name.len()).any(|i| wildcard_match(rest, &name[i..])),
-        Some((b'?', rest)) => !name.is_empty() && wildcard_match(rest, &name[1..]),
-        Some((c, rest)) => name.first() == Some(c) && wildcard_match(rest, &name[1..]),
+    let (mut p, mut n) = (0, 0);
+    let mut backtrack: Option<(usize, usize)> = None;
+    while n < name.len() {
+        match pat.get(p) {
+            Some(b'*') => {
+                backtrack = Some((p, n));
+                p += 1;
+            }
+            Some(&c) if c == b'?' || c == name[n] => {
+                p += 1;
+                n += 1;
+            }
+            _ => match backtrack {
+                Some((star, mark)) => {
+                    p = star + 1;
+                    n = mark + 1;
+                    backtrack = Some((star, mark + 1));
+                }
+                None => return false,
+            },
+        }
     }
+    pat[p..].iter().all(|&c| c == b'*')
+}
+
+/// Over-approximates shell brace groups and character classes so they can be matched as `*` / `?` wildcards.
+fn flatten_shell_globs(word: &str) -> String {
+    let mut out = String::with_capacity(word.len());
+    let (mut brace, mut class) = (0usize, false);
+    for c in word.chars() {
+        match c {
+            '{' => {
+                if brace == 0 {
+                    out.push('*');
+                }
+                brace += 1;
+            }
+            '}' if brace > 0 => brace -= 1,
+            '[' if brace == 0 && !class => {
+                class = true;
+                out.push('?');
+            }
+            ']' if class => class = false,
+            _ if brace > 0 || class => {}
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 /// True when a `*`/`?` pattern in the last path component matches a secret file that exists (no `**` or braces).
@@ -191,9 +233,15 @@ fn bash_edits_scanner_config(command: &str) -> bool {
         let names_config = segment
             .replace(['\'', '"', '\\'], "")
             .split(|c: char| {
-                !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | '*' | '?'))
+                !(c.is_ascii_alphanumeric()
+                    || matches!(
+                        c,
+                        '.' | '_' | '-' | '/' | '*' | '?' | '{' | '}' | '[' | ']' | ','
+                    ))
             })
+            .map(flatten_shell_globs)
             .any(|piece| {
+                let piece = piece.as_str();
                 let base = piece.rsplit('/').next().unwrap_or(piece);
                 !piece.is_empty()
                     && (is_scanner_config(piece)
@@ -640,6 +688,30 @@ mod tests {
         }
         assert_eq!(
             tool("Bash", json!({"command": "cat .sentris.t*"})),
+            Verdict::Allow
+        );
+    }
+
+    #[test]
+    fn pathological_wildcards_finish_quickly() {
+        let nasty = format!("rm {}b", "a*".repeat(60));
+        let start = std::time::Instant::now();
+        assert_eq!(tool("Bash", json!({"command": nasty})), Verdict::Allow);
+        assert!(start.elapsed() < std::time::Duration::from_millis(500));
+    }
+
+    #[test]
+    fn brace_and_class_globs_that_could_name_the_config_are_denied() {
+        for cmd in [
+            "rm .sen{t,t}ris.toml",
+            "rm .sentris.to[m]l",
+            "sed -i x .sentris.{toml,bak}",
+            "rm .{sentris,other}.toml",
+        ] {
+            denied(tool("Bash", json!({"command": cmd})));
+        }
+        assert_eq!(
+            tool("Bash", json!({"command": "rm build/{a,b}.log"})),
             Verdict::Allow
         );
     }
