@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
 
 const ts = (name: string) => integer(name, { mode: 'timestamp_ms' })
 const now = () => new Date()
@@ -39,6 +39,20 @@ export const account = sqliteTable('account', {
   password: text('password'),
   createdAt: ts('created_at').notNull().$defaultFn(now),
   updatedAt: ts('updated_at').notNull().$defaultFn(now),
+})
+
+// Better Auth's database-backed rate limiter (in-memory counters are per-isolate, so useless on Workers)
+export const rateLimit = sqliteTable('rate_limit', {
+  id: text('id').primaryKey(),
+  key: text('key').notNull().unique(),
+  count: integer('count').notNull(),
+  lastRequest: integer('last_request').notNull(),
+})
+
+// Webhook ids already applied; replays are acknowledged without touching the org
+export const webhookEvent = sqliteTable('webhook_event', {
+  id: text('id').primaryKey(),
+  appliedAt: ts('applied_at').notNull().$defaultFn(now),
 })
 
 export const verification = sqliteTable('verification', {
@@ -93,7 +107,7 @@ export const scan = sqliteTable(
     findingsCount: integer('findings_count').notNull(),
     createdAt: ts('created_at').notNull().$defaultFn(now),
   },
-  (t) => [index('scan_org_created').on(t.orgId, t.createdAt)],
+  (t) => [index('scan_org_created').on(t.orgId, t.createdAt), uniqueIndex('scan_org_cli').on(t.orgId, t.cliScanId)],
 )
 
 export const finding = sqliteTable(

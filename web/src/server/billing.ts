@@ -1,9 +1,9 @@
 import { env } from 'cloudflare:workers'
 import DodoPayments from 'dodopayments'
-import { eq } from 'drizzle-orm'
-import { db, schema } from './db'
+import { db } from './db'
 import type { Org } from './org'
-import { shouldApply } from './guards'
+import { assertConfig } from './config'
+import { applyWebhook } from './webhook-core.ts'
 
 // Lazy: secrets don't exist at build/prerender time
 const dodo = () =>
@@ -32,10 +32,8 @@ export async function portalLink(org: Org) {
   return link
 }
 
-const ACTIVE = new Set(['subscription.active', 'subscription.renewed', 'subscription.updated', 'subscription.plan_changed'])
-const ENDED = new Set(['subscription.cancelled', 'subscription.expired', 'subscription.failed', 'subscription.on_hold'])
-
 export async function handleDodoWebhook(request: Request): Promise<Response> {
+  assertConfig()
   const body = await request.text()
   const headers = Object.fromEntries(request.headers)
   let event: ReturnType<DodoPayments['webhooks']['unwrap']>
@@ -45,29 +43,11 @@ export async function handleDodoWebhook(request: Request): Promise<Response> {
     return new Response('invalid signature', { status: 401 })
   }
 
-  if (!ACTIVE.has(event.type) && !ENDED.has(event.type)) return new Response('ignored', { status: 200 })
-  const sub = event.data as Extract<typeof event, { type: 'subscription.active' }>['data']
-  const orgId = typeof sub.metadata?.org_id === 'string' ? sub.metadata.org_id : null
-  const org = await db.query.org.findFirst({
-    where: orgId ? eq(schema.org.id, orgId) : eq(schema.org.dodoSubscriptionId, sub.subscription_id),
-  })
-  if (!org) return new Response('unknown org', { status: 200 })
-
-  const at = new Date(event.timestamp)
-  if (!shouldApply(org, sub.subscription_id, ENDED.has(event.type), at)) return new Response('stale', { status: 200 })
-
-  await db
-    .update(schema.org)
-    .set({
-      billingEventAt: at,
-      plan: ACTIVE.has(event.type) ? 'pro' : 'free',
-      seats: ACTIVE.has(event.type) ? sub.quantity : 1,
-      subscriptionStatus: sub.status,
-      dodoCustomerId: sub.customer.customer_id,
-      dodoSubscriptionId: sub.subscription_id,
-      currentPeriodEnd: new Date(sub.next_billing_date),
-    })
-    .where(eq(schema.org.id, org.id))
-
-  return new Response('ok', { status: 200 })
+  try {
+    const { status, body: out } = await applyWebhook(db, { id: request.headers.get('webhook-id'), type: event.type, timestamp: event.timestamp, data: event.data })
+    return new Response(out, { status })
+  } catch (err) {
+    console.error('webhook: transient failure, asking Dodo to retry', err)
+    return new Response('retry', { status: 503 })
+  }
 }

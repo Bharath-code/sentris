@@ -1,15 +1,10 @@
 import { env } from 'cloudflare:workers'
-import { betterAuth } from 'better-auth'
-import { drizzleAdapter } from 'better-auth/adapters/drizzle'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
-import { db, schema } from './db'
+import { db } from './db'
+import { createAuth } from './auth-core.ts'
 
-export const auth = betterAuth({
-  baseURL: env.APP_URL,
-  secret: env.BETTER_AUTH_SECRET,
-  database: drizzleAdapter(db, { provider: 'sqlite', schema }),
-  socialProviders: {
-    github: { clientId: env.GITHUB_CLIENT_ID, clientSecret: env.GITHUB_CLIENT_SECRET },
-  },
-  plugins: [tanstackStartCookies()],
-})
+export const auth = createAuth(
+  { appUrl: env.APP_URL, secret: env.BETTER_AUTH_SECRET, githubId: env.GITHUB_CLIENT_ID, githubSecret: env.GITHUB_CLIENT_SECRET },
+  db,
+  [tanstackStartCookies()],
+)

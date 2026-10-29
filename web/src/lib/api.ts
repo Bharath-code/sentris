@@ -1,5 +1,5 @@
 import { createMiddleware, createServerFn } from '@tanstack/react-start'
-import { getRequestHeaders } from '@tanstack/react-start/server'
+import { getRequest, getRequestHeaders } from '@tanstack/react-start/server'
 import { redirect } from '@tanstack/react-router'
 import { and, count, desc, eq, isNull, sql } from 'drizzle-orm'
 import { z } from 'zod'
@@ -7,7 +7,9 @@ import { env } from 'cloudflare:workers'
 import { auth } from '@/server/auth'
 import { db, schema } from '@/server/db'
 import { ensureOrg } from '@/server/org'
-import { mintKey, randomHex, sha256 } from '@/server/crypto'
+import { assertConfig } from '@/server/config'
+import { sameOrigin } from '@/server/guards'
+import { createApiKey } from '@/server/keys'
 import { blastRadius } from '@/server/ingest'
 import { createCheckout, portalLink } from '@/server/billing'
 
@@ -17,6 +19,9 @@ export const getViewer = createServerFn({ method: 'GET' }).handler(async () => {
 })
 
 const authed = createMiddleware({ type: 'function' }).server(async ({ next }) => {
+  assertConfig()
+  // Session cookies ride along on cross-site requests, so refuse mutations that did not originate from this app
+  if (!sameOrigin(getRequest(), env.APP_URL)) throw new Response('Forbidden', { status: 403 })
   const s = await auth.api.getSession({ headers: getRequestHeaders() })
   if (!s) throw redirect({ to: '/login' })
   const org = await ensureOrg(s.user)
@@ -71,9 +76,7 @@ export const createKey = createServerFn({ method: 'POST' })
   .middleware([authed])
   .validator(z.object({ name: z.string().trim().min(1).max(60) }))
   .handler(async ({ data, context: { org } }) => {
-    const { key, preview } = mintKey(org.zkTag)
-    await db.insert(schema.apiKey).values({ id: `key_${randomHex(8)}`, orgId: org.id, name: data.name, preview, hash: await sha256(key) })
-    return { key }
+    return createApiKey(db, org, data.name)
   })
 
 export const revokeKey = createServerFn({ method: 'POST' })

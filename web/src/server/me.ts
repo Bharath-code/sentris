@@ -1,10 +1,16 @@
+import { env } from 'cloudflare:workers'
 import { and, eq, isNull } from 'drizzle-orm'
 import { db, schema } from './db'
 import { parseBearer, sha256 } from './crypto'
 import { canIngest } from './org'
+import { assertConfig } from './config'
+import { limitedResponse } from './limit.ts'
 
 // Lets the CLI show the real org instead of guessing: `sentris auth login` calls this to validate the key
 export async function handleMe(request: Request): Promise<Response> {
+  assertConfig()
+  const limited = await limitedResponse(env.INGEST_IP_LIMITER, request.headers.get('cf-connecting-ip') ?? 'unknown')
+  if (limited) return limited
   const token = parseBearer(request.headers.get('authorization'))
   if (!token) return Response.json({ message: 'Missing or malformed API key.' }, { status: 401 })
 
