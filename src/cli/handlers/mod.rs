@@ -55,6 +55,8 @@ pub fn execute(cli: Cli) {
             min_severity,
             cloud,
             verify,
+            probe,
+            fail_on,
         } => scan::handle_scan(
             &cli,
             path,
@@ -69,6 +71,8 @@ pub fn execute(cli: Cli) {
             min_severity,
             cloud,
             verify,
+            probe,
+            fail_on,
         ),
         Commands::Install { force } => audit::handle_install(force),
         Commands::Uninstall => audit::handle_uninstall(),

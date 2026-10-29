@@ -49,7 +49,7 @@ impl AuditLedger {
                 AuditAction::QuarantineCreated { .. } => quarantines_created += 1,
                 AuditAction::KeyRotated { .. } => keys_rotated += 1,
                 AuditAction::KeyDeactivated { .. } => keys_deactivated += 1,
-                AuditAction::InvestigationRun { .. } => {}
+                AuditAction::InvestigationRun { .. } | AuditAction::ExposureProbed { .. } => {}
             }
         }
 

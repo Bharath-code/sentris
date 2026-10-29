@@ -267,6 +267,7 @@ impl Scanner {
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
+            exposures: Default::default(),
         })
     }
 
@@ -291,6 +292,7 @@ impl Scanner {
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
+            exposures: Default::default(),
         })
     }
 
@@ -315,6 +317,7 @@ impl Scanner {
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
+            exposures: Default::default(),
         })
     }
 
@@ -339,6 +342,7 @@ impl Scanner {
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
+            exposures: Default::default(),
         })
     }
 }

@@ -54,6 +54,19 @@ pub struct SarifResult {
     pub level: &'static str,
     pub message: SarifMessage,
     pub locations: Vec<SarifLocation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<SarifProperties>,
+}
+
+/// SARIF property bag; present only on results that `scan --probe` assessed.
+#[derive(Serialize)]
+pub struct SarifProperties {
+    pub sentris: SarifSentris,
+}
+
+#[derive(Serialize)]
+pub struct SarifSentris {
+    pub tier: crate::exposure::RiskTier,
 }
 
 #[derive(Serialize)]
@@ -143,6 +156,12 @@ pub fn convert_to_sarif(report: &ScanReport) -> SarifLog {
                         },
                     },
                 }],
+                properties: report
+                    .exposures
+                    .get(&f.fingerprint)
+                    .map(|e| SarifProperties {
+                        sentris: SarifSentris { tier: e.tier },
+                    }),
             }
         })
         .collect();
@@ -174,6 +193,7 @@ mod tests {
         let report = ScanReport {
             timestamp: "123456789".to_string(),
             version: "0.1.0".to_string(),
+            exposures: Default::default(),
             stats: ScanStats::default(),
             findings: vec![Finding {
                 rule_id: "stripe-secret-key".to_string(),
@@ -212,5 +232,53 @@ mod tests {
                 .start_line,
             42
         );
+    }
+
+    fn probed_report() -> ScanReport {
+        let mk = |fp: &str, rule: &str| Finding {
+            rule_id: rule.to_string(),
+            description: "d".to_string(),
+            severity: Severity::High,
+            file_path: "a.ts".to_string(),
+            line_number: 1,
+            column: 1,
+            redacted_match: "x...y".to_string(),
+            entropy: 4.0,
+            fingerprint: fp.to_string(),
+            commit_hash: None,
+            commit_author: None,
+            commit_date: None,
+        };
+        let mut report = ScanReport {
+            timestamp: "0".to_string(),
+            version: "0.1.0".to_string(),
+            exposures: Default::default(),
+            stats: ScanStats::default(),
+            findings: vec![
+                mk("fp_probed", "stripe-secret-key"),
+                mk("fp_plain", "other"),
+            ],
+        };
+        report.exposures.insert(
+            "fp_probed".to_string(),
+            crate::exposure::Exposure::undecided("Stripe", "x", crate::exposure::RiskTier::High),
+        );
+        report
+    }
+
+    #[test]
+    fn sarif_carries_the_probed_tier_only_on_probed_results() {
+        let value = serde_json::to_value(convert_to_sarif(&probed_report())).unwrap();
+        let results = &value["runs"][0]["results"];
+        assert_eq!(results[0]["properties"]["sentris"]["tier"], "high");
+        assert!(results[1].get("properties").is_none());
+    }
+
+    #[test]
+    fn sarif_without_probe_has_no_properties_anywhere() {
+        let mut report = probed_report();
+        report.exposures.clear();
+        let text = serde_json::to_string(&convert_to_sarif(&report)).unwrap();
+        assert!(!text.contains("properties"));
     }
 }

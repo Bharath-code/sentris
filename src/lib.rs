@@ -4,6 +4,7 @@ pub mod cloud;
 pub mod config;
 pub mod detector;
 pub mod error;
+pub mod exposure;
 pub mod fsutil;
 pub mod git;
 pub mod hook;

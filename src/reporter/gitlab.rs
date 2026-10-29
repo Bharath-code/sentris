@@ -250,6 +250,7 @@ mod tests {
         ScanReport {
             timestamp: "2026-10-08T12:00:00Z".to_string(),
             version: "0.1.0".to_string(),
+            exposures: Default::default(),
             stats: ScanStats {
                 files_scanned: 10,
                 files_ignored: 1,
