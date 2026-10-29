@@ -1,7 +1,8 @@
 use owo_colors::OwoColorize;
 use std::fs;
 
-use super::die;
+use super::{die, record_audit_event};
+use crate::audit::AuditAction;
 use crate::cli::{Cli, OutputFormat};
 use crate::cloud::{build_cloud_payload, upload_scan, Credentials, MultiRepoBlastRadiusInsight};
 use crate::git::GitManager;
@@ -101,6 +102,14 @@ fn live_status(
     res
 }
 
+/// Scopes already appear under the capabilities, so the status line stays short.
+fn describe_probed(status: &LiveStatus) -> String {
+    match status {
+        LiveStatus::Active { .. } => "ACTIVE & LIVE".red().bold().to_string(),
+        other => describe_status(other.clone()),
+    }
+}
+
 fn describe_status(status: LiveStatus) -> String {
     match status {
         LiveStatus::Active { scopes } => format!(
@@ -113,6 +122,64 @@ fn describe_status(status: LiveStatus) -> String {
             format!("{} ({})", "UNVERIFIED".yellow(), reason.dimmed())
         }
     }
+}
+
+/// Read-only provider probes for `scan --probe`. Each probe is audited before its network call; offline mode makes none.
+pub(super) fn probe_findings(cli: &Cli, scanner: &Scanner, report: &mut ScanReport) {
+    if cli.offline {
+        if !cli.quiet {
+            eprintln!("Zero-egress offline mode active: exposure probes suppressed.");
+        }
+        return;
+    }
+    crate::exposure::probe_report(
+        report,
+        |f| {
+            let content = fs::read_to_string(&f.file_path).ok()?;
+            scanner.resolve_finding_secret(&content, f).ok()
+        },
+        crate::exposure::probe_for_rule,
+        |f, provider| {
+            let fingerprint = crate::model::short(&f.fingerprint, 12);
+            record_audit_event(
+                AuditAction::ExposureProbed {
+                    finding_id: fingerprint.to_string(),
+                    provider: provider.to_string(),
+                },
+                serde_json::json!({
+                    "rule_id": f.rule_id,
+                    "note": format!("probe performed with credential fingerprint {fingerprint}"),
+                }),
+            );
+        },
+    );
+}
+
+pub(super) fn print_exposures(report: &ScanReport) {
+    if report.exposures.is_empty() {
+        return;
+    }
+    println!("{}", "Exposure (read-only provider probes):".cyan().bold());
+    for f in &report.findings {
+        let Some(e) = report.exposures.get(&f.fingerprint) else {
+            continue;
+        };
+        println!(
+            "   • {}:{} {} [{}] {}",
+            f.file_path.bold(),
+            f.line_number,
+            e.provider.cyan(),
+            format!("{:?}", e.tier).to_uppercase().red().bold(),
+            describe_probed(&e.live)
+        );
+        for c in &e.capabilities {
+            println!("       - {c}");
+        }
+        if let Some(usd) = e.measured_usd {
+            println!("       - provider-reported available balance: ${usd:.2}");
+        }
+    }
+    println!();
 }
 
 pub(super) fn dispatch_webhook(cli: &Cli, webhook_url: &str, report: &ScanReport) {

@@ -174,6 +174,7 @@ mod tests {
         let report = ScanReport {
             timestamp: "123456789".to_string(),
             version: "0.1.0".to_string(),
+            exposures: Default::default(),
             stats: ScanStats::default(),
             findings: vec![Finding {
                 rule_id: "stripe-secret-key".to_string(),

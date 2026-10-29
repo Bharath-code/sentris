@@ -160,6 +160,9 @@ pub struct ScanReport {
     pub version: String,
     pub stats: ScanStats,
     pub findings: Vec<Finding>,
+    /// Read-only probe verdicts keyed by finding fingerprint; empty unless `scan --probe` ran.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub exposures: std::collections::BTreeMap<String, crate::exposure::Exposure>,
 }
 
 #[cfg(test)]

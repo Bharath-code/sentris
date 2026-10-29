@@ -3,7 +3,8 @@ use std::path::{Path, PathBuf};
 use std::process;
 
 use super::scan_output::{
-    dispatch_webhook, render_scan_report, sync_cloud_report, verify_findings_live,
+    dispatch_webhook, print_exposures, probe_findings, render_scan_report, sync_cloud_report,
+    verify_findings_live,
 };
 use super::{die, record_audit_event};
 use crate::audit::AuditAction;
@@ -28,6 +29,7 @@ pub fn handle_scan(
     min_severity: Option<Severity>,
     cloud: bool,
     verify: bool,
+    probe: bool,
 ) {
     let scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let mut report = run_scan(&scanner, since.as_deref(), git_history, staged, &path);
@@ -45,6 +47,9 @@ pub fn handle_scan(
         record_baseline_snapshot(&report, record_path, show_notes);
     }
     record_scan_audit(&report, &path, staged, git_history, fail_on_secret);
+    if probe {
+        probe_findings(cli, &scanner, &mut report);
+    }
 
     let effective_format = if cli.is_agent_mode() && matches!(format, OutputFormat::Text) {
         OutputFormat::Json
@@ -52,6 +57,9 @@ pub fn handle_scan(
         format
     };
     render_scan_report(cli, &report, effective_format);
+    if matches!(effective_format, OutputFormat::Text) {
+        print_exposures(&report);
+    }
 
     if verify
         && !report.findings.is_empty()

@@ -59,6 +59,10 @@ pub enum AuditAction {
         finding_id: String,
         provider: String,
     },
+    ExposureProbed {
+        finding_id: String,
+        provider: String,
+    },
 }
 
 /// A tamper-evident cryptographic audit record.

@@ -154,7 +154,7 @@ Sequence for `remediate --rotate` (old key stays **active**): `plan` → persist
 
 Honesty note: a dollar figure is only shown when the provider returns a real number (Stripe balance). Everything else is a capability tier, not an invented dollar estimate.
 
-### D1 ⬜ `Exposure` model + read-only probes behind `--probe` (M)
+### D1 ✅ `Exposure` model + read-only probes behind `--probe` (M)
 **Produces:**
 ```rust
 pub enum RiskTier { Low, Medium, High, Critical }
@@ -164,6 +164,13 @@ pub trait ExposureProbe { fn probe(&self, secret_or_keyid: &str) -> Result<Expos
 ```
 - Stripe: `GET /v1/balance` (live vs test, available balance); restricted-key 403 → capability "restricted, balance not readable". AWS: policy inspection of the **owning user via ambient creds** (admin policy attached → Critical); the leaked key is never used for this. GitHub: scopes (already returned) + org membership.
 - **AC:** each probe has a recorded-fixture test · probes are GET/list/describe only (grep test over probe code for mutating verbs/methods) · without `--probe`, behaviour is identical to today (no new network calls; assert via a failing-transport test) · every probe call is noted in the audit record ("probe performed with credential fingerprint …") · `measured_usd` is `None` unless the provider returned it.
+
+**D1 as built (deviations and limits):**
+- Code in `src/exposure/` (`mod.rs` types + `probe_report`, one file per provider, `http.rs` GET-only `Http` seam). Verdicts live in `ScanReport.exposures`, keyed by fingerprint (one probe and one audit note per distinct credential), not on `Finding`; `exposures` is absent from JSON unless `--probe` ran.
+- Audit: `AuditAction::ExposureProbed` written just before each network call, details carry "probe performed with credential fingerprint <12 hex>". `--offline` suppresses all probes (stderr note).
+- A probe that cannot answer (network, 429, unknown key, ambient key == probed key) is `Unverified` and keeps the finding's severity as its tier: an unanswered probe never lowers risk.
+- Stripe: 403 counts as "live restricted key" only for `rk_` keys. GitHub: tier from classic scopes + `/user/orgs` count (a lower bound without `read:org`); fine-grained/app tokens send no scope header and are `Medium` with that stated. AWS: attached managed policies of the owning user and its groups; only AWS-managed `AdministratorAccess`/`IAMFullAccess` (Critical) and `PowerUserAccess` (High) are recognised, inline policy contents, boundaries and SCPs are not evaluated and the output says so.
+- Fixtures are shaped from the provider docs, not captured from live accounts; fold a live pass into R5.
 
 ### D2 ⬜ Rank findings by tier (S)
 - Sort `scan --probe` output, SARIF `properties.sentris.tier`, and `--json` by tier then rule.

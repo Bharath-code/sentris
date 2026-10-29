@@ -30,6 +30,7 @@ fn create_test_report(findings: Vec<Finding>, duration_ms: u128) -> ScanReport {
     ScanReport {
         timestamp: "2026-10-07T18:54:21Z".to_string(),
         version: "0.1.0".to_string(),
+        exposures: Default::default(),
         stats: ScanStats {
             files_scanned: 15,
             files_ignored: 2,
