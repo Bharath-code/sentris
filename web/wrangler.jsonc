@@ -3,7 +3,7 @@
   "name": "sentris-web",
   "compatibility_date": "2026-10-27",
   "compatibility_flags": ["nodejs_compat"],
-  "main": "@tanstack/react-start/server-entry",
+  "main": "src/server.ts",
   "observability": { "enabled": true },
   "upload_source_maps": true,
   "assets": { "html_handling": "drop-trailing-slash" },

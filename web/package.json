@@ -8,6 +8,7 @@
     "preview": "npm run build && vite preview",
     "deploy": "npm run build && wrangler deploy",
     "typecheck": "tsc --noEmit",
+    "headers": "node --experimental-strip-types -e \"import('./src/server/headers.ts').then(m=>require('fs').writeFileSync('public/_headers',m.headersFile()))\"",
     "test": "node --test --experimental-strip-types src/server/*.test.ts",
     "cf-typegen": "wrangler types --strict-vars=false",
     "db:generate": "drizzle-kit generate",

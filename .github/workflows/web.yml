@@ -1,0 +1,44 @@
+name: Web
+
+on:
+  push:
+    branches: [ "main", "master" ]
+    paths: [ "web/**", ".github/workflows/web.yml" ]
+  pull_request:
+    branches: [ "main", "master" ]
+    paths: [ "web/**", ".github/workflows/web.yml" ]
+
+jobs:
+  web:
+    name: Typecheck, test, build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - run: npm ci
+
+      # Prerendering boots the auth stack, which needs the secret names to exist
+      - name: Placeholder secrets
+        run: cp .dev.vars.example .dev.vars
+
+      - name: Generate Worker types
+        run: npm run cf-typegen
+
+      # The build also generates src/routeTree.gen.ts, which the typecheck imports
+      - name: Build
+        run: npx vite build
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
