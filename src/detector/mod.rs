@@ -8,6 +8,15 @@ use crate::model::{Finding, Severity};
 use regex::{Regex, RegexSet, RegexSetBuilder};
 use sha2::{Digest, Sha256};
 
+/// 0 = vendor-specific, 1 = keyed generic, 2 = broad generic
+fn rule_tier(rule_id: &str) -> u8 {
+    match rule_id {
+        "generic-api-key" => 1,
+        "credential-assignment" => 2,
+        _ => 0,
+    }
+}
+
 pub struct CompiledRule {
     pub rule_id: String,
     pub name: String,
@@ -59,6 +68,7 @@ impl DetectorEngine {
 
         let regex_set = RegexSetBuilder::new(&pattern_strings)
             .multi_line(true)
+            .dfa_size_limit(256 << 20)
             .build()?;
 
         Ok(Self {
@@ -224,22 +234,15 @@ impl DetectorEngine {
             }
         }
 
-        // Deduplicate overlapping matches: if a specific rule matches a span, suppress generic-api-key on the same span
+        // A lower-tier (more specific) rule overlapping a span suppresses higher-tier generic rules on it
         for (i, (start, end, finding)) in raw_hits.iter().enumerate() {
-            if finding.rule_id == "generic-api-key" {
-                let overlapped_by_specific = raw_hits.iter().enumerate().any(
-                    |(j, (other_start, other_end, other_finding))| {
-                        i != j
-                            && other_finding.rule_id != "generic-api-key"
-                            && start < other_end
-                            && end > other_start
-                    },
-                );
-                if overlapped_by_specific {
-                    continue;
-                }
+            let tier = rule_tier(&finding.rule_id);
+            let shadowed = raw_hits.iter().enumerate().any(|(j, (os, oe, other))| {
+                i != j && start < oe && end > os && rule_tier(&other.rule_id) < tier
+            });
+            if !shadowed {
+                findings.push(finding.clone());
             }
-            findings.push(finding.clone());
         }
 
         findings

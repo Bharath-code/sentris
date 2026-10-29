@@ -166,13 +166,16 @@ Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 afte
 
 ## Phase 3: Detection quality (the actual product)
 
-### T3.1 ⬜ Recall gap closure (L) ✔ (evidence: 1 of 5 vs gitleaks 3 of 5)
+### T3.1 🟨 Recall gap closure (L) ✔ (evidence: 1 of 5 vs gitleaks 3 of 5)
 - Add rules: AWS secret access key (context-keyed `aws_secret…=` + 40 base64), generic `password|passwd|secret|token|api_key = "<high-entropy>"` with entropy + stopword filter, Stripe live/restricted keys (investigate why my `sk_live_51…` sample was suppressed: likely sequence-FP filter), plus top-30 cloud/SaaS formats from gitleaks' ruleset.
 - **AC:** corpus test (T3.2) shows recall ≥ gitleaks on its own rule fixtures; the 5-line sample above yields 5/5.
+- **Status (2026-10-29):** rules 56→88 (+32 vendor formats, keyed `credential-assignment`, unquoted `.env` values for keyed rules, `ASIA|ABIA|ACCA` AWS prefixes, trailing-`\b` bug fixed for dash-terminated tokens). 10-secret random probe: Sentris 10/10, gitleaks 8/10. The `sk_live_51…` suppression did not reproduce (random 99-char key detected). On our own corpus: Sentris 388/388 recall, 0 FP on 262 negatives; gitleaks 256/388 (66 %), 33/262 negatives flagged. **Not yet met:** "on gitleaks' own rule fixtures" (needs its Go test data) and the corpus is authored by us, so those numbers are not independent. Real-world check on `web/node_modules` (99 MB) caught and fixed 9 false positives (`token === "?PascalCase"`), now added to negatives.
+- **Cost:** 88 rules in one lazy-DFA `RegexSet` slowed a 99 MB `node_modules` scan from ~14.5 s to ~22 s (needed `dfa_size_limit(256 MB)` to avoid cache thrash). Fix belongs in T5/T3.4: per-rule literal prefilter instead of one big set.
 
-### T3.2 ⬜ Labeled corpus (M)
+### T3.2 ✅ Labeled corpus (M)
 - `tests/corpus/`: ≥200 true-positive and ≥200 hard negatives (UUIDs, hashes, lockfile integrity strings, base64 images, docs examples); CI test computes precision/recall per rule.
 - **AC:** `cargo test corpus` prints P/R table; CI fails if any rule's precision < 0.9 or overall recall regresses > 2 pts.
+- **Done:** `tests/corpus_test.rs` generates ≥388 positives from per-rule templates (nothing secret committed; `CORPUS_DUMP=<dir>` exports them for other scanners) and `tests/corpus/negatives.txt` holds 262 hard negatives; baseline recall in `tests/corpus/baseline_recall.txt`.
 
 ### T3.3 ⬜ Git history scan parity (M)
 - Verify `scan --since` + full-history mode vs gitleaks `detect` on a repo with a secret added then deleted.

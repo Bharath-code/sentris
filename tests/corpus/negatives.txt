@@ -1,0 +1,263 @@
+# hard negatives: one candidate per line, "category<TAB>line"; none may produce a finding
+uuid	trace_id: 5957c4ff-f872-4a9a-a384-231239c02189
+uuid	"request_id": "755f459a-af5f-4e1c-b890-f5862e5ccbf0",
+uuid	auth_key = "42ff9186-b23c-4349-8574-ea97c83373da"
+uuid	secret_key: 3b2cadfc-a8b6-42ab-9fb3-5f1fe9dce30e
+uuid	const trace_id = 'f0a5501a-eb7f-4575-9cd4-09a24154597f';
+uuid	user_token = "50073e33-15aa-4732-be90-995ec5fd1f93"
+uuid	"device_id": "33b9eaa8-656e-4a22-b091-97073204533c",
+uuid	client_id = "4ec3aeaf-2fba-4708-99cc-9501d8ebf515"
+uuid	const apiKey = '4ab72759-7ca5-4ceb-aca5-0ceca736fd70';
+uuid	const auth_key = '6c957cd7-df6f-416b-8a7f-348222b2ec70';
+uuid	user_token: 670d81b9-7962-4aa3-9f04-4813e1d1d934
+uuid	auth_key = "98fb4243-e48d-4ebb-93d6-01727d02447a"
+uuid	"api_key": "7799ba98-6c16-49c9-a262-820cd60dbc4a",
+uuid	const access_key = '4eb4c3db-a428-4eea-b0ee-4ebe701cb5dd';
+uuid	"secret_key": "17b9e949-c5b3-41b0-8989-73edb37a9d9e",
+uuid	"access_key": "6f521712-78d6-466e-b218-e5e4426a8a1d",
+uuid	user_token: f4ac4e81-b3e2-4427-a390-8f1243edeca9
+uuid	"request_id": "f9710504-ae75-430c-82a4-f9a02b6b2121",
+uuid	const auth_key = '43d573f8-7caf-46c0-9b8d-4e00d9a69cdd';
+uuid	"access_key": "81d05cc8-ffe3-4361-8506-6611268d9be8",
+uuid	const request_id = 'bf53ebd7-c95d-4f26-8d5f-635686d87a5b';
+uuid	const auth_key = '7e217b71-3dd4-4711-a12b-651ec799b616';
+uuid	access_key = "59a5684c-e38c-47a0-a093-1fdf91712797"
+uuid	device_id = "a07cc9d4-f3e3-4b42-a841-7812c110a73d"
+hash	image_digest = "306622ade2964c993b00f7712a9728e2"
+hash	sha256 = "e75e3b6321de49f146985d65539f1a81"
+hash	secret_hash = "05121085c91b62360d16d380241eacc4338935c7e0de7f8482a39cfebdc66a3d"
+hash	token_sha256 = "78d5510a3bdbf277fbc6a545d5225e7c"
+hash	secret_hash = "a737a27cef579e9dfeeaf6d87209f034"
+hash	image_digest = "634cfa7a06792c83d4eab6f0117a5a1490fa37d0"
+hash	commit_sha = "7e35ee7f0e670b66aec2b2998ed12dfc5e3d9656887fdeabcb39be9b2b10e092"
+hash	etag = "8bf5c81c808a89d0c2623efdea79f88e49c3d0ad"
+hash	secret_hash = "ef66ba19cfb0f661dc402eff8f44c620760ae564"
+hash	image_digest = "5fa47506cef8bab46c2d6177bf3af33e"
+hash	image_digest = "15f03b703ead81b7e8b05ddc0ddadda51a722f6a9f64ff9fada23d57eeb57052"
+hash	sha256 = "f150880025ecd01c71447ad804377e5d"
+hash	sha256 = "78fe469610d401405e5523b8ff444dc8"
+hash	secret_hash = "fa93f1a10c91cae11846832346ab97a3e2b304bd02d538d283b406444a865bee"
+hash	image_digest = "1c209ba32ff7a8ffb1f95759f972ea4ac3704480"
+hash	etag = "d9d912500d25da3597c27fd5c1e8940231bbcf3c187458e1434ecce2e5b818a4"
+hash	token_sha256 = "7e68dfeba25362f5048d1cf6718862f4f2259cff6a130ce1ccdba52472e41fc2"
+hash	sha256 = "5090090c18568463b2a3db57e4d2fa61"
+hash	sha256 = "b237ae9d64b993d9a03945400eb0fc59"
+hash	etag = "773a6310fab7e6da6270ee6e39cba2e6"
+hash	FROM node@sha256:ac8030f9934bf00531be3329c7172fe9479e01fce0a4eb8021cc6de06245c3ae
+hash	h1:85pArTWxJxxNysegwlBo89d0KJdATr9opfubuGb5f94=  # go.sum
+hash	FROM node@sha256:01912e32e41cdbb912bbdf2860993c36d190431e62173a0988afa8a7be4e64d1
+hash	h1:NY31CSUzr/U9838YZEZFaa8W7jEAPJGJ/js8Y0Jai9J=  # go.sum
+hash	FROM node@sha256:a97b2f617e411aa5604b7397c6dcef5a00ef40db95d3d941ecaf0f977227df97
+hash	h1:U6onOqjFeKGhFbBDMf27Z+dyf+6upYRoStvqR6FQksS=  # go.sum
+hash	FROM node@sha256:e1aea3b3faf38ebe312e74aadd109dfbaaed899a2828f0a123e7064592aa0bcc
+hash	h1:ygm6jdaxnseNtJQqRhuJKeUcb/mbFb83y3S6ej/0nnP=  # go.sum
+hash	FROM node@sha256:959419925f95449318ae85476199e348d12497f1ce384257ca0291e5cdb7ff22
+hash	h1:HN93RfeeHiYlFJOzEcyB4v094ertp06SohQ/qItyc0t=  # go.sum
+hash	FROM node@sha256:4248684dfbdfd3e97bcf5b33949f980e0305b7a430262b4d945205adbbcd507b
+hash	h1:UkCda341KfRMwtTaADyGyDE8eOEc6FkuRS9rezPKZ6u=  # go.sum
+hash	FROM node@sha256:be58cc86f8dbe3d3779885257b25153ae3558857fb85d4db063e03e5ee692093
+hash	h1:GNPK9JKGyDYkvd9MMHKFHPrcE0GcSMOqjqMibL2XIZB=  # go.sum
+hash	FROM node@sha256:7851625027d20db4a3cd9e8ef7df36b7786a50929476778d1505a10bd81fa8a9
+hash	h1:6rsIwTPAiimjFk0VEkX5oooML3tG51PcpjITm4niC7A=  # go.sum
+hash	FROM node@sha256:2770e1fea15a8271a8d184b53ddf90f745bf46790b4100ed55b8bd3b8b940667
+hash	h1:jEpX8549gSwoHOC8TbQ7S73SGxE5oJ2pnAoaOKMi61Y=  # go.sum
+hash	FROM node@sha256:b62466276278667627d2af1f1c219bacc7d6de789243c6a9a5a7df994e522894
+hash	h1:RT/ansfT5kK3v5hm9mbhd0ghg1uLjYa1ke/7G8ODjFW=  # go.sum
+lockfile	      "integrity": "sha512-vG3mDVCsJk/CBWS/ZLPk60cKxN1fSN+7HHFzIjyiBlk0UZwMpZuQh0/T/576gTlgVtD53jJ7zW7V50exYOaXiC==",
+lockfile	      "integrity": "sha512-PiRkNH5CppOsHd7j5jTP6nkCONUxxMjdQ7n0p4ymG/oJq/4lH4xxjF0cV+P7EJjJbqp4vhJKYNsTIgaH2ji2YY==",
+lockfile	      "integrity": "sha512-+1FU/Ie8MGH3zgllqxm7ZySfrFOMdBcrF1mkCS43071hAuCDil56A7kszqDoeqP9t8VGtJlluylMZA9GhbpF6W==",
+lockfile	      "integrity": "sha512-6paH+5p7qp6motxIuYoNswuTGoX6Ng0bBmxfzahiA4OTWa2CE2dUX/lEjn82GuukkOR2cPzAmMpkFtM1FimAum==",
+lockfile	      "integrity": "sha512-b03/X695KE7xZRzayT3udeIMriRKgYA/fPtvwHLR1rT+W1M1OF7+jhauUay8FAFNpl9H29bXPwhfpDZWOY3bWQ==",
+lockfile	      "integrity": "sha512-l8CLEbnGrOJRNuFK+z27s7jnZfEMQeSnDtkK6wDhprrRsz5wYvE+RcoOPnYYhFVnluBNgE5kc56P5nbTuM98mp==",
+lockfile	      "integrity": "sha512-a58IN3VdITGyU9E478WZOR2686tX7xjIQOgI7stGUOOmqaJXIMzPYb+Y02tmmJy5u/wbibeAGahUKPmGU4lXSq==",
+lockfile	      "integrity": "sha512-BjCI53jVKzSPUU9ZXow+XIGpl2nSINeSIjW6uZke8O8h+0Mz3B1AF8fMEOJyqM1+whj4VdGfIrrh0/BpvdH2p0==",
+lockfile	      "integrity": "sha512-2cBRhfhxGMZV3K/9n3JN57bNcbihoEHhqF/lx8CFFinqpYFMmT3TmYwNO9GbvfGG8h1OY6qeWcNjeeDsDuMunw==",
+lockfile	      "integrity": "sha512-htIiqa5ZwH0JPSnuh+gPYYY3VLwONFKdQmR83mPOOW+6uBiRHpZnXgqo0C0/gRrLfYqeHb0JlctqrmId7DKkJg==",
+lockfile	      "integrity": "sha512-ORKK25iltuyC8Sf6ufdOrArxhariUW85EDfrUJka7qI+JWMqsyJ+N1qwNBKSK0sJOaNmeYU9jji8ntDpZ/PZWO==",
+lockfile	      "integrity": "sha512-NX09/KHeqrA9EVQ24aFxuPkXv0APY70lXMZrZxZ0RKNj/1mHgDbfb0/oAuY/pMFI5JHucV6DnMKOoeS+S+dkg+==",
+lockfile	      "integrity": "sha512-fvOQUhm5Pz5YiF7MHQJt+vNwCUFd8Bo5NHHjQ6+pTHP8DLWjiI4eypafJijf+kvEtlDWP9Btq8vkfai4AsV85K==",
+lockfile	      "integrity": "sha512-LU0Domf9XpaLLSvcd4f4xb0RThWLrU9txwYOoq/4Fa6gwR/oYvouO2HXRjc3MSsgY9HdmKvJgJx2rLb4tcAKgk==",
+lockfile	      "integrity": "sha512-Epbk9MO41V5ycfHKxvIkyASCzkp3YrvO6HN5L0aTWEc/IqZGRuM4ofRK8A9y0ZxjIpA+BawJdyuUBRZpc2qfAT==",
+lockfile	      "integrity": "sha512-YOgke8ZncL1yBRZfzbotvvRZSW7IcmEPIEylYcD0HaHF/q5w18SHoCfsJd/M4Md/9TXQpoiz/EhWT1EUi/e1tJ==",
+lockfile	      "integrity": "sha512-+oyaapTUvwAhZuq3LINimEh15xuZyHFNHamh47QjI9xJfSjDxhAV3J26PTzQJKzAfMHw68m5jCvBzt+EtomP7H==",
+lockfile	      "integrity": "sha512-F9DqXNiEBf3Q6xPLmCH+31x+HjodZALDJ0CM2LqzstHw5OfuUP5xr7rwj/K+WL6jzVUJiTzdTmvjHwuvLPP7lU==",
+lockfile	      "integrity": "sha512-29KuxmmaGJ2K92rB1xSX90XXYikbm/9wQeyE7ak/phdiiXrnWlFqlMbz9u2EjgiafQV7lTAVclz6yY3PzzAxaY==",
+lockfile	      "integrity": "sha512-8WSTHhjEcVEjsHYlB4XZ46XOS2cJOaRSPiGGpEfezPYepPqGrDOvcimQEHJuWaScp15ob2jzlU4ecGUqh8iD30==",
+lockfile	    integrity sha512-u48fwTDkWC1cyXBXhzljymg4JTHGBgyvzUWFLOdkZk8FSHKeQI2rd9kJ3flbU0rCOkiK5zmndjcb5zeZMUMLkJ==
+lockfile	    integrity sha512-h6AUIilqOHDeQD10mkqzXn32qDq2C3yfQISVLnaaWveEYmHvPNodj8fzDHTOjXw7RYGcUM02a6ha3Y83f8LKkl==
+lockfile	    integrity sha512-ZrGM9/Vi2FMZwXzxBhWJMN3mnp7dlfN4w1jLsCZkS6QMwxRhTXsjPDsjHFk+iJ1rm61yvInNY7rO0VGDsL5v0A==
+lockfile	    integrity sha512-UlEKSHQHNPoDKRPQiZs2AmEL3AKwO+N9b16psoM2yKvZCSFZzKdigHISIiO2t1q3Ozq2VJn5rdE67q1oIR2gVG==
+lockfile	    integrity sha512-pF5rLG60EHe2jOUZSL49RjXkCV454IHpdDtMrriszi8kawgfKvIzIRAfD3lJPWW6y1YeoXqf4r7Bi7W93ah6ft==
+lockfile	    integrity sha512-Xu/G5tTxeede+kw2rZn7zTjBy/vB7gRIOqiHio6FT/83x7UqumvAsiHhH2dsL2NYRHV8zf71qvJ+13y2x3iUNy==
+lockfile	    integrity sha512-LEdMtaD/L+gfcKzokTZ+Nc8XyC54ZWdiMy4AK9d2mH8c+E6Ycula4M1x2Ur9ys9pONx8hr/gl0J4Ue7wp0OvtI==
+lockfile	    integrity sha512-lrGhIPXquAHO0Rpj88mJxQkL4rZ/S1SM2tArPnRc2Dhwizk9080cUl+vjAUHCtfpaImcwF8U1vBBOlA2lkX9En==
+lockfile	    integrity sha512-rvn5fjQPTbNb9lMVHV1D5i9GYPw57M3cvuED619KIxAvYegENFX/odEdeMLnpHK965/U5X5o4o91x/H9ALdfzo==
+lockfile	    integrity sha512-3zIjKF6UArL4Z1FSN7eNfgbmOaZm7VRSJCX+KZJWeC0p/zgaiaISf/9bPyxRpO4HF40OyBwHFG8xqcfGCxEuni==
+lockfile	checksum = "a05a82a8c77525bbfe948786e0cb47c11136c57ae624f6bf941bea49938f3ff4"
+lockfile	checksum = "15ee088caa88a4c8c82926c884b6bde6299bf5214d41861e71d24b891ccd2f98"
+lockfile	checksum = "9f61f0bab08fcb1891e42884f262c0210f1cb60a8395fab7996e0442bb7c6818"
+lockfile	checksum = "705485b9686fd55f57741bd0791d797c762e8148f5e84ff88879e56e811895e2"
+lockfile	checksum = "733dc9e10e8f51ff3ea52b4e01eb1cbf365cb417402e32600e5254a232e5c472"
+lockfile	checksum = "7baa35542a6b69774163d2489691baf8fc38e80be6dd8241d0fcb4eacdde9779"
+lockfile	checksum = "7938be93ce011d61863bc136663da596159dfea119dd9668cbc5a7cc8481a67a"
+lockfile	checksum = "e40c2e288afba80d2ed7d13868404cf535e947a015679ec3e3db7f2bc8c0936a"
+lockfile	checksum = "647282f9694f7c57685f39380d269affc882971063c500de112814d309da9dda"
+lockfile	checksum = "53017cd28fe814757b64e0c0a5e3910f80ef14b4465595d6edfa86cf72bc6e01"
+lockfile	checksum = "744294f8990c1709a85cab4d77bc796e204efa83b1759507feb036fef09fe589"
+lockfile	checksum = "2fd71c9f3b36bc7bde0949e0599f7b07373ebf8b8b78c44af564816397e15152"
+lockfile	checksum = "7543ce016aaed2b647feda0205e244a4f15855c15d0527ff35160a1e4fe08b6f"
+lockfile	checksum = "11ab16628a56eeeb50c8c1765d3b1582d02d05cd01cd888b3cfd8ca8caa233d0"
+lockfile	checksum = "9a47a6a2c894c50fd1b1fceb250bac8beaaa78c0f344d8bb7ab12ea9542537f1"
+lockfile	    --hash=sha256:e74770b04a3e969217eb0dbd6bcb39b05f60daf6443b755d479eba9f77eac8cb \
+lockfile	    --hash=sha256:0feb6dab2ef257de65b78f425e3aa12d3ae9ac450c9cb9a171ebf371c5be0543 \
+lockfile	    --hash=sha256:8d93190a3d9888c9a9d038c8da4f8d636933d63f5b4db2b3a6c1c2576b7d791f \
+lockfile	    --hash=sha256:63d45a3414c46c1de92779916103c04054a71d3d236033703bc6dc8cac633a29 \
+lockfile	    --hash=sha256:feb4afaecfbea3a6b8936b2550a8aae9820fd5d4a941eec44454fa223b9fb995 \
+b64image	const logo = "data:image/jpeg;base64,QLM1+42abQBOX4pm+I2VWQiV0tuTBXmGiXXbUxJIMcgmtNg/GzAiZXPjjhBQVFGyrqd/9IctygMIJUvlEAo1AVNqQCq2Y6G62rp/YrQ3fiihp1SxkseUUC7rns9CvA87KEh5e7vBE7iaFvbeKPdtz1Rj7qBLwB2P";
+b64image	background: url(data:image/svg+xml;base64,lEhimk0Q80FW/xPjnfhhTgmCJ31gDH+QY7M2//+awtDrsbPxEWx2QgV+vt2Xhw5v0anXaZTNnIs1W1A3ngBtJ1S5lLItk8z+tx4mfUqtyIOHqm5uS+ggdnBm);
+b64image	<img src="data:image/png;base64,L+epE3Hr1ZxeYo1nBLntW3o3Gub8ZAM1VsqFTxLZxRftUyVMup5tdnE5EvabpscjWX7gKgYGoj1wsNSfDrGPXfAiTU">
+b64image	background: url(data:image/svg+xml;base64,SIr1On+COggvlNJHypJcB16c0M0nTiQr0FIIdWhVTYRTtrDh51zDSTVoBmaCel2iAUhMgAmvBaAM/eypq0f/k6M4wDN8UIJvn9J1QFSUV74Ojes0TYg0NwlI);
+b64image	<img src="data:image/png;base64,uZaQdRd7ocFOk5vcYLLnhqhU2Lgd/kkhZLBcj0iqtSGSPyFpUgJZQQiqyM3Ie6/DZdy2QDG2aHZC6QfjWvd8UGHRCROssaEDfrc+8JrGAjkLsKcOg+/u/Hn9/+v1Stb/Xb4UZSC2gEIkBGclbSS9SUtguXUXMwNO">
+b64image	background: url(data:image/svg+xml;base64,xCHxKbupkvjzFUwSrE5KpUx8hnDLReDLLnawEY0+oe5tm7z91ke2aj4wMCWqgOhON3Pk9DluwLQWHKdapkMjP27aldxhc7ntaBYITBi8/IeK92UpsM9AgisDO5PUSI632P5kPaVXxt42qBd7RNaPFfm/ndBSkJp+);
+b64image	<img src="data:image/png;base64,gDF8uupBjA3ujdHL1b2WXy/wIAoPt9S1MQJMVTtQtfuh4ExSUusf2wYYtopi0sxN/rutmAXRigL9GmfjCe6q2eDnQDhVYsOnhBQ30Y/OK+UA08L8R82fCDqT">
+b64image	<img src="data:image/png;base64,7eTkh3F/Rg/nWLk1Hd95GbrRYXHRFv/XkeXwFJM+sQG8FcHzgRZIRpvOuNQ2qgH3wqhZsOD4KOJRaXeTHceN6Qd/ib">
+b64image	background: url(data:image/svg+xml;base64,Zc2upwmhxa8hIw2K+uggdro96ljM35dcqodgTeamaVDK4r6kl64q23ZD0jLJjCnsaG126RV/Bmh3ADubUDXjnfUddT);
+b64image	background: url(data:image/svg+xml;base64,V9SVV/42nggUZGRHG/6OsKS4eIzGpAaxuXlpAu7G5aAa+6mVJXlb1XDEyW54MJNqZEG0xabpEhAgolr/tghPg4/cNB);
+b64image	<img src="data:image/png;base64,a+rIUhlgBRLqt+C3eQD2XO2o/KkBPCwhTbB2NNd4FhbMoPAckLxztIsHoqWqwl5ashuM+qFohuDD6zDI9EAuOuYxUh">
+b64image	<img src="data:image/png;base64,etEUe24konrO5EAL6CWXcY3ajsKLSP/RyJ7XdmEkrlnBJpQYkzclYvg1UmarV6AogdvBEOPDrMytyrhf3NTEz7n5Mg">
+b64image	background: url(data:image/svg+xml;base64,K0NXhDBCY9/BwVDqf+cL90S/8TrBujWPB59EshLSsDaxvJDlrwn316LqYiUTvjp1mMv9B2lwZ3eWwLdeGtldoDBfM0);
+b64image	background: url(data:image/svg+xml;base64,dA5PIlvhRk711VdPlpHD6gkd0eub0haUhnxOHvU4znwTt14lIpdoy5u151V5FPgNoP8jjrwVDqT7WCuBwE7eLJXkJ7H73M3ZFOULozoFt31gqETwqLxeuib+);
+b64image	<img src="data:image/png;base64,JjHF6H8dk8jtMSSf4BmwoD2/niBOi8UChuUECuIZbnev6LtwkSpxWf1bthdlpuV2/q047hTRtH6uapEaZlseMAzTyXNVMMFBm6DRvRZ677N6Q+8+tz9xulZG">
+docs	AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE
+docs	AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+docs	aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+docs	api_key = "YOUR_API_KEY_HERE_0123456789abcdef"
+docs	STRIPE_SECRET_KEY=sk_live_YOUR_KEY_GOES_HERE_123456
+docs	token: "<your-token-goes-here-1234>"
+docs	password = "REPLACE_WITH_REAL_PASSWORD_1"
+docs	SECRET_KEY=changeme-changeme-changeme-1234
+docs	api_key: ${{ secrets.API_KEY }}
+docs	password: ${DB_PASSWORD}
+docs	secret = "{{ vault_secret_key }}"
+docs	token = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+docs	password = "************"
+docs	access_key = "<access-key-id>"
+docs	api_key = "0000000000000000000000000000000000"
+docs	client_secret = "sample-client-secret-0001"
+docs	GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+docs	SLACK_WEBHOOK=https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
+docs	db_password = "dummy-password-for-tests-1"
+docs	ghp_1234567890abcdefghijklmnopqrstuvwxyz
+docs	api_key = "abcdefghijklmnopqrstuvwxyz123456"
+docs	OPENAI_API_KEY=sk-your-openai-api-key-goes-here-xxxxxxxxxxxxxxxx
+docs	// Example: api_key = "eiOtoxFWLmutJEBYNKOzaLO38qAngEdOystotZuV"
+docs	// e.g. export STRIPE_KEY="sk_live_paG9WTN8qxEpkhoAGqNePbAbMJw7Ae"
+docs	# Example: api_key = "PXrhEo4RF1Zdw06ST68YVSMFLX8UGIpo9qcLLUZy"
+docs	# e.g. export STRIPE_KEY="sk_live_XiPLN3vW87jwDPm3vG8OjrRG4EfnAK"
+docs	/* Example: api_key = "7mw9S4nl9vgwLcXfDE0MuowueRweDuSqKkLcMNLH"
+docs	/* e.g. export STRIPE_KEY="sk_live_rwUU0NgtYBMJMYumwzGW78mrOaaSAT"
+docs	 * Example: api_key = "6uM1RzwqFOA3PsywnDpITb3dblAWMVmtz5NEzR0n"
+docs	 * e.g. export STRIPE_KEY="sk_live_dOdZISsnkDr2c2aPPGrhIngVfNaXPV"
+code-ref	password = os.environ["DB_PASSWORD"]
+code-ref	token: process.env.GITHUB_TOKEN
+code-ref	api_key = get_secret("prod/api-key")
+code-ref	token = config.get("token")
+code-ref	$password = $_ENV["APP_PASSWORD"];
+code-ref	password = ""
+code-ref	password = "password"
+code-ref	secret_key = settings.SECRET_KEY
+code-ref	client_secret = vault.read("secret/data/app")
+code-ref	accessToken = await getAccessToken(refreshToken)
+code-ref	const token = req.headers.authorization.split(" ")[1];
+code-ref	password_field = forms.CharField(widget=forms.PasswordInput)
+code-ref	secret = Secret.fromSecretNameV2(this, "S", "prod/db/secret-name")
+code-ref	token_url = "https://oauth.example.org/token"
+code-ref	password_min_length = 12
+code-ref	auth_token_header = "X-Auth-Token-Header-Name"
+code-ref	private_key_path = "/etc/ssl/private/server.key"
+code-ref	secret_file = "./config/secrets.yaml"
+code-ref	password = input("Enter your database password: ")
+code-ref	const SECRET_NAME_PREFIX = "prod-app-secret-name-"
+code-ref	token = "Bearer"
+code-ref	secret: !vault |
+code-ref	password: "$2b$12$lj6EVcjGvT7LkWoitPBOeM583U8eTIw2vfJnU0Q1ZjQqxKP7lursF"
+code-ref	password_hash = "$argon2id$v=19$m=65536,t=3,p=4$yFimJixSqAngMtTMk4Lox5$HL2dVEt3mwnzxCLBWUVeFzNUr80lY56EForrfC5o065"
+code-ref	password = "pbkdf2_sha256$600000$pXUpIrpGsewO$Kq2K67wMvOh5AivJ9fJH2291HAMtsBdwUbuOIs9kAV+="
+code-ref	secret_token_ttl_seconds = 3600
+code-ref	TOKEN_EXPIRY_MINUTES=1440
+code-ref	token = process.env.OJMDV_TOKEN
+code-ref	token = process.env.QRMDP_TOKEN
+code-ref	password = os.getenv("TEMRV_PASSWORD")
+code-ref	token = process.env.TJJKQ_TOKEN
+code-ref	token = process.env.TEJDL_TOKEN
+code-ref	api_key = ENV["VUVBE_API_KEY"]
+code-ref	token = process.env.JMJMI_TOKEN
+code-ref	api_key = ENV["YPVJG_API_KEY"]
+identifier	"auth.password.reset.token.expired": "Your password reset link has expired"
+identifier	password_label = "Enter your password to continue"
+identifier	const secretKeyName = "STRIPE_SECRET_KEY_PROD_2024"
+identifier	token_env_var = "GITHUB_ACTIONS_RUNNER_TOKEN_2"
+identifier	.password-input-field-container-large { margin: 0 }
+identifier	tokenizer = AutoTokenizer.from_pretrained("bert-base-uncased")
+identifier	const SECRET_SANTA_ENDPOINT = "/api/v1/secret-santa/participants"
+identifier	accessKeyLabel = "AccessKeyManagementConsoleDialog"
+identifier	log.info("Rotating token for service account")
+identifier	secret_santa_group_id = "group-2024-xmas-party"
+identifier	password_reset_template = "emails/password_reset_v2.html"
+identifier	"description": "Authentication token used by the Sentris CLI to talk to the API"
+identifier	public_key = "ssh-rsa jS22UTYdN4MLgffpvwJ/Dh/vTsUhs2sg3rGP65QVtNcfUj59766kFtrt+yL9gFLRPmsIzXYR3RudpweZf67PG91kNtg11xLEYUxeXgj43PV3zofnKBp2SOY9 user@host"
+identifier	-----BEGIN CERTIFICATE-----
+identifier	-----BEGIN PUBLIC KEY-----
+identifier	-----BEGIN CERTIFICATE REQUEST-----
+identifier	ssh-ed25519 AAAAC3NzaC1lZDI1NTE5rr/d85W6KuPJkHYPNcd0BZ/zt+7rb7vcCoGOsxNgIp1 deploy@ci
+identifier	secret_scanner_version = "8.30.1-rc.2"
+identifier	release = "sentry-release-5c3d53cdd1c0101203ec6fc05e61c31fce1d9a8e"
+identifier	cache_key = "1698765432:0dc9190394c7bcdd81f7274dee2ccadb2bb"
+identifier	job_key = "1703456789:szgm94ucmsb2y7vktaeyp9c6s9iwdseqx0w"
+identifier	redis_key = "1710000123:853cbd479bb89435adf315e4a180aa42457"
+identifier	session = "1699999999:3eff9256b45c5a54529fb0b42868454635d"
+identifier	import NSManagedObjectContextDidSaveNotificationExtras.userInfoKeys.PersistentStoreRemoteChange
+identifier	let v = MyApplicationServiceProviderManager.sharedInstance.fetchAllRecordsAsync
+identifier	Notification.MasterDataSynchronizationCoordinatorDelegate.didFinishLoadingRemoteChanges
+identifier	color: #213861;
+identifier	transaction_id = "txn_VhGAXDQHOFJw3uJw5hTFwfoJ"
+identifier	order_ref = "ord_scl6P8f9pswR9GMrPNuu"
+identifier	public_key = "pk_live_QqiSqzWsQKbjL7JjFuTaSI9hEQtahO"
+identifier	STRIPE_PUBLISHABLE_KEY=pk_live_sk6wgLut0qzyAow0lgAGI3AYzWqpJY67GYkdgsYf
+identifier	STRIPE_KEY=sk_test_5EehpYcgeZWrlUHCNImRjk67HnaMG5
+identifier	stripe.api_key = "rk_test_ghaKbQ5svzxqkH2xcfxQg1k4vD6StL"
+blob	payload: Z6JI4h4aQ82cJP00zGrwE59K8enK3ByQj9lnvl3wy5s8
+blob	payload: HgpC1qFu9d58YBrrB4UhWKuEGKe8UJeuDasKm4IMV9tl54w3p6dWzbUF5Ilnm8U8hl2q4AwieghlY5bmfFrFme1t
+blob	salt: "mi20awprmhS/7h5WsBhdH0k1EuM+lAIQfgovoJVAdzD+sDJYcshU4O+hhN3kF+2+CAtulBgxe4mRQqlzgvb638z1"
+blob	const blob = "imO8h6qRMo3NJVAOQAF0o50sgR3lgTOYnzO7Powl9COHWKqckx1/aS+PWeE/vQOL";
+blob	"nonce": "L3M358iRMy/dL+fLK9ZvL9et7+bPNQ1S9pkpP4wJsj9Sd9gVWCy2r+WQX6LlcRARvo2dU6g9x97u83J7KuLUZyP7",
+blob	"nonce": "DqJe+OXV3j1wbjqxoOqOl5gSIBmw7WmLtC+jGAZYBNbw1TZnHBzZlkHkSouJ1706d/hjT5J+Zcqdadb2w5/21WKH",
+blob	data = "fcGbDD5bBn+6F3gjVGDN+gCKRJe0bvp99g7K6t+TLvwz"
+blob	salt: "/ya1UyBNAZ1eSUeY+83DRKLaWKBZGagPsiiZzYZKko7mDcDgxvlPsYkaUcRZrvR9"
+blob	salt: "xLkRlMyCUpBe0Qmu+NkiI41N7RdMphaEgdsvaP7NrxMeggtpk1Vzq7LgOdwH/+4pU0brRksoto79Ig7gtZhp5uhs"
+blob	payload: MeOSwZyaG79eBgvkGBICVcsZC3ckb+4Eqh5zWXtLbWeS
+blob	salt: "ugjqeOuQPtOzgIyQ5ge0A2pCC16j6+ud2cF3Fo1WnQGEPvk2/QmsFrEb2W9hsX+3zhiI7NVd3iHA1zkPS5jc/Eot"
+blob	const blob = "mQIP5KYmCwKG5US8uxTHAGK2JmKj0iRetVVQvc/5wYGoYxN+FnPOWzNJjzAtlkOke9Vgt/WKMQzy+EiI+wuD5KQp";
+blob	version = "v7.22.56"
+blob	version = "1.2.3-beta.4+build.c8c1eb7f"
+blob	version = "1.2.3-beta.4+build.6aab39e4"
+blob	version = "1.2.3-beta.4+build.f1bedf72"
+blob	version = "1.2.3-beta.4+build.d4515f26"
+blob	version = "1.2.3-beta.4+build.2f4110db"
+blob	version = "v3.22.88"
+blob	version = "1.2.3-beta.4+build.da867fa9"
+url	https://cdn.sskwzb.net/assets/c6dac3dfe2f992d3.js?v=f71dab94e337
+url	https://cdn.rxqxua.net/assets/828e43ac19f0d00d.js?v=72f339e37332
+url	https://cdn.lcfvzd.net/assets/4f97cae7897c80eb.js?v=96859c4ce4e3
+url	https://cdn.ryznse.net/assets/3f239386d8981a80.js?v=e4c0cb81c26e
+url	https://cdn.kcbfuv.net/assets/d4cc9f82274b3947.js?v=c609b0419fdb
+url	https://cdn.ngfnau.net/assets/cd4592caac2193a4.js?v=582da02e4067
+url	https://cdn.wujbjq.net/assets/937059e2ecf9b3ac.js?v=02eae2692e84
+url	https://cdn.ruhcro.net/assets/f000596b8e4a5de6.js?v=e5096b220ee8
+url	https://cdn.rqrsrw.net/assets/b5c366bbbccd82a3.js?v=af8ebbca2f37
+url	https://cdn.hsjjfq.net/assets/6917650f61f86284.js?v=ff87403d6f07
+identifier	                nextLastSignificantToken = "?NonExpressionParenEnd";
+identifier	            lastSignificantToken = "?InterpolationInJSX";
+identifier	              if (lastSignificantToken === "?NonExpressionParenKeyword") {
+identifier	        if (tokenType == "IdentifierWithLongerName") return;
+identifier	const authTokenKindLabel = "AuthenticationTokenKind";

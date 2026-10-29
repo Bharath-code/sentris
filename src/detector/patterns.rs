@@ -19,7 +19,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "AWS Access Key ID",
             description: "Identifies AWS Access Key IDs (AKIA)",
             severity: Severity::High,
-            pattern: r"\bAKIA[0-9A-Z]{16}\b",
+            pattern: r"\b(?:AKIA|ASIA|ABIA|ACCA)[0-9A-Z]{16}\b",
             min_entropy: 3.0,
         },
         Rule {
@@ -27,7 +27,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "AWS Secret Access Key",
             description: "Identifies exposed AWS Secret Access Keys in assignments",
             severity: Severity::Critical,
-            pattern: r#"(?i)(?:aws_secret_access_key|aws_secret_key|aws_secret)\s*[:=]\s*['"]([0-9a-zA-Z/+]{40})['"]"#,
+            pattern: r#"(?i)(?:aws_secret_access_key|aws_secret_key|aws_secret)['"]?\s*[:=]\s*['"]?([0-9a-zA-Z/+]{40})(?:['"\s,;]|$)"#,
             min_entropy: 4.0,
         },
         Rule {
@@ -35,7 +35,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Google API Key",
             description: "Identifies Google Cloud and Firebase API Keys",
             severity: Severity::High,
-            pattern: r"\bAIza[0-9A-Za-z\-_]{35}\b",
+            pattern: r"\bAIza[0-9A-Za-z\-_]{35}",
             min_entropy: 3.5,
         },
         Rule {
@@ -51,7 +51,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "DigitalOcean Personal Access Token",
             description: "Identifies DigitalOcean Personal Access Tokens",
             severity: Severity::High,
-            pattern: r"\bdop_v1_[a-f0-9]{64}\b",
+            pattern: r"\bdo[por]_v1_[a-f0-9]{64}\b",
             min_entropy: 3.0,
         },
         // ==================== Payment & Commerce ====================
@@ -92,7 +92,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Square Access Token",
             description: "Identifies Square OAuth and production access tokens",
             severity: Severity::High,
-            pattern: r"\bsq0atp-[0-9A-Za-z\-_]{22}\b",
+            pattern: r"\bsq0atp-[0-9A-Za-z\-_]{22}",
             min_entropy: 3.0,
         },
         // ==================== Source Control & DevOps ====================
@@ -133,7 +133,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "GitLab Personal Access Token",
             description: "Identifies GitLab Personal Access Tokens",
             severity: Severity::Critical,
-            pattern: r"\bglpat-[0-9a-zA-Z\-_]{20,}\b",
+            pattern: r"\bglpat-[0-9a-zA-Z\-_]{20,}",
             min_entropy: 3.0,
         },
         Rule {
@@ -149,7 +149,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "PyPI API Token",
             description: "Identifies PyPI project upload tokens",
             severity: Severity::Critical,
-            pattern: r"\bpypi-AgEIcHlwaS5vcmc[0-9a-zA-Z-_]{50,}\b",
+            pattern: r"\bpypi-AgEIcHlwaS5vcmc[0-9a-zA-Z-_]{50,}",
             min_entropy: 3.5,
         },
         // ==================== AI & LLM Providers ====================
@@ -158,7 +158,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "OpenAI API Key",
             description: "Identifies OpenAI legacy and project secret keys",
             severity: Severity::Critical,
-            pattern: r"\bsk-(?:proj-|svcacct-)?[0-9a-zA-Z-_]{40,}\b",
+            pattern: r"\bsk-(?:proj-|svcacct-)?[0-9a-zA-Z-_]{40,}",
             min_entropy: 3.5,
         },
         Rule {
@@ -166,7 +166,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Anthropic API Key",
             description: "Identifies Anthropic Claude API keys",
             severity: Severity::Critical,
-            pattern: r"\bsk-ant-api[0-9]{2}-[0-9a-zA-Z-_]{80,}\b",
+            pattern: r"\bsk-ant-(?:api|admin)[0-9]{2}-[0-9a-zA-Z-_]{80,}",
             min_entropy: 3.5,
         },
         Rule {
@@ -239,7 +239,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Discord Bot Token",
             description: "Identifies Discord Bot Authentication Tokens",
             severity: Severity::Critical,
-            pattern: r"\b[MN][A-Za-z\d]{23,25}\.[\w-]{6}\.[\w-]{27,38}\b",
+            pattern: r"\b[MN][A-Za-z\d]{23,25}\.[\w-]{6}\.[\w-]{27,38}",
             min_entropy: 3.8,
         },
         Rule {
@@ -255,7 +255,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Telegram Bot Token",
             description: "Identifies Telegram Bot API tokens",
             severity: Severity::High,
-            pattern: r"\b[0-9]{9,10}:[a-zA-Z0-9_-]{35}\b",
+            pattern: r"\b[0-9]{8,10}:A[a-zA-Z0-9_-]{34}",
             min_entropy: 3.2,
         },
         Rule {
@@ -271,7 +271,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "SendGrid API Key",
             description: "Identifies SendGrid Mail API Keys",
             severity: Severity::High,
-            pattern: r"\bSG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}\b",
+            pattern: r"\bSG\.[a-zA-Z0-9_-]{22}\.[a-zA-Z0-9_-]{43}",
             min_entropy: 3.5,
         },
         Rule {
@@ -312,7 +312,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Redis Connection URI",
             description: "Identifies Redis URIs containing auth passwords",
             severity: Severity::High,
-            pattern: r"redis://(?:[a-zA-Z0-9_.-]+)?:[^@\s]+@[a-zA-Z0-9_.-]+:[0-9]{2,5}",
+            pattern: r"redis://(?:[a-zA-Z0-9_.-]+)?:[^@\s]+@[a-zA-Z0-9_.-]+:[0-9]{2,5}\b",
             min_entropy: 3.0,
         },
         // ==================== Private Cryptographic Keys ====================
@@ -362,7 +362,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "JSON Web Token (JWT)",
             description: "Identifies compact serialized JSON Web Tokens",
             severity: Severity::Medium,
-            pattern: r"\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}\b",
+            pattern: r"\beyJ[a-zA-Z0-9_-]{10,}\.eyJ[a-zA-Z0-9_-]{10,}\.[a-zA-Z0-9_-]{10,}",
             min_entropy: 3.8,
         },
         Rule {
@@ -370,7 +370,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Generic High-Entropy API Key",
             description: "Identifies generic hardcoded API keys in assignments",
             severity: Severity::Medium,
-            pattern: r#"(?i)(?:api_key|apikey|secret_key|api_secret)\s*[:=]\s*['"]([a-zA-Z0-9_-]{32,64})['"]"#,
+            pattern: r#"(?i)(?:api_key|apikey|secret_key|api_secret)['"]?\s*[:=]\s*['"]?([a-zA-Z0-9_-]{32,64})(?:['"\s,;]|$)"#,
             min_entropy: 4.2,
         },
         Rule {
@@ -378,7 +378,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "High-Entropy Structural Secret Assignment",
             description: "Identifies high-entropy custom signing, encryption, JWT, master, or webhook secrets in variable assignments",
             severity: Severity::High,
-            pattern: r#"(?i)(?:signing_key|encryption_key|master_key|webhook_secret|jwt_secret|client_secret|auth_secret|session_secret|private_token)\s*[:=]\s*['"]([a-zA-Z0-9+/=_-]{32,128})['"]"#,
+            pattern: r#"(?i)(?:signing_key|encryption_key|master_key|webhook_secret|jwt_secret|client_secret|auth_secret|session_secret|private_token)['"]?\s*[:=]\s*['"]?([a-zA-Z0-9+/=_-]{32,128})(?:['"\s,;]|$)"#,
             min_entropy: 4.3,
         },
         Rule {
@@ -418,7 +418,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "HashiCorp Vault Token",
             description: "Identifies HashiCorp Vault client and root tokens",
             severity: Severity::Critical,
-            pattern: r"\bhvs\.[a-zA-Z0-9_-]{24,}\b",
+            pattern: r"\bhvs\.[a-zA-Z0-9_-]{24,}",
             min_entropy: 3.2,
         },
         Rule {
@@ -461,5 +461,39 @@ pub fn get_rules() -> Vec<Rule> {
             pattern: r"\bphx_[a-zA-Z0-9]{36,48}\b",
             min_entropy: 3.5,
         },
+        // ==================== Additional cloud, SaaS & DevOps formats ====================
+        Rule { rule_id: "aws-bedrock-api-key", name: "AWS Bedrock API Key", description: "Identifies long-lived Amazon Bedrock API keys", severity: Severity::Critical, pattern: r"\bABSK[A-Za-z0-9+/]{109,269}={0,2}", min_entropy: 4.0 },
+        Rule { rule_id: "azure-ad-client-secret", name: "Azure AD Client Secret", description: "Identifies Azure Active Directory application client secrets", severity: Severity::Critical, pattern: r"(?:^|[^a-zA-Z0-9_~.])([a-zA-Z0-9_~.]{3}\dQ~[a-zA-Z0-9_~.-]{31,34})(?:[^a-zA-Z0-9_~.-]|$)", min_entropy: 3.5 },
+        Rule { rule_id: "google-oauth-client-secret", name: "Google OAuth Client Secret", description: "Identifies Google OAuth client secrets (GOCSPX-)", severity: Severity::High, pattern: r"\bGOCSPX-[A-Za-z0-9_-]{28}", min_entropy: 3.5 },
+        Rule { rule_id: "doppler-api-token", name: "Doppler API Token", description: "Identifies Doppler personal, service and CLI tokens", severity: Severity::Critical, pattern: r"\bdp\.(?:pt|st|sa|ct|scim|audit)\.[a-zA-Z0-9]{40,44}\b", min_entropy: 3.5 },
+        Rule { rule_id: "heroku-api-key-v2", name: "Heroku Platform API Key", description: "Identifies Heroku API keys (HRKU-)", severity: Severity::Critical, pattern: r"\bHRKU-AA[0-9a-zA-Z_-]{58}", min_entropy: 3.5 },
+        Rule { rule_id: "heroku-api-key", name: "Heroku API Key", description: "Identifies legacy UUID-format Heroku API keys in assignments", severity: Severity::High, pattern: r#"(?i)heroku[a-z0-9_ .\-]{0,20}['"]?\s*[:=]\s*['"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"#, min_entropy: 3.0 },
+        Rule { rule_id: "twilio-auth-token", name: "Twilio Auth Token", description: "Identifies Twilio auth tokens in assignments", severity: Severity::High, pattern: r#"(?i)twilio[a-z_]*(?:auth_token|token)['"]?\s*[:=]\s*['"]?([0-9a-f]{32})\b"#, min_entropy: 3.0 },
+        Rule { rule_id: "github-app-token", name: "GitHub App Token", description: "Identifies GitHub user-to-server and server-to-server tokens (ghu, ghs)", severity: Severity::High, pattern: r"\bgh[us]_[0-9a-zA-Z]{36}\b", min_entropy: 3.5 },
+        Rule { rule_id: "gitlab-runner-token", name: "GitLab Runner Token", description: "Identifies GitLab runner authentication tokens", severity: Severity::High, pattern: r"\bglrt-[0-9a-zA-Z_-]{20}", min_entropy: 3.0 },
+        Rule { rule_id: "gitlab-deploy-token", name: "GitLab Deploy Token", description: "Identifies GitLab deploy tokens", severity: Severity::High, pattern: r"\bgldt-[0-9a-zA-Z_-]{20}", min_entropy: 3.0 },
+        Rule { rule_id: "slack-app-token", name: "Slack App-Level Token", description: "Identifies Slack app-level tokens (xapp)", severity: Severity::High, pattern: r"\bxapp-[0-9]-[A-Z0-9]{9,12}-[0-9]{10,13}-[a-z0-9]{64}\b", min_entropy: 3.5 },
+        Rule { rule_id: "slack-legacy-token", name: "Slack Legacy Token", description: "Identifies legacy Slack tokens (xoxa, xoxr, xoxs)", severity: Severity::High, pattern: r"\bxox[ars]-[0-9a-zA-Z-]{10,72}", min_entropy: 3.0 },
+        Rule { rule_id: "shopify-app-secret", name: "Shopify App Secret or Token", description: "Identifies Shopify custom, partner and shared-secret tokens", severity: Severity::High, pattern: r"\bshp(?:ca|pa|ss)_[a-fA-F0-9]{32}\b", min_entropy: 3.0 },
+        Rule { rule_id: "rubygems-api-token", name: "RubyGems API Token", description: "Identifies RubyGems API tokens", severity: Severity::Critical, pattern: r"\brubygems_[a-f0-9]{48}\b", min_entropy: 3.0 },
+        Rule { rule_id: "pulumi-api-token", name: "Pulumi Access Token", description: "Identifies Pulumi access tokens", severity: Severity::High, pattern: r"\bpul-[a-f0-9]{40}\b", min_entropy: 3.0 },
+        Rule { rule_id: "postman-api-token", name: "Postman API Key", description: "Identifies Postman API keys", severity: Severity::High, pattern: r"\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\b", min_entropy: 3.0 },
+        Rule { rule_id: "grafana-service-account-token", name: "Grafana Service Account Token", description: "Identifies Grafana service account tokens", severity: Severity::High, pattern: r"\bglsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b", min_entropy: 3.5 },
+        Rule { rule_id: "grafana-cloud-token", name: "Grafana Cloud API Token", description: "Identifies Grafana Cloud API tokens", severity: Severity::High, pattern: r"\bglc_[A-Za-z0-9+/]{32,400}={0,3}", min_entropy: 4.0 },
+        Rule { rule_id: "databricks-api-token", name: "Databricks API Token", description: "Identifies Databricks personal access tokens", severity: Severity::Critical, pattern: r"\bdapi[a-f0-9]{32}(?:-[0-9])?\b", min_entropy: 3.0 },
+        Rule { rule_id: "dynatrace-api-token", name: "Dynatrace API Token", description: "Identifies Dynatrace API tokens", severity: Severity::High, pattern: r"\bdt0c01\.[A-Z0-9]{24}\.[A-Z0-9]{64}\b", min_entropy: 3.5 },
+        Rule { rule_id: "flyio-access-token", name: "Fly.io Access Token", description: "Identifies Fly.io access tokens", severity: Severity::High, pattern: r"\bfo1_[A-Za-z0-9_-]{43}", min_entropy: 3.5 },
+        Rule { rule_id: "sourcegraph-access-token", name: "Sourcegraph Access Token", description: "Identifies Sourcegraph access tokens", severity: Severity::High, pattern: r"\bsgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}\b|\bsgp_[a-fA-F0-9]{40}\b", min_entropy: 3.0 },
+        Rule { rule_id: "notion-api-token", name: "Notion Integration Token", description: "Identifies Notion integration tokens", severity: Severity::High, pattern: r"\bntn_[0-9A-Za-z]{43,46}\b", min_entropy: 3.5 },
+        Rule { rule_id: "age-secret-key", name: "Age Secret Key", description: "Identifies age encryption secret keys", severity: Severity::Critical, pattern: r"\bAGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}\b", min_entropy: 3.0 },
+        Rule { rule_id: "onepassword-service-account-token", name: "1Password Service Account Token", description: "Identifies 1Password service account tokens", severity: Severity::Critical, pattern: r"\bops_eyJ[a-zA-Z0-9+/]{250,}={0,3}", min_entropy: 4.0 },
+        Rule { rule_id: "cloudflare-origin-ca-key", name: "Cloudflare Origin CA Key", description: "Identifies Cloudflare Origin CA keys", severity: Severity::High, pattern: r"\bv1\.0-[a-f0-9]{24}-[a-f0-9]{146}\b", min_entropy: 3.0 },
+        Rule { rule_id: "terraform-cloud-token", name: "Terraform Cloud API Token", description: "Identifies HashiCorp Terraform Cloud/Enterprise API tokens", severity: Severity::Critical, pattern: r"\b[a-z0-9]{14}\.atlasv1\.[A-Za-z0-9_=-]{60,70}", min_entropy: 3.5 },
+        Rule { rule_id: "sentry-auth-token", name: "Sentry Auth Token", description: "Identifies Sentry organization and user auth tokens", severity: Severity::High, pattern: r"\bsntry[su]_(?:eyJ[A-Za-z0-9+/_=-]{60,}|[a-f0-9]{64})", min_entropy: 3.5 },
+        Rule { rule_id: "atlassian-api-token", name: "Atlassian API Token", description: "Identifies Atlassian API tokens (ATATT3)", severity: Severity::High, pattern: r"\bATATT3[A-Za-z0-9_=-]{180,200}", min_entropy: 4.0 },
+        Rule { rule_id: "airtable-personal-access-token", name: "Airtable Personal Access Token", description: "Identifies Airtable personal access tokens", severity: Severity::High, pattern: r"\bpat[A-Za-z0-9]{14}\.[a-f0-9]{64}\b", min_entropy: 3.5 },
+        Rule { rule_id: "mapbox-secret-token", name: "Mapbox Secret Token", description: "Identifies Mapbox secret access tokens (sk.)", severity: Severity::High, pattern: r"\bsk\.eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}", min_entropy: 4.0 },
+        Rule { rule_id: "dropbox-short-lived-token", name: "Dropbox Short-Lived Access Token", description: "Identifies Dropbox short-lived access tokens", severity: Severity::High, pattern: r"\bsl\.[A-Za-z0-9_-]{130,152}", min_entropy: 4.0 },
+        Rule { rule_id: "credential-assignment", name: "Hardcoded Credential Assignment", description: "Identifies quoted high-entropy literals assigned to password, secret, token or key variables", severity: Severity::Medium, pattern: r#"(?i)(?:password|passwd|secret|token|auth[_-]?key|access[_-]?key|private[_-]?key)[a-z0-9_]*['"]?\s*(?:=>|:=|=|:)\s*['"]([^'"\s]{12,100})['"]"#, min_entropy: 3.2 },
     ]
 }

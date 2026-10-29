@@ -4,6 +4,10 @@
 
 pub struct FalsePositiveFilter;
 
+fn is_generic_rule(rule_id: &str) -> bool {
+    matches!(rule_id, "generic-api-key" | "credential-assignment")
+}
+
 impl FalsePositiveFilter {
     /// Evaluates whether a matched candidate secret is a false positive
     pub fn is_false_positive(candidate: &str, rule_id: &str, line_context: &str) -> bool {
@@ -59,7 +63,7 @@ impl FalsePositiveFilter {
         }
 
         // Generic assignments inside code comments are almost universally documentation prose
-        if rule_id == "generic-api-key" {
+        if is_generic_rule(rule_id) {
             return true;
         }
 
@@ -251,8 +255,14 @@ impl FalsePositiveFilter {
     fn is_rule_specific_fp(token: &str, rule_id: &str, line_context: &str) -> bool {
         let line_lower = line_context.to_ascii_lowercase();
 
+        if rule_id == "credential-assignment"
+            && !Self::looks_like_literal_credential(token, line_context)
+        {
+            return true;
+        }
+
         // 1. Generic API Key heuristics
-        if rule_id == "generic-api-key" {
+        if is_generic_rule(rule_id) {
             // Check if token is a standard UUIDv4: 8-4-4-4-12 hex format
             if Self::is_standard_uuid(token) {
                 return true;
@@ -295,12 +305,12 @@ impl FalsePositiveFilter {
             }
         }
 
-        // 2. Stripe rule heuristics
-        if rule_id == "stripe-secret-key" || rule_id == "stripe-restricted-key" {
-            // Stripe test keys (sk_test_ / rk_test_) are safe non-production test keys
-            if token.starts_with("sk_test_") || token.starts_with("rk_test_") {
-                return true;
-            }
+        // 2. Stripe test keys and publishable keys are not production secrets, whichever rule matched them
+        if ["sk_test_", "rk_test_", "pk_test_", "pk_live_"]
+            .iter()
+            .any(|p| token.starts_with(p))
+        {
+            return true;
         }
 
         // 3. OpenAI rule heuristics: Anthropic tokens starting with sk-ant- are not OpenAI keys
@@ -309,6 +319,123 @@ impl FalsePositiveFilter {
         }
 
         false
+    }
+
+    /// Quoted literal assigned to a password/token-like name: reject code references, paths,
+    /// dictionary words and identifiers; keep strings that look machine- or human-generated secrets.
+    fn looks_like_literal_credential(token: &str, line: &str) -> bool {
+        let lower = token.to_ascii_lowercase();
+        const STOPWORDS: [&str; 24] = [
+            "example",
+            "changeme",
+            "change_me",
+            "redacted",
+            "placeholder",
+            "dummy",
+            "sample",
+            "your",
+            "insert",
+            "xxxx",
+            "****",
+            "localhost",
+            "process.env",
+            "getenv",
+            "environ",
+            "secretmanager",
+            "undefined",
+            "required",
+            "bearer",
+            "basic ",
+            "password",
+            "secret",
+            "token",
+            "null",
+        ];
+        if STOPWORDS.iter().any(|w| lower.contains(w)) {
+            return false;
+        }
+        let bytes = token.as_bytes();
+        let env_ref = bytes[0] == b'$'
+            && bytes
+                .get(1)
+                .is_some_and(|b| b.is_ascii_alphabetic() || *b == b'_');
+        if env_ref
+            || matches!(bytes[0], b'<' | b'{' | b'[' | b'/')
+            || token.starts_with("~/")
+            || token.starts_with("./")
+            || token.contains("://")
+            || token.contains(['(', ')', '{', '}', '<', '>', '\\'])
+        {
+            return false;
+        }
+        const HASH_PREFIXES: [&str; 9] = [
+            "$2a$", "$2b$", "$2y$", "$argon2", "$pbkdf2", "$scrypt", "$1$", "$5$", "$6$",
+        ];
+        if HASH_PREFIXES.iter().any(|p| token.starts_with(p)) || lower.starts_with("pbkdf2_") {
+            return false;
+        }
+        let line_is_about_hashes = ["hash", "digest", "checksum", "sha", "md5", "etag"]
+            .iter()
+            .any(|w| line.to_ascii_lowercase().contains(w));
+        if line_is_about_hashes
+            && matches!(token.len(), 32 | 40 | 64 | 128)
+            && token.bytes().all(|b| b.is_ascii_hexdigit())
+        {
+            return false;
+        }
+        if Self::is_word_phrase(token) || Self::is_camel_identifier(token) {
+            return false;
+        }
+        let has_digit = token.bytes().any(|b| b.is_ascii_digit());
+        let has_upper = token.bytes().any(|b| b.is_ascii_uppercase());
+        let has_lower = token.bytes().any(|b| b.is_ascii_lowercase());
+        let has_symbol = token
+            .bytes()
+            .any(|b| b.is_ascii_punctuation() && !matches!(b, b'.' | b'-' | b'_' | b'/'));
+        has_digit
+            || [has_upper, has_lower, has_symbol]
+                .iter()
+                .filter(|&&c| c)
+                .count()
+                >= 3
+            || Self::case_flip_ratio(token) >= 0.3
+    }
+
+    /// Separator-joined lowercase words ("group-2024-xmas-party", "auth.reset.expired") are names, not secrets
+    fn is_word_phrase(token: &str) -> bool {
+        let segments: Vec<&str> = token
+            .split(['-', '_', '.'])
+            .filter(|s| !s.is_empty())
+            .collect();
+        segments.len() >= 3
+            && segments.iter().all(|s| {
+                s.bytes().all(|b| b.is_ascii_digit())
+                    || (s.len() >= 3 && s.bytes().all(|b| b.is_ascii_lowercase()))
+            })
+    }
+
+    /// Letters-only values with a natural-language vowel share ("NonExpressionParenKeyword") are identifiers;
+    /// random letters average ~19% vowels, English-like words 35-45%.
+    fn is_camel_identifier(token: &str) -> bool {
+        let body = token.trim_start_matches(|c: char| !c.is_ascii_alphanumeric());
+        if body.len() < 10 || !body.bytes().all(|b| b.is_ascii_alphabetic()) {
+            return false;
+        }
+        let vowels = body.bytes().filter(|b| b"aeiouAEIOU".contains(b)).count();
+        vowels * 10 >= body.len() * 3
+    }
+
+    /// Share of adjacent letter pairs that flip case: ~0.5 for random letters, ~0.15 for camelCase identifiers
+    fn case_flip_ratio(token: &str) -> f64 {
+        let letters: Vec<bool> = token
+            .bytes()
+            .filter(u8::is_ascii_alphabetic)
+            .map(|b| b.is_ascii_uppercase())
+            .collect();
+        if letters.len() < 2 {
+            return 0.0;
+        }
+        letters.windows(2).filter(|w| w[0] != w[1]).count() as f64 / (letters.len() - 1) as f64
     }
 
     /// Verifies if string conforms to standard UUID format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
