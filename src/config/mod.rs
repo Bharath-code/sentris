@@ -61,7 +61,7 @@ impl Config {
     pub fn default_template() -> &'static str {
         r#"# ==============================================================================
 # Sentris Configuration File (.sentris.toml)
-# Documentation: https://github.com/sentris-security/sentris
+# Documentation: https://github.com/Bharath-code/sentris
 # ==============================================================================
 
 [scanner]

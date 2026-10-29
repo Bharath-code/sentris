@@ -155,7 +155,7 @@ pub fn convert_to_sarif(report: &ScanReport) -> SarifLog {
                 driver: SarifDriver {
                     name: "sentris",
                     version: report.version.clone(),
-                    information_uri: "https://github.com/sentris-security/sentris",
+                    information_uri: "https://github.com/Bharath-code/sentris",
                     rules,
                 },
             },

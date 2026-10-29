@@ -51,8 +51,8 @@ LABEL org.opencontainers.image.title="Sentris" \
       org.opencontainers.image.description="High-performance, memory-safe, zero-knowledge secret scanner with autonomous remediation" \
       org.opencontainers.image.version="0.1.0" \
       org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.url="https://sentris.dev" \
-      org.opencontainers.image.source="https://github.com/sentris-security/sentris" \
+      org.opencontainers.image.url="https://github.com/Bharath-code/sentris" \
+      org.opencontainers.image.source="https://github.com/Bharath-code/sentris" \
       org.opencontainers.image.vendor="Sentris Security"
 
 # Run as non-root user

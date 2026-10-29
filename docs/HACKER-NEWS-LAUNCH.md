@@ -1,6 +1,6 @@
 # Show HN: Sentris – A 3.2MB Rust Secret Scanner that Auto-Rotates Leaked Keys with 0s Downtime
 
-**URL:** https://github.com/sentris-security/sentris  
+**URL:** https://github.com/Bharath-code/sentris  
 **Author:** Sentris Contributors  
 
 ---
@@ -21,7 +21,7 @@ Existing tools (Gitleaks, TruffleHog, GitGuardian) stop at alerting you. Then be
 2. Hunting down every service that depended on it.
 3. Rewriting git history on remote branches, triggering nasty rebase conflicts for everyone else on the team.
 
-We built **Sentris** (https://github.com/sentris-security/sentris) because we wanted a secret scanner that doesn't just alert—it safely fixes the leak in 15 seconds.
+We built **Sentris** (https://github.com/Bharath-code/sentris) because we wanted a secret scanner that doesn't just alert—it safely fixes the leak in 15 seconds.
 
 ### What makes it different:
 
@@ -54,6 +54,6 @@ sentris remediate --dry-run
 ```
 
 The CLI is completely open-source under the MIT license:  
-👉 https://github.com/sentris-security/sentris
+👉 https://github.com/Bharath-code/sentris
 
 We'd love your feedback on the UX, detection rules, and the dual-key rotation engine!

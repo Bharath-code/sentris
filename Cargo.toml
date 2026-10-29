@@ -6,8 +6,8 @@ authors = ["Sentris Contributors"]
 description = "High-performance, memory-safe, zero-knowledge secret scanner with autonomous remediation."
 license = "MIT"
 readme = "README.md"
-repository = "https://github.com/sentris-security/sentris"
-homepage = "https://sentris.dev"
+repository = "https://github.com/Bharath-code/sentris"
+homepage = "https://github.com/Bharath-code/sentris"
 keywords = ["security", "secrets", "scanner", "remediation", "git-hook"]
 categories = ["command-line-utilities", "development-tools"]
 

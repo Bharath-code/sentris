@@ -235,7 +235,7 @@ impl GitleaksMigrator {
         );
         out.push_str("# Sentris Configuration File (.sentris.toml)\n");
         out.push_str("# Automatically migrated from .gitleaks.toml\n");
-        out.push_str("# Documentation: https://github.com/sentris-security/sentris\n");
+        out.push_str("# Documentation: https://github.com/Bharath-code/sentris\n");
         out.push_str(
             "# ==============================================================================\n\n",
         );
