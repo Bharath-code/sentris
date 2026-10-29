@@ -239,7 +239,7 @@ fn bash_edits_scanner_config(command: &str) -> bool {
                         '.' | '_' | '-' | '/' | '*' | '?' | '{' | '}' | '[' | ']' | ','
                     ))
             })
-            .map(flatten_shell_globs)
+            .flat_map(|word| [word.to_string(), flatten_shell_globs(word)])
             .any(|piece| {
                 let piece = piece.as_str();
                 let base = piece.rsplit('/').next().unwrap_or(piece);
@@ -714,5 +714,28 @@ mod tests {
             tool("Bash", json!({"command": "rm build/{a,b}.log"})),
             Verdict::Allow
         );
+    }
+
+    #[test]
+    fn balanced_globs_naming_the_config_are_denied_but_literal_lookalikes_are_not() {
+        for cmd in [
+            "rm {a,.sentris.toml}",
+            "rm {.sentris.toml,x}",
+            "rm x/[.]sentris.toml",
+        ] {
+            denied(tool("Bash", json!({"command": cmd})));
+        }
+        // Unbalanced or comma-joined words are literal file names to the shell, not the config
+        for cmd in [
+            "rm x,.sentris.toml.bak",
+            "rm [.sentris.toml",
+            "rm .sentris.toml}",
+        ] {
+            assert_eq!(
+                tool("Bash", json!({"command": cmd})),
+                Verdict::Allow,
+                "{cmd}"
+            );
+        }
     }
 }
