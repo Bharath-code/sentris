@@ -237,7 +237,7 @@ impl McpServer {
         let skill_path = skill_dir.join("SKILL.md");
         let skill_md = r#"---
 name: sentris-security
-description: Autonomous secret scanning, code remediation, secret extraction into backends, Zone 3 git quarantine, and SOC 2 compliance via the Sentris CLI (`sentris --json`) and MCP server (`sentris mcp`). Use whenever scanning for leaked API keys/credentials, fixing hardcoded secrets, rotating keys into .env/Vault/AWS/Doppler/1Password/Infisical, checking pre-commit diffs, or verifying SOC 2 audit logs.
+description: Autonomous secret scanning, code remediation, secret extraction into backends, Zone 3 git quarantine, and SOC 2 compliance via the Sentris CLI (`sentris --json`) and MCP server (`sentris mcp`). Use whenever scanning for leaked API keys/credentials, fixing hardcoded secrets, moving keys into .env/Vault/AWS/Doppler/1Password/Infisical, checking pre-commit diffs, or verifying SOC 2 audit logs.
 ---
 
 # Sentris — AI Agent Operating Skill
@@ -269,7 +269,7 @@ sentris fix <file_path> --yes --json
 # Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler
 sentris fix . --all --yes --backend 1password --json
 
-# Key rotation is not supported yet: after fixing, revoke the old key at the provider
+# Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key at the provider
 ```
 
 ### Atomic Byte-for-Byte Rollback

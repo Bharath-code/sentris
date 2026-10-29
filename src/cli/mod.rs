@@ -124,7 +124,7 @@ pub enum Commands {
         #[arg(long, default_value = "env")]
         backend: String,
 
-        /// Provider-side rotation (not supported yet: errors out before touching anything)
+        /// Rotate the leaked key at the provider: creates a replacement, keeps the old key active until `rotate finish` (AWS IAM access keys only)
         #[arg(long, default_value_t = false)]
         rotate: bool,
 
@@ -138,6 +138,23 @@ pub enum Commands {
         /// The remediation session ID to revert (e.g. rm_a1b2c3d4)
         #[arg(short, long)]
         session: Option<String>,
+    },
+
+    /// Claude Code hook: blocks prompts and tool calls that would expose secrets (reads hook JSON on stdin)
+    Hook {
+        /// Print the settings.json snippet that registers this hook, then exit
+        #[arg(long, default_value_t = false)]
+        print_config: bool,
+
+        /// Block (exit 2) when the hook itself fails, e.g. on malformed input; the default is to let the action through
+        #[arg(long, default_value_t = false)]
+        fail_closed: bool,
+    },
+
+    /// Finish, inspect or undo key rotations started with `remediate --rotate`
+    Rotate {
+        #[command(subcommand)]
+        subcommand: RotateSubcommand,
     },
 
     /// Isolate a leaked credential into a Zone 3 quarantine branch and generate a scrub playbook
@@ -255,6 +272,32 @@ pub enum Commands {
         /// Target workspace directory for --setup (defaults to current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum RotateSubcommand {
+    /// List rotations and their state
+    Status,
+
+    /// Deactivate the old key once the grace window has passed and the provider shows no use since rotation began
+    Finish {
+        /// Rotation id (rot_...)
+        id: String,
+
+        /// Deactivate now even inside the grace window or if the old key was used recently
+        #[arg(long, default_value_t = false)]
+        force: bool,
+
+        /// Also permanently delete the old key after deactivating it
+        #[arg(long, default_value_t = false)]
+        delete_old: bool,
+    },
+
+    /// Reactivate the old key and delete the new one
+    Undo {
+        /// Rotation id (rot_...)
+        id: String,
     },
 }
 

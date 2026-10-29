@@ -1,9 +1,11 @@
 pub mod audit;
 pub mod auth;
 pub mod cloud;
+pub mod hook;
 pub mod quarantine;
 pub mod remediate;
 pub mod review;
+pub mod rotate;
 pub mod scan;
 mod scan_output;
 
@@ -78,6 +80,11 @@ pub fn execute(cli: Cli) {
             all,
         } => remediate::handle_remediate(&cli, finding_id, dry_run, yes, backend, rotate, all),
         Commands::Rollback { session } => remediate::handle_rollback(&cli, session),
+        Commands::Hook {
+            print_config,
+            fail_closed,
+        } => hook::handle_hook(print_config, fail_closed),
+        Commands::Rotate { subcommand } => rotate::handle_rotate(&cli, subcommand),
         Commands::Quarantine { finding_id, branch } => {
             quarantine::handle_quarantine(&cli, finding_id, branch)
         }

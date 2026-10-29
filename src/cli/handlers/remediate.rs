@@ -10,6 +10,7 @@ use crate::model::{Finding, ScanReport};
 use crate::remediator::backend::SecretBackendFactory;
 use crate::remediator::rollback::RollbackLedger;
 use crate::remediator::Remediator;
+use crate::rotator::RotationLedger;
 use crate::scanner::Scanner;
 
 pub fn handle_remediate(
@@ -171,7 +172,16 @@ fn remediate_one(
         cli.quiet || cli.is_agent_mode(),
     );
     Remediator::zeroize_secret_string(&mut raw_secret);
-    let session_id = result.unwrap_or_else(|err| die("Remediation failed", err));
+    let session_id = result.unwrap_or_else(|err| match err {
+        crate::error::SentrisError::Refused(msg) => {
+            eprintln!("{} {msg}", "REFUSED:".yellow().bold());
+            process::exit(2)
+        }
+        other => die("Remediation failed", other),
+    });
+    let rotation_id = (rotate && !dry_run)
+        .then(|| record_rotation_audit(finding))
+        .flatten();
 
     record_audit_event(
         AuditAction::SecretRemediated {
@@ -191,7 +201,27 @@ fn remediate_one(
         "line_number": finding.line_number,
         "rule_id": finding.rule_id,
         "env_var_injected": env_var_name,
+        "rotation_id": rotation_id,
     })
+}
+
+/// Records the rotation in the audit chain and returns its id.
+fn record_rotation_audit(finding: &Finding) -> Option<String> {
+    let ledger = RotationLedger::load().ok()?;
+    let rec = ledger.active_for(&finding.fingerprint)?;
+    record_audit_event(
+        AuditAction::KeyRotated {
+            rotation_id: rec.id.clone(),
+            provider: rec.provider.clone(),
+        },
+        serde_json::json!({
+            "principal": rec.principal,
+            "old_key_id": rec.old_key_id,
+            "new_key_id": rec.new_key_id,
+            "backend": rec.backend,
+        }),
+    );
+    Some(rec.id.clone())
 }
 
 fn confirm_interactive_remediation(
@@ -284,17 +314,35 @@ pub fn handle_rollback(cli: &Cli, session: Option<String>) {
         return;
     };
 
+    let fingerprint = ledger
+        .transactions
+        .iter()
+        .find(|t| t.session_id == target_session)
+        .map(|t| t.secret_fingerprint.clone());
     let msg = ledger
         .revert(&target_session)
         .unwrap_or_else(|err| die("Rollback failed", err));
+    let pending_rotation = fingerprint.and_then(|fp| {
+        RotationLedger::load()
+            .ok()?
+            .active_for(&fp)
+            .map(|r| r.id.clone())
+    });
     if agent_mode {
         print_json(serde_json::json!({
             "ok": true,
             "command": "rollback",
             "session_id": target_session,
-            "message": msg
+            "message": msg,
+            "pending_rotation": pending_rotation
         }));
     } else {
         println!("{}", msg.green().bold());
+        if let Some(id) = pending_rotation {
+            println!(
+                "{} rotation {id} is still active: its new key stays in your backend and the old key is still live. Run `sentris rotate undo {id}` to reverse it.",
+                "ℹ️ ".cyan()
+            );
+        }
     }
 }

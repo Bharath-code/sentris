@@ -30,6 +30,8 @@ impl AuditLedger {
         let mut secrets_remediated = 0usize;
         let mut baselines_recorded = 0usize;
         let mut quarantines_created = 0usize;
+        let mut keys_rotated = 0usize;
+        let mut keys_deactivated = 0usize;
 
         for r in &self.records {
             match &r.action {
@@ -45,6 +47,8 @@ impl AuditLedger {
                 AuditAction::SecretRemediated { .. } => secrets_remediated += 1,
                 AuditAction::BaselineRecorded { .. } => baselines_recorded += 1,
                 AuditAction::QuarantineCreated { .. } => quarantines_created += 1,
+                AuditAction::KeyRotated { .. } => keys_rotated += 1,
+                AuditAction::KeyDeactivated { .. } => keys_deactivated += 1,
             }
         }
 
@@ -84,6 +88,8 @@ impl AuditLedger {
                     "status": status_str,
                     "secrets_remediated": secrets_remediated,
                     "quarantines_created": quarantines_created,
+                    "keys_rotated": keys_rotated,
+                    "keys_deactivated": keys_deactivated,
                     "baselines_recorded": baselines_recorded,
                     "deprecation_policy": "Not automated: leaked keys must be revoked at the provider"
                 },
@@ -109,7 +115,9 @@ impl AuditLedger {
                 "avg_scan_latency_ms": avg_scan_latency_ms,
                 "secrets_remediated": secrets_remediated,
                 "baselines_recorded": baselines_recorded,
-                "quarantines_created": quarantines_created
+                "quarantines_created": quarantines_created,
+                "keys_rotated": keys_rotated,
+                "keys_deactivated": keys_deactivated
             },
             "records": self.records
         });

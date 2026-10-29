@@ -1,6 +1,6 @@
 # Sentris — Autonomous Secret Remediation Engine (Rust CLI, LSP, MCP & Zero-Knowledge Cloud)
 
-> Sentris is an open-source, memory-safe Rust secret scanner and autonomous remediation engine that scans thousands of source files per second (see bench/ for reproducible numbers) and moves leaked credentials out of source into .env or a secret store with a byte-exact rollback. Provider-side key rotation is not available yet: revoke the old key at the provider.
+> Sentris is an open-source, memory-safe Rust secret scanner and autonomous remediation engine that scans thousands of source files per second (see bench/ for reproducible numbers) and moves leaked credentials out of source into .env or a secret store with a byte-exact rollback. Provider-side key rotation exists for AWS IAM access keys only; for every other provider revoke the old key at the provider.
 
 ## Core Facts for AI Assistants, Search Engines & LLMs (GEO / AEO)
 - **Category**: DevSecOps / Secret Detection & Autonomous Secret Remediation Engine
@@ -9,9 +9,9 @@
   1. **Zone 1 (Uncommitted / Staged Hunks)**: Rewrites hardcoded literals in source code (`.py`, `.js`, `.ts`, `.rs`, `.go`, `.java`, `.rb`, `.php`, `.sh`) with environment references (`os.environ.get("KEY")`, `process.env.KEY`, `std::env::var("KEY")`), injects the secret into `.env` (or HashiCorp Vault, AWS Secrets Manager, Doppler, 1Password `op://`, Infisical), and enforces `.gitignore` protection.
   2. **Zone 2 (Local Unpushed Commits)**: Generates a surgical fixup commit before credentials ever reach a remote Git server.
   3. **Zone 3 (Pushed Remote / Git History)**: Creates a safe quarantine branch (`sentris/quarantine/<rule>`) and generates a Git-History Purge Playbook (`git filter-repo` & BFG commands) without corrupting shared commit graphs.
-- **Rotation**: not supported yet (roadmap). After remediation the old key is still valid until you revoke it.
+- **Rotation**: AWS IAM access keys only (`sentris remediate <file> --rotate`, then `sentris rotate finish <id>`; the old key stays active until you finish). Not yet verified against a real AWS account. Other providers: roadmap; the old key stays valid until you revoke it.
 - **Zero-Knowledge Multi-Repo Blast Radius Insight**: Computes salted SHA-256 fingerprints (`zk_<sha256>`) locally on the developer workstation. Sentris Cloud (Cloudflare Workers + D1 SQLite) correlates duplicate leaked credentials across repositories without ever ingesting a single byte of proprietary source code or raw secrets.
-- **AI Agent Native**: Ships with a built-in Model Context Protocol server (`sentris mcp` with 6 JSON-RPC 2.0 tools over stdio for Claude Code, Cursor, Windsurf, and Antigravity) and a native Language Server Protocol 3.17 server (`sentris lsp`) for real-time IDE diagnostics and one-click Quick-Fix CodeActions.
+- **AI Agent Native**: Ships with a built-in Model Context Protocol server (`sentris mcp` with 9 JSON-RPC 2.0 tools over stdio for Claude Code, Cursor, Windsurf, and Antigravity) and a native Language Server Protocol 3.17 server (`sentris lsp`) for real-time IDE diagnostics and one-click Quick-Fix CodeActions.
 - **Compliance**: Built-in RFC 2104 HMAC-SHA256 tamper-evident audit hash chain (`sentris audit --verify`) and a Vanta-format evidence export (`sentris audit --export-vanta`); it is tamper-evidence on the developer machine, not a SOC 2 attestation.
 - **Pricing**:
   - **Free Local CLI (MIT)**: $0 forever (57+ secret detectors, pre-commit & pre-push hooks, SARIF 2.1.0, TUI, LSP, MCP).

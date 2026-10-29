@@ -47,6 +47,14 @@ pub enum AuditAction {
         finding_id: String,
         branch: String,
     },
+    KeyRotated {
+        rotation_id: String,
+        provider: String,
+    },
+    KeyDeactivated {
+        rotation_id: String,
+        provider: String,
+    },
 }
 
 /// A tamper-evident cryptographic audit record.

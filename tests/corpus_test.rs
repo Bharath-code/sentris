@@ -374,3 +374,36 @@ fn corpus_precision_recall() {
         "recall {recall:.3} regressed more than {MAX_RECALL_DROP} below baseline {baseline}"
     );
 }
+
+/// Whatever the detector flags, redaction must remove: no detected secret survives and the output re-scans clean.
+#[test]
+fn redaction_removes_every_detected_secret_in_the_corpus() {
+    let engine = DetectorEngine::new().unwrap();
+    let mut redacted = 0;
+    for (rule, line) in positives() {
+        let findings = engine.scan_text(&line, "corpus.txt");
+        if findings.is_empty() {
+            continue;
+        }
+        let out = sentris::redact::redact(&engine, &line);
+        for f in &findings {
+            if let Some(secret) =
+                engine.extract_secret_for_fingerprint(&line, &f.rule_id, &f.fingerprint)
+            {
+                assert!(
+                    !out.text.contains(&secret),
+                    "{rule}: secret survived in {:?}",
+                    out.text
+                );
+            }
+        }
+        let again = engine.scan_text(&out.text, "corpus.txt");
+        assert!(
+            again.is_empty(),
+            "{rule}: redacted text still flagged: {:?}",
+            out.text
+        );
+        redacted += 1;
+    }
+    assert!(redacted > 100, "only {redacted} corpus lines exercised");
+}

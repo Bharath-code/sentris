@@ -7,10 +7,10 @@ use crate::mcp::McpServer;
 use crate::remediator::Remediator;
 use crate::scanner::Scanner;
 
-type ToolErr = (i32, String);
+pub(super) type ToolErr = (i32, String);
 
 /// Root every agent-supplied path must stay inside: `SENTRIS_WORKSPACE`, else the server's cwd.
-fn workspace() -> Result<PathBuf, ToolErr> {
+pub(super) fn workspace() -> Result<PathBuf, ToolErr> {
     let root = std::env::var_os("SENTRIS_WORKSPACE")
         .map(PathBuf::from)
         .map(Ok)
@@ -38,7 +38,7 @@ fn confine_in(root: &Path, p: &str) -> Result<PathBuf, ToolErr> {
 }
 
 /// File-modifying tools stay off unless the human who launched the server opts in.
-fn require_writes() -> Result<(), ToolErr> {
+pub(super) fn require_writes() -> Result<(), ToolErr> {
     let on = std::env::var("SENTRIS_MCP_ALLOW_WRITES")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
         .unwrap_or(false);
@@ -52,10 +52,27 @@ fn require_writes() -> Result<(), ToolErr> {
     }
 }
 
-/// Binds a real write to the exact finding that was previewed.
-fn confirm_token(f: &crate::model::Finding, backend: &str) -> Result<String, ToolErr> {
+/// Largest text `sentris_redact_text` accepts in one call.
+pub(super) const MAX_REDACT_CHARS: usize = 1_000_000;
+
+pub(super) fn text_result(payload: Value, is_error: bool) -> Value {
+    json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string_pretty(&payload).unwrap_or_default()
+        }],
+        "isError": is_error
+    })
+}
+
+/// Binds a real write to the exact finding and mode that were previewed (a plain preview never authorises a rotation).
+fn confirm_token(
+    f: &crate::model::Finding,
+    backend: &str,
+    rotate: bool,
+) -> Result<String, ToolErr> {
     let msg = format!(
-        "{}|{}|{}|{backend}",
+        "{}|{}|{}|{backend}|rotate={rotate}",
         f.fingerprint, f.file_path, f.line_number
     );
     crate::keystore::mac_hex("mcp-confirm", msg.as_bytes())
@@ -63,8 +80,34 @@ fn confirm_token(f: &crate::model::Finding, backend: &str) -> Result<String, Too
         .map_err(|e| (-32603, e.to_string()))
 }
 
+fn redact_text_tool(args: &Value) -> Result<Value, ToolErr> {
+    let text = args
+        .get("text")
+        .and_then(Value::as_str)
+        .ok_or((-32602, "Missing required argument 'text'".to_string()))?;
+    if text.chars().count() > MAX_REDACT_CHARS {
+        return Err((
+            -32602,
+            format!(
+                "Text exceeds the {MAX_REDACT_CHARS}-character limit; send it in smaller pieces"
+            ),
+        ));
+    }
+    let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+    let out = scanner.redact_text(text);
+    Ok(text_result(
+        json!({
+            "redacted_text": out.text,
+            "redacted_count": out.findings.len(),
+            "findings": out.findings,
+        }),
+        false,
+    ))
+}
+
 impl McpServer {
     /// Returns the MCP `tools/list` schema for AI coding agents.
+    #[allow(clippy::too_many_lines)]
     pub fn list_tools() -> Value {
         json!({
             "tools": [
@@ -113,7 +156,7 @@ impl McpServer {
                             },
                             "rotate": {
                                 "type": "boolean",
-                                "description": "If true, NOT SUPPORTED yet: returns an error. Leave false; revoke the old key at the provider after remediation"
+                                "description": "If true, create a replacement key at the provider (AWS IAM access keys only; other rules return an error). The old key stays active until `sentris_rotate_finish`. Needs its own dry_run=true preview: its confirm_token differs from a non-rotating one"
                             },
                             "dry_run": {
                                 "type": "boolean",
@@ -147,6 +190,50 @@ impl McpServer {
                                 "description": "Optional session ID (e.g. rm_a1b2c3d4). Defaults to the most recent session."
                             }
                         }
+                    }
+                },
+                {
+                    "name": "sentris_redact_text",
+                    "description": "Replace every detected secret in a piece of text (a prompt, tool output, a diff) with a stable «sentris:<rule>:<id>» marker so it can be shared with a model without leaking credentials. Read-only; nothing is stored. Limit: 1,000,000 characters per call.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "text": {
+                                "type": "string",
+                                "description": "Text to redact"
+                            }
+                        },
+                        "required": ["text"]
+                    }
+                },
+                {
+                    "name": "sentris_rotate_status",
+                    "description": "List key rotations started with sentris_remediate_finding rotate=true: state, old and new key ids, grace deadline. Read-only.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "sentris_rotate_finish",
+                    "description": "Deactivate the old (leaked) key of a stored rotation. Reversible by a human with `sentris rotate undo`. Preview first (dry_run defaults to true), then repeat with dry_run=false and the confirm_token. Refused inside the grace window or while the old key shows use since the rotation began; needs SENTRIS_MCP_ALLOW_WRITES=1.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "rotation_id": {
+                                "type": "string",
+                                "description": "Rotation id (rot_...) from sentris_rotate_status"
+                            },
+                            "confirm": {
+                                "type": "string",
+                                "description": "Required when dry_run=false: the confirm_token from a dry_run=true call"
+                            },
+                            "dry_run": {
+                                "type": "boolean",
+                                "description": "Preview only (default: true)"
+                            }
+                        },
+                        "required": ["rotation_id"]
                     }
                 },
                 {
@@ -287,7 +374,7 @@ impl McpServer {
                     }
                 };
 
-                let token = confirm_token(finding, backend)?;
+                let token = confirm_token(finding, backend, rotate)?;
                 if !dry_run && !crate::keystore::ct_eq(confirm, &token) {
                     return Err((
                         -32602,
@@ -431,6 +518,9 @@ impl McpServer {
                     "isError": false
                 }))
             }
+            "sentris_redact_text" => redact_text_tool(&args),
+            "sentris_rotate_status" => super::rotate_tools::status(),
+            "sentris_rotate_finish" => super::rotate_tools::finish(&args),
             other => Err((-32601, format!("Unknown tool: {other}"))),
         }
     }
@@ -461,6 +551,9 @@ mod tests {
 
     #[test]
     fn real_remediation_without_opt_in_is_refused_and_file_unchanged() {
+        let _g = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let ws = tempfile::tempdir().unwrap();
         let f = ws.path().join("a.py");
         let src = "k = \"sk_live_abcdefghijklmnopqrstuvwx\"\n";
@@ -470,5 +563,58 @@ mod tests {
         let err = McpServer::call_tool(Some(&params), true).unwrap_err();
         assert!(err.1.contains("disabled") || err.1.contains("outside the workspace"));
         assert_eq!(std::fs::read_to_string(&f).unwrap(), src);
+    }
+
+    const STRIPE: &str = concat!("sk_live_", "51Nq8xT2LmV7pRz0aBcDeFgHiJk9WsYuXo3Zt4");
+
+    fn redact_call(text: &str) -> Result<Value, ToolErr> {
+        McpServer::call_tool(
+            Some(&json!({"name":"sentris_redact_text","arguments":{"text": text}})),
+            true,
+        )
+    }
+
+    fn body(v: &Value) -> Value {
+        serde_json::from_str(v["content"][0]["text"].as_str().unwrap()).unwrap()
+    }
+
+    #[test]
+    fn redact_text_tool_hides_secrets_and_reports_without_leaking_them() {
+        let _g = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let out = body(&redact_call(&format!("deploy with key {STRIPE} now")).unwrap());
+        let text = out["redacted_text"].as_str().unwrap();
+        assert!(text.starts_with("deploy with key «sentris:stripe-secret-key:"));
+        assert!(!out.to_string().contains("51Nq8x"));
+        assert_eq!(out["redacted_count"], 1);
+        assert_eq!(out["findings"][0]["rule_id"], "stripe-secret-key");
+    }
+
+    #[test]
+    fn redact_text_tool_passes_clean_text_through() {
+        let _g = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let out = body(&redact_call("nothing sensitive here").unwrap());
+        assert_eq!(out["redacted_text"], "nothing sensitive here");
+        assert_eq!(out["redacted_count"], 0);
+    }
+
+    #[test]
+    fn redact_text_tool_rejects_oversize_and_missing_input() {
+        let _g = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let big = "a".repeat(MAX_REDACT_CHARS + 1);
+        let err = redact_call(&big).unwrap_err();
+        assert_eq!(err.0, -32602);
+        assert!(err.1.contains("limit"), "{err:?}");
+        let missing = McpServer::call_tool(
+            Some(&json!({"name":"sentris_redact_text","arguments":{}})),
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(missing.0, -32602);
     }
 }
