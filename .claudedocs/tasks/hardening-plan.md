@@ -2,7 +2,7 @@
 
 Source: security audits of `src/` (Rust CLI) and `web/` + `cloud/` (2026-10-29), plus a recall spot-check against gitleaks. Findings marked ✔ were re-verified by reading the code.
 
-Status 2026-10-29: Phases 0 and 1 complete (commits on feat/web-rebuild). Open follow-ups from implementation are listed under "Known gaps" at the end.
+Status 2026-10-29: Phases 0, 1 and 2 complete in code (commits on feat/web-rebuild); Phase 2 is not yet deployed or migrated remotely. Open follow-ups are listed under "Known gaps" at the end and under "Phase 2 notes".
 
 Legend: ⬜ todo · 🟡 in progress · ✅ done · 👤 needs you · Size: S <2h, M half-day, L 1 day+
 Rule for every task: no task is done until its AC passes, `cargo test` + `cargo clippy -- -D warnings` (Rust) or `npm run typecheck && npm test` (web) are green, and one commit per task.
@@ -117,42 +117,50 @@ Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 afte
 
 ## Phase 2: Web & cloud
 
-### T2.1 ⬜ Rate limiting + quotas (M) ✔
+### T2.1 ✅ Rate limiting + quotas (M) ✔
 - Workers Rate Limiting binding: ingest keyed by key-hash (and IP pre-auth), auth routes by IP.
 - Per-org limits in code: ≤20 active keys, ≤N scans/day, ≤M findings/day (free: low; pro: higher). 429 with `Retry-After`.
 - Better Auth `rateLimit.storage = "database"` (in-memory is useless on Workers).
 - **AC:** test: 61st request/min → 429 · org over daily finding cap → 429 · 21st key creation → error · auth sign-in flood → 429 · load test shows bad-key flood does ≤1 D1 read per request and none for malformed bearers.
 
-### T2.2 ⬜ Beta flag safety + billing config (S) ✔
+### T2.2 ✅ Beta flag safety + billing config (S) ✔
 - `BETA_FREE_SYNC` becomes `BETA_FREE_SYNC_UNTIL=<ISO date>`; expired → paywall on. Log once when active.
 - Startup assertion: `BETTER_AUTH_SECRET` ≥32 chars; production refuses placeholder `pdt_REPLACE_ME`.
 - 👤 Real `DODO_PRO_PRODUCT_ID` + API key + webhook key (B2).
 - **AC:** unit tests for `canIngest` with flag before/after date, expired period, cancelled (closes B6) · app fails fast with placeholder product ID in `live_mode`.
 
-### T2.3 ⬜ Security headers + CSP (M) ✔
+### T2.3 ✅ Security headers + CSP (M) ✔
 - `public/_headers` (or Start middleware): HSTS, `nosniff`, `Referrer-Policy`, `Permissions-Policy`, `frame-ancestors 'none'`, CSP (hash the inline theme script).
 - **AC:** `curl -I` on `/`, `/app`, `/api/v1/scans` shows all headers · browser console shows zero CSP violations on `/`, `/pricing`, `/login`, `/app` (Playwright) · securityheaders.com grade ≥ A.
 
-### T2.4 ⬜ CSRF/cookie hardening (S) ✔
+### T2.4 ✅ CSRF/cookie hardening (S) ✔
 - Better Auth `advanced.defaultCookieAttributes` (`httpOnly`, `secure`, `sameSite: lax|strict`); `authed` middleware rejects POST whose `Origin` ≠ `APP_URL`.
 - Encrypt stored OAuth tokens (`account.encryptOAuthTokens`) or don't persist them.
 - **AC:** test: POST server function with foreign `Origin` → 403 · session cookie flags verified in response · DB inspection shows tokens not plaintext.
 
-### T2.5 ⬜ Webhook robustness (M) ✔
+### T2.5 ✅ Webhook robustness (M) ✔
 - Null-check `customer`, `next_billing_date`; wrap update in try/catch: unique-violation / malformed → 200 + log (no infinite retry); transient DB error → 5xx.
 - Idempotency: ignore replayed `webhook-id` (small table or KV).
 - **AC:** fixture tests: malformed payload → 200 + logged, org unchanged · duplicate `webhook-id` → applied once · subscription already attached to another org → 200 + alert log · out-of-order and same-timestamp cases still pass.
 
-### T2.6 ⬜ Ingest correctness (M) ✔
+### T2.6 ✅ Ingest correctness (M) ✔
 - `UNIQUE(org_id, cli_scan_id)` → upsert/ignore replays (idempotent re-sync).
 - Fix `blastRadius` severity: rank-based max (`critical>high>medium>low`), not text max; `json_group_array(distinct repo)` instead of comma split.
 - Chunk `db.batch` (≤50 stmts, scan row first, then findings) with partial-failure cleanup; bound `files_scanned`, `line_number`, `entropy` (`.max`, `.finite()`).
 - Throttle `last_used_at` (only if older than 60 s).
 - **AC:** tests: same `scan_id` uploaded twice → one scan row, no duplicate findings · repo name with comma handled · fingerprint seen as `medium` and `critical` reports `critical` · 5000-finding upload succeeds · `Infinity` entropy → 400.
 
-### T2.7 ⬜ Web CI (S) ✔
+### T2.7 ✅ Web CI (S) ✔
 - Add job: `npm ci`, `typecheck`, `test`, `vite build`; cache; path-filtered to `web/`.
 - **AC:** PR touching `web/` runs the job; breaking a type fails CI.
+
+### Phase 2 notes (2026-10-29)
+- **Deploy order:** `npm run db:migrate:remote` first (adds `webhook_event`, `rate_limit`, unique `scan_org_cli`; dedupes old re-synced scans; nulls stored OAuth tokens), then `npm run deploy` (creates the 3 rate-limit namespaces). Nothing is applied remotely yet.
+- **Found while testing:** the old ingest chunked 9 findings per INSERT = 108 bound params, over D1's limit of 100, so any scan with 9+ findings would have failed in prod. Now 8 rows/statement; the test D1 shim rejects >100 params so it cannot regress.
+- **Found while testing:** the CLI's `scan_id` is `scn_` + 8 hex of a hash of timing stats, so different scans can collide. Idempotency key is therefore `scan_id:digest(repo, branch, commit, files, fingerprints)`, stored in `scan.cli_scan_id`; only byte-identical payloads replay.
+- **Rulings:** beta ends 2026-11-30 (`BETA_FREE_SYNC_UNTIL`) · quotas free 100 scans / 10k findings per day, pro 2k / 200k · 20 active keys · CSP keeps `script-src 'unsafe-inline'` (Start's streamed hydration scripts and prerendered pages carry build/request-specific inline code; a nonce needs router plumbing) · cookies `SameSite=Lax` not Strict (OAuth callback is cross-site) · HSTS without `preload` · Better Auth limiter 100/min, `/sign-in/social` 10/min, plus `AUTH_IP_LIMITER` 60/min per IP.
+- **Not verified:** Workers rate-limit bindings run only on Cloudflare (tests use a counting fake; bindings are per-location and approximate) · securityheaders.com grade (needs deploy) · `/app` CSP behaviour behind login · OAuth token encryption end to end (config only) · cross-origin 403 on a real server-function call (guard unit-tested) · the new GitHub workflow has not run on GitHub.
+- **Still 👤:** real `DODO_PRO_PRODUCT_ID`, API key, webhook key (B2). `assertConfig` refuses to serve in `live_mode` while the product id is a placeholder, and always requires `BETTER_AUTH_SECRET` ≥ 32 chars: confirm the deployed secret is long enough before deploying.
 
 ---
 
