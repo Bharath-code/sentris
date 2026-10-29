@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouter } from '@tanstack/react-router'
-import { useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { z } from 'zod'
 import { Button, CopyCommand, Severity, cx } from '@/components/ui'
 import { Panel, Table } from '@/components/panel'
@@ -19,10 +19,29 @@ const ago = (d: Date | string) => {
   return s < 60 ? 'just now' : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`
 }
 
+const CHECKOUT_POLL_MS = 2_000
+const CHECKOUT_POLL_MAX = 15
+
+// The Dodo webhook usually lands within seconds of redirecting back; reload until the plan flips, then stop
+function usePollUntilPro(awaiting: boolean) {
+  const router = useRouter()
+  useEffect(() => {
+    if (!awaiting) return
+    let tries = 0
+    const t = setInterval(() => {
+      if (++tries > CHECKOUT_POLL_MAX) return clearInterval(t)
+      void router.invalidate()
+    }, CHECKOUT_POLL_MS)
+    return () => clearInterval(t)
+  }, [awaiting, router])
+}
+
 function Dashboard() {
   const d = Route.useLoaderData()
   const { checkout } = Route.useSearch()
   const empty = d.scans.length === 0
+  const awaitingPlan = !!checkout && d.org.plan !== 'pro'
+  usePollUntilPro(awaitingPlan)
 
   return (
     <main className="container-page space-y-10 py-10">
@@ -34,8 +53,8 @@ function Dashboard() {
         <PlanBadge org={d.org} />
       </div>
 
-      {checkout && d.org.plan !== 'pro' && (
-        <p className="rounded-xl bg-sunken px-4 py-3 text-sm text-muted ring-1 ring-line">Payment received. Your plan updates as soon as Dodo confirms it, usually within a few seconds. Refresh to check.</p>
+      {awaitingPlan && (
+        <p role="status" className="rounded-xl bg-sunken px-4 py-3 text-sm text-muted ring-1 ring-line">Payment received. Waiting for Dodo to confirm; this page updates on its own, usually within a few seconds.</p>
       )}
 
       {d.org.plan !== 'pro' && <Upgrade />}

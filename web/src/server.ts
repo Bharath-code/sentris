@@ -6,7 +6,7 @@ import { event } from '@/server/log'
 
 const entry = createServerEntry({
   async fetch(request) {
-    return withSecurityHeaders(await handler.fetch(request))
+    return withSecurityHeaders(await handler.fetch(request), new URL(request.url).pathname)
   },
 })
 

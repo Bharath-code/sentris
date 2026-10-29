@@ -32,10 +32,16 @@ export async function getOverviewData(db: Db, orgId: string, now = Date.now()) {
 
 const severityOrder = sql`case lower(${schema.finding.severity}) when 'critical' then 0 when 'high' then 1 when 'medium' then 2 when 'low' then 3 else 4 end`
 
+export class ScanNotFound extends Error {
+  constructor() {
+    super('Scan not found')
+  }
+}
+
 // Findings are paged in a stable order (worst first, then location) so "next" never skips or repeats a row
 export async function getScanPage(db: Db, orgId: string, id: string, offset = 0) {
   const scan = await db.query.scan.findFirst({ where: and(eq(schema.scan.id, id), eq(schema.scan.orgId, orgId)) })
-  if (!scan) throw new Error('Scan not found')
+  if (!scan) throw new ScanNotFound()
   const findings = await db
     .select()
     .from(schema.finding)

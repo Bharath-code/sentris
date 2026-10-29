@@ -7,7 +7,7 @@ export function getRouter() {
     routeTree,
     scrollRestoration: true,
     defaultPreload: 'intent',
-    defaultPreloadStaleTime: 0,
+    defaultPendingComponent: () => <p className="container-page py-16 text-center text-sm text-muted">Loading…</p>,
   })
 
   return router
