@@ -16,7 +16,7 @@ Visitor → landing/pricing → GitHub sign-in → dashboard creates org
 | Step | Local | Production |
 |---|---|---|
 | Landing + pricing render | ✅ | ✅ |
-| GitHub sign-in | 🟡 (no OAuth app yet) | ⬜ |
+| GitHub sign-in | 🟡 (no local OAuth app) | ✅ (real account → user, session, org created) |
 | Dodo checkout → webhook → Pro | 🟡 (no Dodo keys yet) | ⬜ |
 | API key → CLI sync → D1 | ✅ (real CLI, seeded key) | ✅ (real CLI, seeded key, cleaned up) |
 | Blast radius across repos | ✅ | ✅ |
@@ -62,7 +62,7 @@ Visitor → landing/pricing → GitHub sign-in → dashboard creates org
 
 ## B. Not done — in order
 
-### B1 👤 Create GitHub OAuth app
+### B1 ✅ Create GitHub OAuth app (prod done; local app optional)
 - github.com/settings/developers → New OAuth App. Two apps: local + prod.
   - Local callback: `http://localhost:3000/api/auth/callback/github`
   - Prod callback: `https://sentris-web.<subdomain>.workers.dev/api/auth/callback/github`
