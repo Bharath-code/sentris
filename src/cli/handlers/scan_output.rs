@@ -102,11 +102,12 @@ fn live_status(
     res
 }
 
-/// Scopes already appear under the capabilities, so the status line stays short.
-fn describe_probed(status: &LiveStatus) -> String {
+/// Plain text; scopes already appear under the capabilities, so the status stays short.
+fn probed_label(status: &LiveStatus) -> String {
     match status {
-        LiveStatus::Active { .. } => "ACTIVE & LIVE".red().bold().to_string(),
-        other => describe_status(other.clone()),
+        LiveStatus::Active { .. } => "ACTIVE & LIVE".to_string(),
+        LiveStatus::Revoked => "REVOKED / INACTIVE".to_string(),
+        LiveStatus::Unverified(reason) => format!("UNVERIFIED ({reason})"),
     }
 }
 
@@ -155,22 +156,33 @@ pub(super) fn probe_findings(cli: &Cli, scanner: &Scanner, report: &mut ScanRepo
     );
 }
 
-pub(super) fn print_exposures(report: &ScanReport) {
+pub(super) fn print_exposures(report: &ScanReport, no_color: bool) {
     if report.exposures.is_empty() {
         return;
     }
-    println!("{}", "Exposure (read-only provider probes):".cyan().bold());
+    let plain = no_color || std::env::var_os("NO_COLOR").is_some();
+    let paint = |text: String, style: fn(&str) -> String| if plain { text } else { style(&text) };
+    println!(
+        "{}",
+        paint("Exposure (read-only provider probes):".to_string(), |t| t
+            .cyan()
+            .bold()
+            .to_string())
+    );
     for f in &report.findings {
         let Some(e) = report.exposures.get(&f.fingerprint) else {
             continue;
         };
         println!(
             "   • {}:{} {} [{}] {}",
-            f.file_path.bold(),
+            f.file_path,
             f.line_number,
-            e.provider.cyan(),
-            format!("{:?}", e.tier).to_uppercase().red().bold(),
-            describe_probed(&e.live)
+            e.provider,
+            paint(format!("{:?}", e.tier).to_uppercase(), |t| t
+                .red()
+                .bold()
+                .to_string()),
+            paint(probed_label(&e.live), |t| t.yellow().to_string())
         );
         for c in &e.capabilities {
             println!("       - {c}");

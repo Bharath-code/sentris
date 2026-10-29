@@ -10,6 +10,7 @@ use super::{die, record_audit_event};
 use crate::audit::AuditAction;
 use crate::cli::{Cli, OutputFormat};
 use crate::detector::baseline::BaselineFile;
+use crate::exposure::{at_or_above, rank_findings, RiskTier};
 use crate::git::GitManager;
 use crate::model::{ScanReport, Severity};
 use crate::scanner::Scanner;
@@ -30,6 +31,7 @@ pub fn handle_scan(
     cloud: bool,
     verify: bool,
     probe: bool,
+    fail_on: Option<RiskTier>,
 ) {
     let scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let mut report = run_scan(&scanner, since.as_deref(), git_history, staged, &path);
@@ -49,6 +51,7 @@ pub fn handle_scan(
     record_scan_audit(&report, &path, staged, git_history, fail_on_secret);
     if probe {
         probe_findings(cli, &scanner, &mut report);
+        rank_findings(&mut report);
     }
 
     let effective_format = if cli.is_agent_mode() && matches!(format, OutputFormat::Text) {
@@ -58,7 +61,7 @@ pub fn handle_scan(
     };
     render_scan_report(cli, &report, effective_format);
     if matches!(effective_format, OutputFormat::Text) {
-        print_exposures(&report);
+        print_exposures(&report, cli.no_color);
     }
 
     if verify
@@ -75,6 +78,13 @@ pub fn handle_scan(
         sync_cloud_report(cli, &report);
     }
     if fail_on_secret && !report.findings.is_empty() {
+        process::exit(1);
+    }
+    if let Some(tier) = fail_on.filter(|t| at_or_above(&report, *t)) {
+        eprintln!(
+            "FAILED: at least one finding is at or above the {} risk tier",
+            format!("{tier:?}").to_lowercase()
+        );
         process::exit(1);
     }
 }

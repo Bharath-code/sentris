@@ -98,6 +98,10 @@ pub enum Commands {
         /// Probe each detected Stripe, GitHub or AWS credential read-only to see what it can reach, and rank findings by risk tier (makes network calls; never mutates anything)
         #[arg(long, default_value_t = false)]
         probe: bool,
+
+        /// Exit 1 when any finding is at or above this risk tier (critical, high, medium, low); a finding that was not probed counts at its severity
+        #[arg(long, value_enum)]
+        fail_on: Option<crate::exposure::RiskTier>,
     },
 
     /// Install the Sentris pre-commit hook into .git/hooks/pre-commit

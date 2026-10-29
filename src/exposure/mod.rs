@@ -132,6 +132,42 @@ pub fn probe_report(
     report.exposures = exposures;
 }
 
+/// The tier a finding is ranked and gated at: the probe's verdict when there is one, else its severity.
+fn tier_of(exposures: &std::collections::BTreeMap<String, Exposure>, f: &Finding) -> RiskTier {
+    exposures
+        .get(&f.fingerprint)
+        .map_or_else(|| f.severity.into(), |e| e.tier)
+}
+
+/// Highest tier first, then rule, path and position so the order is stable. Does nothing unless probes ran: without `--probe` the output order must stay what it was.
+pub fn rank_findings(report: &mut ScanReport) {
+    if report.exposures.is_empty() {
+        return;
+    }
+    let ScanReport {
+        findings,
+        exposures,
+        ..
+    } = report;
+    findings.sort_by_cached_key(|f| {
+        (
+            std::cmp::Reverse(tier_of(exposures, f)),
+            f.rule_id.clone(),
+            f.file_path.clone(),
+            f.line_number,
+            f.column,
+        )
+    });
+}
+
+/// True when any finding sits at or above `threshold` (see `tier_of`).
+pub fn at_or_above(report: &ScanReport, threshold: RiskTier) -> bool {
+    report
+        .findings
+        .iter()
+        .any(|f| tier_of(&report.exposures, f) >= threshold)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -270,6 +306,76 @@ mod tests {
         let json = serde_json::to_value(live(RiskTier::High)).unwrap();
         assert!(json.get("measured_usd").is_none());
         assert_eq!(json["tier"], "high");
+    }
+
+    fn probed(tier: RiskTier) -> Exposure {
+        live(tier)
+    }
+
+    fn at(mut f: Finding, path: &str, line: usize) -> Finding {
+        f.file_path = path.to_string();
+        f.line_number = line;
+        f
+    }
+
+    #[test]
+    fn ranking_orders_by_tier_then_rule_then_location_using_severity_when_unprobed() {
+        let mut r = report_of(vec![
+            finding("zeta-rule", "u_high", Severity::High),
+            at(
+                finding("stripe-secret-key", "p_low", Severity::Critical),
+                "a.rs",
+                1,
+            ),
+            finding("github-pat", "p_crit", Severity::High),
+            at(
+                finding("aws-secret-access-key", "u_crit", Severity::Critical),
+                "b.rs",
+                9,
+            ),
+            at(
+                finding("aws-secret-access-key", "u_crit2", Severity::Critical),
+                "b.rs",
+                2,
+            ),
+            finding("alpha-rule", "u_high2", Severity::High),
+        ]);
+        r.exposures
+            .insert("p_low".to_string(), probed(RiskTier::Low));
+        r.exposures
+            .insert("p_crit".to_string(), probed(RiskTier::Critical));
+        rank_findings(&mut r);
+        let order: Vec<&str> = r.findings.iter().map(|f| f.fingerprint.as_str()).collect();
+        assert_eq!(
+            order,
+            ["u_crit2", "u_crit", "p_crit", "u_high2", "u_high", "p_low"]
+        );
+    }
+
+    #[test]
+    fn ranking_is_a_no_op_when_nothing_was_probed() {
+        let mut r = report_of(vec![
+            finding("z-rule", "a", Severity::Low),
+            finding("a-rule", "b", Severity::Critical),
+        ]);
+        rank_findings(&mut r);
+        assert_eq!(r.findings[0].fingerprint, "a");
+    }
+
+    #[test]
+    fn gate_uses_probe_tier_when_present_and_severity_otherwise() {
+        let mut r = report_of(vec![
+            finding("stripe-secret-key", "p", Severity::Critical),
+            finding("other", "u", Severity::Medium),
+        ]);
+        r.exposures.insert("p".to_string(), probed(RiskTier::Low));
+        assert!(!at_or_above(&r, RiskTier::High));
+        assert!(at_or_above(&r, RiskTier::Medium));
+        assert!(at_or_above(&r, RiskTier::Low));
+        r.exposures
+            .insert("p".to_string(), probed(RiskTier::Critical));
+        assert!(at_or_above(&r, RiskTier::Critical));
+        assert!(!at_or_above(&report_of(vec![]), RiskTier::Low));
     }
 
     #[test]

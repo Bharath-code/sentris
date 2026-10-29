@@ -172,9 +172,11 @@ pub trait ExposureProbe { fn probe(&self, secret_or_keyid: &str) -> Result<Expos
 - Stripe: 403 counts as "live restricted key" only for `rk_` keys. GitHub: tier from classic scopes + `/user/orgs` count (a lower bound without `read:org`); fine-grained/app tokens send no scope header and are `Medium` with that stated. AWS: attached managed policies of the owning user and its groups; only AWS-managed `AdministratorAccess`/`IAMFullAccess` (Critical) and `PowerUserAccess` (High) are recognised, inline policy contents, boundaries and SCPs are not evaluated and the output says so.
 - Fixtures are shaped from the provider docs, not captured from live accounts; fold a live pass into R5.
 
-### D2 ⬜ Rank findings by tier (S)
+### D2 ✅ Rank findings by tier (S)
 - Sort `scan --probe` output, SARIF `properties.sentris.tier`, and `--json` by tier then rule.
 - **AC:** ordering test over mixed fixtures · SARIF validates against schema (existing SARIF test) · `--fail-on critical` exit-code flag works and is documented in `--help`.
+
+**D2 as built:** `rank_findings` (tier desc, then rule, path, line) runs only when probes produced exposures, so output order is unchanged without `--probe`. A finding's tier is the probe's verdict, else its severity (`tier_of`). `--fail-on <tier>` also works without `--probe` (severity tiers) and exits 1 with a stderr line. SARIF gets `properties.sentris.tier` on probed results only; the existing SARIF structure is untouched otherwise. The exposure text section honors `--no-color`/`NO_COLOR` (the older `--verify` output still does not).
 
 ---
 

@@ -166,7 +166,109 @@ fn text_output_lists_what_the_probe_observed() {
     );
     assert!(text.contains("CRITICAL"), "{text}");
     assert!(
+        !text.contains('\u{1b}'),
+        "--no-color left ANSI codes: {text:?}"
+    );
+    assert!(
         text.contains("attached policy AdministratorAccess (AWS managed)"),
         "{text}"
     );
+}
+
+fn exit_code(o: &Output) -> i32 {
+    o.status.code().unwrap()
+}
+
+#[test]
+fn fail_on_gates_at_the_probed_tier() {
+    let env = Env::new();
+    let out = env.run(&["--quiet", "scan", ".", "--probe", "--fail-on", "critical"]);
+    assert_eq!(exit_code(&out), 1);
+    assert!(String::from_utf8_lossy(&out.stderr).contains("critical"));
+}
+
+#[test]
+fn fail_on_passes_when_the_probe_found_the_key_inactive() {
+    let env = Env::new();
+    fs::write(
+        env.shim.path().join("list-access-keys.out"),
+        fx!("aws_list_access_keys_inactive.json"),
+    )
+    .unwrap();
+    let out = env.run(&["--quiet", "scan", ".", "--probe", "--fail-on", "high"]);
+    assert_eq!(
+        exit_code(&out),
+        0,
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
+fn fail_on_without_probe_counts_the_finding_at_its_severity() {
+    let env = Env::new();
+    let high = env.run(&["--quiet", "scan", ".", "--fail-on", "high"]);
+    assert_eq!(exit_code(&high), 1);
+    let critical = env.run(&["--quiet", "scan", ".", "--fail-on", "critical"]);
+    assert_eq!(exit_code(&critical), 0);
+    assert_eq!(env.aws_calls(), "");
+}
+
+#[test]
+fn sarif_probe_output_validates_structurally_and_carries_the_tier() {
+    let env = Env::new();
+    let out = env.run(&["scan", ".", "--probe", "--format", "sarif"]);
+    let sarif = json(&out);
+    assert_eq!(sarif["version"], "2.1.0");
+    assert_eq!(
+        sarif["runs"][0]["results"][0]["properties"]["sentris"]["tier"],
+        "critical"
+    );
+}
+
+#[test]
+fn json_probe_output_is_ordered_by_tier() {
+    let env = Env::new();
+    fs::write(
+        env.repo.path().join("0_first.py"),
+        "aws_access_key_id = \"AKIAZZZZZZZZZZZZZZZA\"\n",
+    )
+    .unwrap();
+    // Second key is unknown to the shim account: unprobed-equivalent, so it keeps severity (high);
+    // the first resolves to an admin user and ranks critical, ahead of it.
+    fs::write(
+        env.shim.path().join("get-access-key-last-used.out"),
+        fx!("aws_last_used.json"),
+    )
+    .unwrap();
+    let out = env.run(&["--json", "scan", ".", "--probe"]);
+    let report = json(&out);
+    let findings = report["findings"].as_array().unwrap();
+    let tiers: Vec<String> = findings
+        .iter()
+        .map(|f| {
+            report["exposures"][f["fingerprint"].as_str().unwrap()]["tier"]
+                .as_str()
+                .unwrap_or("none")
+                .to_string()
+        })
+        .collect();
+    let rank = |t: &str| {
+        ["low", "medium", "high", "critical"]
+            .iter()
+            .position(|x| *x == t)
+    };
+    let ranks: Vec<_> = tiers.iter().map(|t| rank(t)).collect();
+    assert!(ranks.windows(2).all(|w| w[0] >= w[1]), "{tiers:?}");
+    assert_eq!(tiers[0], "critical");
+}
+
+#[test]
+fn help_documents_probe_and_fail_on() {
+    let env = Env::new();
+    let out = env.run(&["scan", "--help"]);
+    let help = String::from_utf8_lossy(&out.stdout);
+    assert!(help.contains("--probe"), "{help}");
+    assert!(help.contains("--fail-on"), "{help}");
+    assert!(help.contains("risk tier"), "{help}");
 }

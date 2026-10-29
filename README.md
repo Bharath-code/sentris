@@ -36,6 +36,7 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 | Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, signed rollback ledger. |
 | Remediation into Vault / AWS Secrets Manager / Doppler | Implemented, not yet integration-tested against live services. 1Password and Infisical are opt-in (`SENTRIS_ALLOW_ARGV_SECRETS=1`). |
 | **Provider key rotation (`--rotate`)** | **AWS IAM access keys only.** Creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Tested against a CLI stub, **not yet against a real AWS account**. Every other provider: not supported, the leaked key stays valid until you revoke it. |
+| **Exposure probes (`scan --probe`)** | Stripe (balance), GitHub (scopes, org membership) and AWS (policies attached to the key's owning IAM user, read through *your* AWS credentials) report what a leaked key can reach as a risk tier. Read-only calls; a tier is a capability judgement, not a loss estimate, and a dollar figure appears only when Stripe returns a balance. AWS does not read inline policy contents, permission boundaries or SCPs. Tested against recorded-shape fixtures and a CLI stub, **not yet against live accounts**. |
 | Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
 | Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
 | Benchmarks | Numbers in this README come from the author's machine; a reproducible script is planned. |
@@ -198,6 +199,10 @@ sentris scan --git-history
 
 # Verify detected credentials against live provider APIs & map permission scopes
 sentris scan . --verify
+
+# Probe each Stripe / GitHub / AWS credential read-only for what it can reach, ranked by risk tier.
+# Makes network calls (not with --offline). AWS needs your own admin credentials, never the leaked key.
+sentris scan . --probe --fail-on high   # exit 1 if anything is high or critical; unprobed findings count at their severity
 
 # Launch Split-Pane Interactive Terminal UI (Ratatui) with live -/+ staged patch preview
 sentris review
