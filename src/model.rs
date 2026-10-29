@@ -128,17 +128,19 @@ impl Finding {
         ContextKind::from_file_path(&self.file_path)
     }
 
+    /// Shows at most a third of the secret (capped at 10 characters), so short and low-entropy values
+    /// such as `admin:admin` or 9-15 character passwords are not effectively disclosed.
     pub fn mask_secret(secret: &str) -> String {
         let len = secret.len();
-        if len <= 8 {
-            "********".to_string()
-        } else {
-            let prefix_len = if len >= 16 { 6 } else { 4 };
-            let suffix_len = 4;
-            match (secret.get(..prefix_len), secret.get(len - suffix_len..)) {
-                (Some(head), Some(tail)) => format!("{head}...{tail}"),
-                _ => "********".to_string(),
-            }
+        let shown = (len / 3).min(10);
+        if len <= 8 || shown < 3 {
+            return "********".to_string();
+        }
+        let prefix_len = (shown * 3).div_ceil(5);
+        let suffix_len = shown - prefix_len;
+        match (secret.get(..prefix_len), secret.get(len - suffix_len..)) {
+            (Some(head), Some(tail)) => format!("{head}...{tail}"),
+            _ => "********".to_string(),
         }
     }
 }
@@ -186,5 +188,30 @@ mod tests {
             ContextKind::from_file_path("tests/fixtures/secrets.env"),
             ContextKind::TestFixture
         );
+    }
+}
+
+#[cfg(test)]
+mod mask_tests {
+    use super::Finding;
+
+    #[test]
+    fn masks_reveal_at_most_a_third_of_any_secret() {
+        for len in 1..80 {
+            let secret: String = (0..len)
+                .map(|i| char::from(b'a' + (i % 26) as u8))
+                .collect();
+            let masked = Finding::mask_secret(&secret);
+            let revealed = masked
+                .replace("...", "")
+                .chars()
+                .filter(|c| *c != '*')
+                .count();
+            assert!(
+                revealed * 3 <= len.max(1),
+                "{len}: {masked} reveals {revealed}"
+            );
+        }
+        assert_eq!(Finding::mask_secret("admin:admin"), "ad...n");
     }
 }
