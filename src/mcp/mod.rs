@@ -1,4 +1,5 @@
 pub mod manifest;
+mod rotate_tools;
 pub mod tools;
 
 use std::io::{self, BufRead, Write};
@@ -204,7 +205,7 @@ mod tests {
             .as_array()
             .unwrap()
             .clone();
-        assert_eq!(tools.len(), 6);
+        assert_eq!(tools.len(), 9);
 
         // Without credentials the tool reports an error instead of inventing sample data
         let _guard = crate::keystore::TEST_ENV_LOCK
@@ -232,6 +233,9 @@ mod tests {
 
     #[test]
     fn test_mcp_scan_path_tool_call() {
+        let _guard = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let call_req = r#"{
             "jsonrpc": "2.0",
             "id": 3,

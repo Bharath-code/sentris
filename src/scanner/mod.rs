@@ -57,6 +57,19 @@ impl Scanner {
         Ok(Self { detector, config })
     }
 
+    /// Scanner for guardrails (hooks): built-in rules plus only a config the user names in `SENTRIS_CONFIG_FILE`.
+    /// A config inside the working tree is ignored, so a hostile repo cannot weaken or break the guard.
+    pub fn trusted() -> Result<Self, SentrisError> {
+        let config = match std::env::var_os("SENTRIS_CONFIG_FILE").filter(|v| !v.is_empty()) {
+            Some(file) => Some(Config::load_file(Path::new(&file)).map_err(|e| {
+                SentrisError::Config(format!("Cannot load SENTRIS_CONFIG_FILE: {e}"))
+            })?),
+            None => None,
+        };
+        let detector = DetectorEngine::with_config(config.as_ref())?;
+        Ok(Self { detector, config })
+    }
+
     /// Extracts the raw secret token from a line using the compiled rule's regex capture
     /// Resolves the secret a finding points at, shared by CLI and MCP remediation.
     /// PEM blocks come from the file; anything else must hash to the finding's fingerprint.
@@ -92,6 +105,11 @@ impl Scanner {
 
     pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
         self.detector.extract_raw_secret(line, rule_id)
+    }
+
+    /// Replaces every detected secret in `text` with a `«sentris:<rule>:<fp8>»` marker.
+    pub fn redact_text(&self, text: &str) -> crate::redact::Redaction {
+        crate::redact::redact(&self.detector, text)
     }
 
     /// Scans a target path recursively using Rayon parallelism and the `ignore` crate.

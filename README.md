@@ -35,7 +35,7 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 | Scanning (CLI, pre-commit, git history, SARIF, MCP, LSP) | Working. Recall is still being measured against gitleaks; run `sentris scan` on your own corpus before relying on it. |
 | Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, signed rollback ledger. |
 | Remediation into Vault / AWS Secrets Manager / Doppler | Implemented, not yet integration-tested against live services. 1Password and Infisical are opt-in (`SENTRIS_ALLOW_ARGV_SECRETS=1`). |
-| **Provider key rotation (`--rotate`)** | **Not implemented.** The leaked key stays valid until you revoke it at the provider. |
+| **Provider key rotation (`--rotate`)** | **AWS IAM access keys only.** Creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Tested against a CLI stub, **not yet against a real AWS account**. Every other provider: not supported, the leaked key stays valid until you revoke it. |
 | Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
 | Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
 | Benchmarks | Numbers in this README come from the author's machine; a reproducible script is planned. |
@@ -66,7 +66,7 @@ flowchart LR
     end
 
     subgraph Govern["3. Zero-Knowledge & SOC 2 Proof"]
-        F["Native MCP Server (6 Tools) + Real-Time IDE LSP 3.17"]
+        F["Native MCP Server (9 Tools) + Real-Time IDE LSP 3.17"]
         G["Salted HMAC-SHA256 Multi-Repo Blast Radius + 1-Click Vanta Export"]
         F --> G
     end
@@ -275,8 +275,14 @@ sentris remediate . --all --yes
 
 # Secret store backends: env (default), vault, aws, doppler.
 # 1password and infisical pass the value as a CLI argument and need SENTRIS_ALLOW_ARGV_SECRETS=1.
-# Provider-side key rotation (--rotate) is NOT implemented yet and exits with an error.
 sentris remediate src/billing.ts --backend vault --yes
+
+# Rotate an AWS IAM access key (other providers exit with an error before changing anything).
+# Uses your own AWS CLI credentials, never the leaked key. Old key stays active.
+sentris remediate config/aws.py --rotate --yes
+sentris rotate status
+sentris rotate finish <rot_id>      # deactivates the old key; refuses inside the grace window
+sentris rotate undo <rot_id>        # reactivates the old key, deletes the new one
 ```
 
 #### 1-Click Atomic Rollback
@@ -310,8 +316,8 @@ sentris audit --verify --export-vanta vanta-evidence.json --json
 sentris team --json
 ```
 
-#### Model Context Protocol (`sentris mcp`) — 6 Tools, 3 Resources & 2 Prompts
-Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
+#### Model Context Protocol (`sentris mcp`) — 9 Tools, 3 Resources & 2 Prompts
+Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, `sentris_redact_text`, `sentris_rotate_status`, `sentris_rotate_finish`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
 ```bash
 # Print ready-to-paste mcpServers JSON for Claude Code, Cursor, Windsurf & Antigravity
 sentris mcp --print-config
@@ -319,6 +325,17 @@ sentris mcp --print-config
 # Run zero-egress MCP server over stdio
 sentris mcp
 ```
+
+#### Claude Code hook (`sentris hook`) — keep secrets out of the model's context
+Blocks prompts that contain a secret, reads of secret files (`.env`, `*.pem`, `id_rsa`, `~/.aws/credentials`, ...; `.env.example` is allowed), shell commands that cat/grep them or carry a secret, and file writes that would put a secret into code. Exit code 2 blocks the action; the message names the rule, never the value.
+```bash
+# Print the settings.json snippet (UserPromptSubmit + PreToolUse); paste it into ~/.claude/settings.json
+sentris hook --print-config
+
+# By default the hook lets an action through if it fails on malformed input; --fail-closed blocks instead
+sentris hook --fail-closed
+```
+The hook uses the built-in rules (plus only a config named in `SENTRIS_CONFIG_FILE`), never a `.sentris.toml` inside the repo, so a hostile repo cannot weaken or break it. Input it cannot inspect (over 8 MiB) or a scanner that cannot start blocks the action even without `--fail-closed`; the agent may not edit `.sentris.toml`. It is a heuristic guardrail, not a sandbox: it does not see tool output (no `PostToolUse` check), expands no shell variables or globs, and a determined agent can still read a secret through a route it does not recognise. Measured on one macOS machine (release build): about 15 ms per invocation.
 
 #### Language Server Protocol (`sentris lsp`) — Real-Time IDE Diagnostics & Quick Fixes
 Implements LSP 3.17 over `stdio` (`textDocument/didOpen`, `textDocument/didChange`, `textDocument/codeAction`) for instant red squiggles and 1-click Quick Fix code patching in VS Code, Cursor, Zed, and Neovim:

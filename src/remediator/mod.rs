@@ -2,6 +2,7 @@ pub mod backend;
 pub mod code_replacer;
 pub mod env_patcher;
 pub mod rollback;
+mod rotation_step;
 
 use indicatif::{ProgressBar, ProgressStyle};
 use owo_colors::OwoColorize;
@@ -10,6 +11,7 @@ use std::process::Command;
 
 use self::code_replacer::CodeReplacer;
 use self::rollback::{RollbackEntry, RollbackLedger};
+use self::rotation_step::RotationStep;
 use crate::error::SentrisError;
 use crate::model::Finding;
 use crate::verifier::{LiveStatus, VerifierRegistry};
@@ -211,12 +213,16 @@ impl Remediator {
         rotate: bool,
         quiet: bool,
     ) -> Result<String, SentrisError> {
-        if rotate {
-            return Err(SentrisError::NotImplemented(
-                "--rotate: provider-side key rotation is not available yet; the leaked key stays valid until you revoke it at the provider"
-                    .to_string(),
-            ));
-        }
+        let rotator = if rotate {
+            Some(crate::rotator::rotator_for_rule(&finding.rule_id).ok_or_else(|| {
+                SentrisError::NotImplemented(format!(
+                    "--rotate: provider-side key rotation is not available for rule '{}' yet; the leaked key stays valid until you revoke it at the provider",
+                    finding.rule_id
+                ))
+            })?)
+        } else {
+            None
+        };
         let session_id = format!("rm_{}", crate::model::short(&finding.fingerprint, 8));
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
         let provider_name = match matched_verifier {
@@ -305,11 +311,37 @@ impl Remediator {
             // Step 3: Provision Replacement Key or Extract Working Credential
             print!("  [3/7] 🔑 Provisioning replacement API credential... ");
         }
-        // Extraction only: the same working credential moves to the backend, so the app keeps running
+        // Without --rotate the same working credential moves to the backend, so the app keeps running
         let mut new_key = raw_secret.to_string();
         let masked_new_key = Finding::mask_secret(&new_key);
 
-        if !quiet {
+        let backend_choice = backend_name.unwrap_or("env");
+        let backend_driver = backend::SecretBackendFactory::from_name(backend_choice)?;
+        let env_var_name = Self::resolve_env_var_name(finding, raw_secret, backend_choice);
+        let rotation = match rotator {
+            Some(rotator) => {
+                let step = RotationStep {
+                    rotator,
+                    finding,
+                    backend: backend_driver.as_ref(),
+                    backend_label: backend_choice,
+                    env_var: &env_var_name,
+                    quiet,
+                };
+                step.guard(dry_run, offline)?;
+                Some(step)
+            }
+            None => None,
+        };
+        let rotation_id = match (&rotation, dry_run) {
+            (Some(step), true) => {
+                step.preview(raw_secret)?;
+                None
+            }
+            (Some(step), false) => Some(step.run(raw_secret)?),
+            (None, _) => None,
+        };
+        if rotation.is_none() && !quiet {
             println!(
                 "{} ({} • extracted working key, not rotated)",
                 "EXTRACTED".green(),
@@ -318,20 +350,19 @@ impl Remediator {
         }
 
         // Step 4: Inject into selected secret backend and verify gitignore
-        let backend_choice = backend_name.unwrap_or("env");
-        let backend_driver = backend::SecretBackendFactory::from_name(backend_choice)?;
         if !quiet {
             print!(
                 "  [4/7] 🔒 Securing credential into {} backend... ",
                 backend_driver.backend_name().cyan()
             );
         }
-        let env_var_name = Self::resolve_env_var_name(finding, raw_secret, backend_choice);
         let env_var_name = env_var_name.as_str();
 
-        let inject_note = backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
-        if backend_driver.is_mock() && !dry_run && !quiet {
-            eprintln!("{}", inject_note.yellow().bold());
+        if rotation_id.is_none() {
+            let inject_note = backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
+            if backend_driver.is_mock() && !dry_run && !quiet {
+                eprintln!("{}", inject_note.yellow().bold());
+            }
         }
         Self::zeroize_secret_string(&mut new_key);
         if !quiet {
@@ -374,12 +405,22 @@ impl Remediator {
                 replacement_line.trim().green()
             );
 
-            println!(
-                "  [6/7] ⚠️  Leaked key NOT revoked: {}",
-                "still valid until you rotate it at the provider"
+            match &rotation_id {
+                Some(id) => println!(
+                    "  [6/7] ⏳ Old key still ACTIVE: {}",
+                    format!(
+                        "switch your app to the new key, then run `sentris rotate finish {id}`"
+                    )
                     .yellow()
                     .bold()
-            );
+                ),
+                None => println!(
+                    "  [6/7] ⚠️  Leaked key NOT revoked: {}",
+                    "still valid until you rotate it at the provider"
+                        .yellow()
+                        .bold()
+                ),
+            }
 
             // Step 7: Record transaction in Rollback Ledger
             print!("  [7/7] 📋 Logging transaction to rollback ledger... ");
@@ -402,12 +443,11 @@ impl Remediator {
             println!("{}", "RECORDED".green());
 
             println!();
-            println!(
-                "{}",
-                "Remediation complete: secret moved out of source. Revoke the old key at your provider and purge it from git history."
-                    .bold()
-                    .green()
-            );
+            let done = match &rotation_id {
+                Some(_) => "Rotation started: a new key is stored and the source is patched. The old key is still active until `rotate finish`; purge it from git history.",
+                None => "Remediation complete: secret moved out of source. Revoke the old key at your provider and purge it from git history.",
+            };
+            println!("{}", done.bold().green());
             println!(
                 "To undo at any time, run: {}",
                 format!("sentris rollback --session {}", session_id)

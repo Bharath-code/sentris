@@ -257,7 +257,7 @@ impl DetectorEngine {
         line_number: usize,
         commit_hash: Option<String>,
     ) -> Vec<Finding> {
-        self.scan_line_among(line, file_path, line_number, commit_hash, None)
+        self.scan_line_among(line, file_path, line_number, commit_hash, None, false)
     }
 
     fn scan_line_among(
@@ -267,6 +267,7 @@ impl DetectorEngine {
         line_number: usize,
         commit_hash: Option<String>,
         always_in_file: Option<&[usize]>,
+        redaction: bool,
     ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
@@ -276,16 +277,17 @@ impl DetectorEngine {
             return findings;
         }
 
-        // Check for inline suppression comments (supports multi-tool ecosystem standards)
-        if line.contains("sentris-ignore")
-            || line.contains("sentris:ignore")
-            || line.contains("rustscan-ignore")
-            || line.contains("rustscan:ignore")
-            || line.contains("gitleaks:allow")
-            || line.contains("pragma: allowlist secret")
-            || line.contains("nosec")
-            || line.contains("trufflehog:ignore")
-            || line.contains("secretlint-disable")
+        // Inline suppression comments (multi-tool standards) never apply to redaction: failing open there would leak
+        if !redaction
+            && (line.contains("sentris-ignore")
+                || line.contains("sentris:ignore")
+                || line.contains("rustscan-ignore")
+                || line.contains("rustscan:ignore")
+                || line.contains("gitleaks:allow")
+                || line.contains("pragma: allowlist secret")
+                || line.contains("nosec")
+                || line.contains("trufflehog:ignore")
+                || line.contains("secretlint-disable"))
         {
             return findings;
         }
@@ -294,7 +296,8 @@ impl DetectorEngine {
 
         for rule_idx in matched_indices {
             let rule = &self.rules[rule_idx];
-            if rule.rule_id == "credential-assignment-unquoted"
+            if !redaction
+                && rule.rule_id == "credential-assignment-unquoted"
                 && !allows_unquoted_assignments(file_path)
             {
                 continue;
@@ -305,6 +308,13 @@ impl DetectorEngine {
                     None => continue,
                 };
                 let matched_str = mat.as_str();
+
+                // A complete redaction marker is a placeholder, not a secret (keeps redaction idempotent)
+                if crate::redact::inside_marker(line, mat.start(), mat.end(), |id| {
+                    self.rules.iter().any(|r| r.rule_id == id)
+                }) {
+                    continue;
+                }
 
                 // Check Shannon entropy threshold
                 let entropy = entropy::calculate_shannon_entropy(matched_str);
@@ -366,6 +376,15 @@ impl DetectorEngine {
 
     /// Scans a text file's contents line-by-line, returning all detected findings.
     pub fn scan_text(&self, content: &str, file_path: &str) -> Vec<Finding> {
+        self.scan_text_mode(content, file_path, false)
+    }
+
+    /// Like `scan_text`, but fail-closed for redaction: inline ignore comments and path-based gating are not honoured.
+    pub fn scan_text_for_redaction(&self, content: &str) -> Vec<Finding> {
+        self.scan_text_mode(content, "<text>", true)
+    }
+
+    fn scan_text_mode(&self, content: &str, file_path: &str, redaction: bool) -> Vec<Finding> {
         // Whole-file prefilter: skip clean files in a single pass before line splitting
         let candidates = self.candidate_rules(content, None);
         if candidates.is_empty() {
@@ -379,8 +398,14 @@ impl DetectorEngine {
         let mut findings = Vec::new();
 
         for (line_idx, line) in content.lines().enumerate() {
-            let line_findings =
-                self.scan_line_among(line, file_path, line_idx + 1, None, Some(&always_in_file));
+            let line_findings = self.scan_line_among(
+                line,
+                file_path,
+                line_idx + 1,
+                None,
+                Some(&always_in_file),
+                redaction,
+            );
             findings.extend(line_findings);
         }
 
@@ -405,6 +430,37 @@ mod tests {
         assert_eq!(findings[0].rule_id, "stripe-secret-key");
         assert_eq!(findings[0].severity, Severity::Critical);
         assert!(findings[0].redacted_match.starts_with("sk_liv"));
+    }
+
+    #[test]
+    fn markers_are_ignored_only_when_well_formed() {
+        let engine = DetectorEngine::new().unwrap();
+        let marker = "secret_key = \"«sentris:generic-api-key:010806ca»\"\n";
+        assert!(engine.scan_text(marker, "a.txt").is_empty());
+        let smuggled = concat!(
+            "«sentris:sk_live_",
+            "51Nq8xT2LmV7pRz0aBcDeFgHiJk9WsYuXo3Zt4:deadbeef»\n"
+        );
+        assert!(
+            !engine.scan_text(smuggled, "a.txt").is_empty(),
+            "a secret posing as the rule part of a marker must still be detected"
+        );
+        let lookalike = "secret_key = \"sentris:Zx9Qw3Er7Ty1Ui5Op8As2Df4Gh6Jk0\"\n";
+        assert!(
+            !engine.scan_text(lookalike, "a.txt").is_empty(),
+            "a secret that merely contains the tag must still be detected"
+        );
+    }
+
+    #[test]
+    fn redaction_mode_ignores_inline_suppressions_but_scanning_honours_them() {
+        let engine = DetectorEngine::new().unwrap();
+        let line = concat!(
+            "const k = \"sk_live_",
+            "51Nq8xT2LmV7pRz0aBcDeFgHiJk9WsYuXo3Zt4\"; // nosec\n"
+        );
+        assert!(engine.scan_text(line, "a.ts").is_empty());
+        assert_eq!(engine.scan_text_for_redaction(line).len(), 1);
     }
 
     #[test]

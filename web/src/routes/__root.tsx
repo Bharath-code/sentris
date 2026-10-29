@@ -7,7 +7,7 @@ const THEME_INIT = `try{var t=localStorage.getItem('theme');if(t!=='light')docum
 
 const title = 'Sentris — fix leaked secrets before you push'
 const description =
-  'A 4 MB Rust CLI that finds hardcoded credentials, moves them into your secret store, patches the code and rotates the key with zero downtime. Free and open source; Pro from $8/dev.'
+  'A 4 MB Rust CLI that finds hardcoded credentials, moves them into your secret store, patches the code and, for AWS IAM keys, rotates the key with an overlap window. Free and open source; Pro from $8/dev.'
 
 export const Route = createRootRoute({
   head: () => ({

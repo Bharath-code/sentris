@@ -130,7 +130,7 @@ const zones = [
   {
     k: '03',
     title: 'Already pushed',
-    body: 'Never rewrites shared history behind your back. Opens a quarantine branch and hands you a purge playbook. Revoke the old key at your provider: automatic rotation is on the roadmap.',
+    body: 'Never rewrites shared history behind your back. Opens a quarantine branch and hands you a purge playbook. Revoke the old key at your provider; automatic rotation covers AWS IAM access keys today and other providers are on the roadmap.',
     code: 'sentris quarantine <finding>',
   },
 ]

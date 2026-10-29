@@ -592,3 +592,45 @@ fn key_is_random_outside_repo_and_anchor_catches_truncation() {
     assert!(m.verify_integrity().unwrap());
     std::env::remove_var("SENTRIS_STATE_DIR");
 }
+
+#[test]
+fn rotation_actions_chain_after_existing_actions_and_verify() {
+    let _g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let state = tempdir().unwrap();
+    std::env::set_var("SENTRIS_STATE_DIR", state.path());
+    let dir = tempdir().unwrap();
+    let mut ledger = AuditLedger::load_or_init(dir.path().join("audit.json")).unwrap();
+    ledger
+        .record_event(
+            AuditAction::SecretRemediated {
+                session_id: "s".into(),
+                rule_id: "aws-access-key-id".into(),
+                backend: "env".into(),
+            },
+            serde_json::json!({}),
+        )
+        .unwrap();
+    ledger
+        .record_event(
+            AuditAction::KeyRotated {
+                rotation_id: "rot_1".into(),
+                provider: "AWS".into(),
+            },
+            serde_json::json!({"old_key_id": "AKIAOLD", "new_key_id": "AKIANEW"}),
+        )
+        .unwrap();
+    ledger
+        .record_event(
+            AuditAction::KeyDeactivated {
+                rotation_id: "rot_1".into(),
+                provider: "AWS".into(),
+            },
+            serde_json::json!({}),
+        )
+        .unwrap();
+    assert!(ledger.verify_integrity().unwrap());
+    let json = serde_json::to_string(&ledger.records[1].action).unwrap();
+    assert!(json.contains("KeyRotated") && !json.contains("secret"));
+}
