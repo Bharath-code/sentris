@@ -3,6 +3,7 @@ import { useState } from 'react'
 import { Footer, Nav } from '@/components/chrome'
 import { buttonClass, CopyCommand, Eyebrow, cx } from '@/components/ui'
 import { site } from '@/lib/site'
+import { RETENTION_DAYS } from '@/server/guards'
 
 export const Route = createFileRoute('/pricing')({
   head: () => ({ meta: [{ title: 'Pricing — Sentris' }] }),
@@ -54,7 +55,7 @@ function Pricing() {
             </label>
             <p className="mt-2 text-right font-mono text-sm text-muted tabular-nums">${seats * per}/mo</p>
             <ul className="mt-5 space-y-2.5 text-sm text-muted">
-              {['Everything in CLI', 'Vault, AWS Secrets Manager and Doppler backends', 'Zero-knowledge cloud dashboard', 'Cross-repo blast radius'].map(tick)}
+              {['Everything in CLI', 'Vault, AWS Secrets Manager and Doppler backends', 'Zero-knowledge cloud dashboard', `${RETENTION_DAYS.pro}-day scan history`, 'Cross-repo blast radius'].map(tick)}
             </ul>
           </Plan>
 
@@ -67,6 +68,9 @@ function Pricing() {
             </ul>
           </Plan>
         </div>
+        <p className="mt-6 text-sm text-faint">
+          Cloud dashboard history is kept {RETENTION_DAYS.pro} days on Pro and {RETENTION_DAYS.free} days during the free beta. Older scans are deleted automatically. The CLI keeps everything on your machine.
+        </p>
       </main>
       <Footer />
     </>

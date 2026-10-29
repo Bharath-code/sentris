@@ -1,10 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { z } from 'zod'
 import { Severity } from '@/components/ui'
 import { getScan } from '@/lib/api'
 import { Panel, Table } from '@/components/panel'
 
 export const Route = createFileRoute('/app/scans/$id')({
-  loader: ({ params }) => getScan({ data: { id: params.id } }),
+  validateSearch: z.object({ offset: z.number().int().min(0).max(1_000_000).optional() }),
+  loaderDeps: ({ search }) => ({ offset: search.offset ?? 0 }),
+  loader: ({ params, deps }) => getScan({ data: { id: params.id, offset: deps.offset } }),
   component: ScanDetail,
   errorComponent: () => (
     <main className="container-page py-16 text-center text-muted">
@@ -14,7 +17,9 @@ export const Route = createFileRoute('/app/scans/$id')({
 })
 
 function ScanDetail() {
-  const { scan, findings } = Route.useLoaderData()
+  const { scan, findings, offset, total, pageSize } = Route.useLoaderData()
+  const { id } = Route.useParams()
+  const end = offset + findings.length
   return (
     <main className="container-page space-y-8 py-10">
       <div>
@@ -25,7 +30,7 @@ function ScanDetail() {
           {new Date(scan.createdAt).toLocaleString()}
         </p>
       </div>
-      <Panel title={`${findings.length} finding${findings.length === 1 ? '' : 's'}`} hint="No key characters are ever uploaded. Run sentris scan locally to see the match.">
+      <Panel title={`${total.toLocaleString()} finding${total === 1 ? '' : 's'}`} hint="No key characters are ever uploaded. Run sentris scan locally to see the match.">
         {findings.length === 0 ? (
           <p className="text-sm text-ok">Clean scan. Nothing leaked.</p>
         ) : (
@@ -38,6 +43,18 @@ function ScanDetail() {
               </tr>
             ))}
           </Table>
+        )}
+        {total > pageSize && (
+          <nav className="mt-4 flex items-center justify-between text-sm text-muted" aria-label="Findings pages">
+            <span className="tabular-nums">
+              {(offset + 1).toLocaleString()}–{end.toLocaleString()} of {total.toLocaleString()}
+              {end < total && ` · ${(total - end).toLocaleString()} more`}
+            </span>
+            <span className="flex gap-4">
+              {offset > 0 && <Link to="/app/scans/$id" params={{ id }} search={{ offset: Math.max(0, offset - pageSize) || undefined }} className="hover:text-fg">← Previous</Link>}
+              {end < total && <Link to="/app/scans/$id" params={{ id }} search={{ offset: offset + pageSize }} className="hover:text-fg">Next →</Link>}
+            </span>
+          </nav>
         )}
       </Panel>
       <p className="text-sm text-muted">

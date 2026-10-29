@@ -5,6 +5,7 @@ import { Button, CopyCommand, Severity, cx } from '@/components/ui'
 import { Panel, Table } from '@/components/panel'
 import { createKey, getOverview, openPortal, revokeKey, startCheckout } from '@/lib/api'
 import { loginCommand, site } from '@/lib/site'
+import { RECENT_SCANS, RETENTION_DAYS } from '@/server/guards'
 
 export const Route = createFileRoute('/app/')({
   validateSearch: z.object({ seats: z.number().int().min(1).max(500).optional(), checkout: z.string().optional() }),
@@ -42,7 +43,7 @@ function Dashboard() {
       {empty ? <Onboarding d={d} /> : <Stats d={d} />}
 
       {d.radius.length > 0 && (
-        <Panel title="Blast radius" hint="Same credential fingerprint found in more than one repository">
+        <Panel title="Blast radius" hint="Same credential fingerprint found in more than one repository. Shows the 50 widest.">
           <Table head={['Fingerprint', 'Rule', 'Severity', 'Repositories']}>
             {d.radius.map((r) => (
               <tr key={r.zk_fingerprint}>
@@ -57,7 +58,7 @@ function Dashboard() {
       )}
 
       {!empty && (
-        <Panel title="Recent scans">
+        <Panel title="Recent scans" hint={`Latest ${RECENT_SCANS}. Scans are kept ${RETENTION_DAYS.free} days on Free and ${RETENTION_DAYS.pro} days on Pro.`}>
           <Table head={['Repository', 'Branch', 'Files', 'Duration', 'Findings', '']}>
             {d.scans.map((s) => (
               <tr key={s.id} className="group">

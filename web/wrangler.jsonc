@@ -5,6 +5,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "src/server.ts",
   "observability": { "enabled": true },
+  "triggers": { "crons": ["17 3 * * *"] },
   "upload_source_maps": true,
   "assets": { "html_handling": "drop-trailing-slash" },
   "d1_databases": [

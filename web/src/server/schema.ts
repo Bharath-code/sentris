@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core'
 
 const ts = (name: string) => integer(name, { mode: 'timestamp_ms' })
 const now = () => new Date()
@@ -82,16 +82,20 @@ export const org = sqliteTable('org', {
   createdAt: ts('created_at').notNull().$defaultFn(now),
 })
 
-export const apiKey = sqliteTable('api_key', {
-  id: text('id').primaryKey(),
-  orgId: text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
-  name: text('name').notNull(),
-  preview: text('preview').notNull(),
-  hash: text('hash').notNull().unique(),
-  createdAt: ts('created_at').notNull().$defaultFn(now),
-  lastUsedAt: ts('last_used_at'),
-  revokedAt: ts('revoked_at'),
-})
+export const apiKey = sqliteTable(
+  'api_key',
+  {
+    id: text('id').primaryKey(),
+    orgId: text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    preview: text('preview').notNull(),
+    hash: text('hash').notNull().unique(),
+    createdAt: ts('created_at').notNull().$defaultFn(now),
+    lastUsedAt: ts('last_used_at'),
+    revokedAt: ts('revoked_at'),
+  },
+  (t) => [index('api_key_org').on(t.orgId)],
+)
 
 export const scan = sqliteTable(
   'scan',
@@ -126,5 +130,20 @@ export const finding = sqliteTable(
     preview: text('preview').notNull(),
     createdAt: ts('created_at').notNull().$defaultFn(now),
   },
-  (t) => [index('finding_org_fp').on(t.orgId, t.fingerprint), index('finding_scan').on(t.scanId)],
+  (t) => [// covering for the blast-radius scan: fingerprints seen in more than one repo, without touching the table
+    index('finding_org_fp_repo').on(t.orgId, t.fingerprint, t.repo), index('finding_scan').on(t.scanId)],
+)
+
+// Per-scan finding counts by lowercase severity, written with the scan, so dashboard totals never scan the finding table.
+// created_at is copied from the scan to keep the 30-day window a single-index range read.
+export const scanSeverity = sqliteTable(
+  'scan_severity',
+  {
+    scanId: text('scan_id').notNull().references(() => scan.id, { onDelete: 'cascade' }),
+    orgId: text('org_id').notNull().references(() => org.id, { onDelete: 'cascade' }),
+    severity: text('severity').notNull(),
+    n: integer('n').notNull(),
+    createdAt: ts('created_at').notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.scanId, t.severity] }), index('scan_severity_org_created').on(t.orgId, t.createdAt)],
 )

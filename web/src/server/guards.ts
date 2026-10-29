@@ -71,6 +71,11 @@ export const QUOTAS = {
   pro: { scans: 2_000, findings: 200_000 },
 } as const
 export const MAX_ACTIVE_KEYS = 20
+// How long scans and findings are kept; the nightly purge and the pricing page both read this
+// Dashboard list sizes, shown in the UI copy
+export const RECENT_SCANS = 25
+export const FINDINGS_PAGE = 200
+export const RETENTION_DAYS = { free: 30, pro: 90 } as const
 const DAY = 864e5
 
 type Usage = { scans: number; findings: number; oldest: number | null }

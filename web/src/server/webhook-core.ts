@@ -3,6 +3,7 @@ import { and, eq, ne } from 'drizzle-orm'
 import * as schema from './schema.ts'
 import type { Db } from './ingest-core.ts'
 import { shouldApply } from './guards.ts'
+import { event as logEvent, type Logger } from './log.ts'
 
 export const ACTIVE = new Set(['subscription.active', 'subscription.renewed', 'subscription.updated', 'subscription.plan_changed'])
 export const ENDED = new Set(['subscription.cancelled', 'subscription.expired', 'subscription.failed', 'subscription.on_hold'])
@@ -80,4 +81,30 @@ export async function applyWebhook(db: Db, evt: WebhookEvent, log: Pick<Console,
     throw err
   }
   return ok('ok')
+}
+
+type Unwrap = (body: string, headers: Record<string, string>) => { type: string; timestamp: string; data: unknown }
+
+// Every delivery ends in exactly one structured log line: outcome for handled ones, reason for rejected ones
+export async function handleWebhookRequest(request: Request, deps: { db: Db; unwrap: Unwrap; out?: Logger }): Promise<Response> {
+  const out = deps.out ?? console
+  const id = request.headers.get('webhook-id')
+  const reply = (status: number, outcome: string, extra: Record<string, string> = {}) => {
+    logEvent('webhook', status === 200 ? { id, status, outcome, ...extra } : { id, status, reason: outcome, ...extra }, out)
+    return new Response(outcome, { status })
+  }
+  const body = await request.text()
+  let evt: ReturnType<Unwrap>
+  try {
+    evt = deps.unwrap(body, Object.fromEntries(request.headers))
+  } catch {
+    return reply(401, 'invalid signature')
+  }
+  try {
+    const r = await applyWebhook(deps.db, { id, type: evt.type, timestamp: evt.timestamp, data: evt.data }, out as Pick<Console, 'error' | 'warn'>)
+    return reply(r.status, r.body, { type: evt.type })
+  } catch (err) {
+    out.error(JSON.stringify({ event: 'webhook', id, type: evt.type, status: 503, reason: 'transient failure', error: String(err) }))
+    return new Response('retry', { status: 503 })
+  }
 }
