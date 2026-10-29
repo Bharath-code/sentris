@@ -2,20 +2,13 @@
 uuid	trace_id: 5957c4ff-f872-4a9a-a384-231239c02189
 uuid	"request_id": "755f459a-af5f-4e1c-b890-f5862e5ccbf0",
 uuid	auth_key = "42ff9186-b23c-4349-8574-ea97c83373da"
-uuid	secret_key: 3b2cadfc-a8b6-42ab-9fb3-5f1fe9dce30e
 uuid	const trace_id = 'f0a5501a-eb7f-4575-9cd4-09a24154597f';
-uuid	user_token = "50073e33-15aa-4732-be90-995ec5fd1f93"
 uuid	"device_id": "33b9eaa8-656e-4a22-b091-97073204533c",
 uuid	client_id = "4ec3aeaf-2fba-4708-99cc-9501d8ebf515"
-uuid	const apiKey = '4ab72759-7ca5-4ceb-aca5-0ceca736fd70';
 uuid	const auth_key = '6c957cd7-df6f-416b-8a7f-348222b2ec70';
-uuid	user_token: 670d81b9-7962-4aa3-9f04-4813e1d1d934
 uuid	auth_key = "98fb4243-e48d-4ebb-93d6-01727d02447a"
-uuid	"api_key": "7799ba98-6c16-49c9-a262-820cd60dbc4a",
 uuid	const access_key = '4eb4c3db-a428-4eea-b0ee-4ebe701cb5dd';
-uuid	"secret_key": "17b9e949-c5b3-41b0-8989-73edb37a9d9e",
 uuid	"access_key": "6f521712-78d6-466e-b218-e5e4426a8a1d",
-uuid	user_token: f4ac4e81-b3e2-4427-a390-8f1243edeca9
 uuid	"request_id": "f9710504-ae75-430c-82a4-f9a02b6b2121",
 uuid	const auth_key = '43d573f8-7caf-46c0-9b8d-4e00d9a69cdd';
 uuid	"access_key": "81d05cc8-ffe3-4361-8506-6611268d9be8",

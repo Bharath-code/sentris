@@ -2,32 +2,32 @@
   "per_template": {
     "ini - quoted1": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "ini - quoted2": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "ini - unquoted1": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 192,
       "Gitleaks": 219
     },
     "ini - unquoted2": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 192,
       "Gitleaks": 219
     },
     "json - string": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "json - escaped newline in string": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 192,
       "Gitleaks": 219
     },
     "xml - element multiline": {
@@ -37,22 +37,22 @@
     },
     "yaml - singleline - unquoted": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 192,
       "Gitleaks": 219
     },
     "yaml - singleline - single quote": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "yaml - singleline - double quote": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "C#": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "go - normal": {
@@ -62,7 +62,7 @@
     },
     "go - short": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "go - backticks": {
@@ -72,12 +72,12 @@
     },
     "java": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "kotlin - notype": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "php - string concat": {
@@ -87,12 +87,12 @@
     },
     "python - single quote": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "python - double quote": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "misc - comma operator": {
@@ -102,27 +102,27 @@
     },
     "logstash": {
       "fixtures": 219,
-      "Sentris": 186,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "make - recursive assignment": {
       "fixtures": 219,
-      "Sentris": 190,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "make - simple assignment": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "make - shell assignment": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "make - evaluated shell assignment": {
       "fixtures": 219,
-      "Sentris": 189,
+      "Sentris": 193,
       "Gitleaks": 219
     },
     "make - conditional assignment": {
@@ -138,7 +138,7 @@
   },
   "fixtures": 5694,
   "recall": {
-    "Sentris": 0.816,
+    "Sentris": 0.828,
     "Gitleaks": 1.0
   },
   "per_rule": {
@@ -399,12 +399,12 @@
     },
     "heroku-api-key": {
       "fixtures": 52,
-      "Sentris": 43,
+      "Sentris": 48,
       "Gitleaks": 52
     },
     "hubspot-api-key": {
       "fixtures": 26,
-      "Sentris": 22,
+      "Sentris": 23,
       "Gitleaks": 26
     },
     "huggingface-access-token": {
@@ -439,7 +439,7 @@
     },
     "kucoin-access-token": {
       "fixtures": 52,
-      "Sentris": 24,
+      "Sentris": 44,
       "Gitleaks": 52
     },
     "launchdarkly-access-token": {
@@ -499,7 +499,7 @@
     },
     "messagebird-api-token": {
       "fixtures": 104,
-      "Sentris": 72,
+      "Sentris": 92,
       "Gitleaks": 104
     },
     "netlify-access-token": {
@@ -594,7 +594,7 @@
     },
     "sendbird-access-token": {
       "fixtures": 52,
-      "Sentris": 24,
+      "Sentris": 44,
       "Gitleaks": 52
     },
     "sendgrid-api-token": {
@@ -639,7 +639,7 @@
     },
     "snyk-api-token": {
       "fixtures": 26,
-      "Sentris": 22,
+      "Sentris": 23,
       "Gitleaks": 26
     },
     "sonar-api-token": {
@@ -654,7 +654,7 @@
     },
     "squarespace-access-token": {
       "fixtures": 26,
-      "Sentris": 22,
+      "Sentris": 23,
       "Gitleaks": 26
     },
     "stripe-access-token": {

@@ -119,6 +119,8 @@ const CASES: &[(&str, &str, bool)] = &[
     ("credential-assignment", "--password=\"{a:16}9!\"", false),
     ("credential-assignment", "hash_secret: '{h:40}'", false),
     ("basic-auth-header", "Authorization: \"Basic YXlsOnoxYXR1Zi1zaWZ6dnRxaQ==\"", false),
+    ("credential-assignment", "\"secret_key\": \"{U:0}\"", false),
+    ("credential-assignment-unquoted", "user_token: {U:0}", false),
     ("password-literal", "app_password = \"{a:6}#{d:3}\"", false),
     ("password-literal", "MasterUserPassword=\"cnrltkl\"", false),
     ("keyed-secret-value", "Key = {h:32}", false),

@@ -283,7 +283,10 @@ impl FalsePositiveFilter {
                 return true;
             }
             // Identifier-like values (KAS-ECC-CDH_P-521_C10): real tokens rarely contain 3+ separators
-            if rule_id != "generic-api-key" && Self::looks_like_label(token) {
+            if rule_id != "generic-api-key"
+                && !Self::is_standard_uuid(token)
+                && Self::looks_like_label(token)
+            {
                 return true;
             }
         }
@@ -291,7 +294,7 @@ impl FalsePositiveFilter {
         // 1. Generic API Key heuristics
         if is_generic_rule(rule_id) {
             // Check if token is a standard UUIDv4: 8-4-4-4-12 hex format
-            if Self::is_standard_uuid(token) {
+            if Self::is_standard_uuid(token) && !Self::name_says_secret(line_context, token) {
                 return true;
             }
 
@@ -528,6 +531,25 @@ impl FalsePositiveFilter {
             && !password.is_empty()
             && text.bytes().all(|b| (0x20..0x7f).contains(&b))
             && !placeholder.contains(&password.to_ascii_lowercase().as_str())
+    }
+
+    /// The assigned name itself marks the value as a credential (`api_token`, `clientSecret`, `db_password`),
+    /// as opposed to an identifier that merely contains "key" (`key_id`, `keyName`).
+    fn name_says_secret(line: &str, token: &str) -> bool {
+        let name = Self::assigned_name(line, token).to_ascii_lowercase();
+        [
+            "token",
+            "secret",
+            "passw",
+            "pwd",
+            "apikey",
+            "api_key",
+            "api-key",
+            "credential",
+        ]
+        .iter()
+        .any(|w| name.contains(w))
+            && !name.ends_with("id")
     }
 
     /// `ALICE_cf_sect571r1`, `KAS-ECC-CDH_P-521_C10`, `V1001_TODAY_SINGER`: separator-joined labels, not secrets.
