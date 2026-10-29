@@ -10,6 +10,7 @@ pub struct GitleaksMigrator;
 
 impl GitleaksMigrator {
     /// Parses a `.gitleaks.toml` configuration string into a native `Config` struct
+    #[allow(clippy::too_many_lines)]
     pub fn parse_gitleaks_toml(content: &str) -> Result<Config, SentrisError> {
         let mut rules = Vec::new();
         let mut ignore_paths = Vec::new();

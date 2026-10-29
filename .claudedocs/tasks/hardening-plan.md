@@ -229,21 +229,27 @@ Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 afte
 
 ## Phase 5: Performance & maintainability
 
-### T5.1 ⬜ D1 indexes & rollups (M)
+### T5.1 ✅ D1 indexes & rollups (M)
 - Indexes: `finding(org_id, severity)`, `api_key(org_id)`, `finding(org_id, created_at)`; dashboard severity counts from a per-scan rollup instead of scanning all findings.
 - **AC:** `EXPLAIN QUERY PLAN` shows index use on dashboard queries · `/app` overview < 150 ms server time with 100k findings seeded.
+- **Done (2026-10-29), migration `0003_rollups.sql` (not yet applied to prod D1):** `scan_severity` per-scan rollup written in the ingest batch (backfilled for old scans), `api_key(org_id)` index, and `finding_org_fp` widened to `(org_id, fingerprint, repo)` so the blast-radius scan is index-only (two-step query). Skipped the plan's `finding(org_id, severity)` / `finding(org_id, created_at)` indexes: no query uses them after the rollup, and every index multiplies D1 row-write cost per finding. `overview.test.ts` asserts the plans and measured the overview at ~45 ms median over 100k seeded findings in node:sqlite (a laptop, not D1: re-check on D1 after deploy).
 
-### T5.2 ⬜ Retention + pagination (M)
+### T5.2 ✅ Retention + pagination (M)
 - Cron trigger: delete findings older than plan retention (free 30 d, pro 90 d); `getScan` paginated with "N more" indicator; overview limits documented.
 - **AC:** seeded old rows removed by the job (test) · scan with 1,200 findings pageable · retention stated on pricing page.
+- **Done:** `scheduled` handler runs `purgeExpired` daily (`17 3 * * *` in `wrangler.jsonc`), deleting scans past plan retention in batches of 100 (cascades to findings and rollups) plus `webhook_event` rows older than 30 days. `getScanPage` pages 200 findings, worst first, with a stable order; scan detail shows "N more" and Previous/Next. Pricing and dashboard copy read `RETENTION_DAYS`. Cron has not fired on a real D1 yet.
 
-### T5.3 ⬜ Dedupe & structure (M)
+### T5.3 ◐ Dedupe & structure (M)
 - Backend trait + shared helpers; remove `unwrap`/slice panics on external data; split any file >400 lines (`cli/handlers/*`, `reporter/webhook/mod.rs`).
 - **AC:** no function >50 lines or >5 branches in touched files (clippy cognitive-complexity lint on); `cargo clippy -- -D warnings -W clippy::unwrap_used` passes outside tests.
+- **Done:** `unwrap_used = deny` in `Cargo.toml` (2 real unwraps fixed: audit append, rollback target); `cli/handlers` split into `scan`/`scan_output`/`remediate`/`quarantine`/`auth`/`cloud`/`audit`/`review` with shared `die`/`fail`/`print_json`/`record_audit_event` helpers, handler functions now 100 lines or less, and all but four under 50 (`handle_remediate`, `handle_audit`'s text printer, the `execute` dispatch match, `format_discord_card`); `reporter/webhook` split into `mod`/`slack`/`discord`. 162 lib + 25 integration tests unchanged and green; backend trait already existed (T1.2).
+- **Not done:** the 50-line rule is not enforced repo-wide. `too_many_lines` is on at 100 lines and 13 older functions carry an explicit `#[allow]` (`audit/vanta`, `cloud/team`, `config/gitleaks_migrator`, `config/mod`, `detector/false_positives`, `detector/patterns` (rule table), `git/quarantine`, `lsp/mod`, `mcp/tools`, `remediator/mod`, `reporter/mod`, `scanner/mod`, `tui/ui`). No cognitive-complexity lint (it is nursery and flags 2 functions at its default). Files still >400 lines: `false_positives`, `detector/mod`, `cloud/client`, `patterns`, `remediator/mod`, `lsp/mod`, `mcp/tools`, `scanner/mod`, `git/mod`, `gitleaks_migrator`, `tui/ui`, `baseline`.
 
-### T5.4 ⬜ Observability (S)
+### T5.4 ◐ Observability (S)
 - Structured logs for webhook outcomes, 401/402/429 counts; Workers observability alert on 5xx rate.
 - **AC:** forced bad webhook appears in logs with reason; alert configured.
+- **Done:** one JSON line per ingest (`event`, `status`, `reason`), webhook (`outcome` or `reason`, delivery id, type) and retention run, via `log.ts`; no key material or finding content is logged. `webhook.test.ts` forces a bad signature and a DB failure and asserts the lines. 401/402/429 counts are a Workers observability query over `status`.
+- **👤 Still manual:** the 5xx-rate alert (Cloudflare dashboard → Notifications / Observability alert); `wrangler.jsonc` cannot define it.
 
 ---
 

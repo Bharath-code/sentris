@@ -95,6 +95,7 @@ impl Scanner {
     }
 
     /// Scans a target path recursively using Rayon parallelism and the `ignore` crate.
+    #[allow(clippy::too_many_lines)]
     pub fn scan_path<P: AsRef<Path>>(&self, root_path: P) -> Result<ScanReport, SentrisError> {
         let start_time = Instant::now();
         let path = root_path.as_ref();

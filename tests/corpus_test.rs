@@ -4,7 +4,7 @@
 //! Gates: every rule that fires must keep precision >= 0.9; overall recall may not drop more than 2 points
 //! below tests/corpus/baseline_recall.txt. Set CORPUS_DUMP=<dir> to write the positives for other scanners.
 
-#![allow(clippy::unwrap_used)] // integration-test helpers; the lint is for shipped code
+#![allow(clippy::unwrap_used, clippy::too_many_lines)] // integration-test helpers; the lint is for shipped code
 
 use sentris::detector::DetectorEngine;
 use std::collections::BTreeMap;

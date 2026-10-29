@@ -133,6 +133,7 @@ backup_branch = true
     }
 
     /// Zero-dependency, safe TOML parser tailored for Sentris configuration
+    #[allow(clippy::too_many_lines)]
     pub fn from_toml_str(content: &str) -> Result<Self, SentrisError> {
         let mut config = Config::default();
 

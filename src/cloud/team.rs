@@ -135,6 +135,7 @@ impl TeamInfo {
     }
 
     /// Format and render the team seat overview and member roster
+    #[allow(clippy::too_many_lines)]
     pub fn render_terminal(&self, no_color: bool) -> String {
         let mut out = String::new();
 

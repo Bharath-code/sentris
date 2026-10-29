@@ -37,6 +37,7 @@ tempfile = "3.17"
 
 [lints.clippy]
 unwrap_used = "deny"
+too_many_lines = "warn"
 
 [profile.release]
 opt-level = 3

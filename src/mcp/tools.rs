@@ -161,6 +161,7 @@ impl McpServer {
         })
     }
 
+    #[allow(clippy::too_many_lines)]
     pub(crate) fn call_tool(params: Option<&Value>, offline: bool) -> Result<Value, (i32, String)> {
         let params = params.ok_or((-32602, "Missing params object".to_string()))?;
         let name = params

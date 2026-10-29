@@ -15,6 +15,7 @@ pub struct Reporter;
 
 impl Reporter {
     /// Renders a beautiful terminal table and summary of findings with quiet and no_color support
+    #[allow(clippy::too_many_lines)]
     pub fn print_terminal_report(report: &ScanReport, quiet: bool, mut no_color: bool) {
         if std::env::var_os("NO_COLOR").is_some() {
             no_color = true;
