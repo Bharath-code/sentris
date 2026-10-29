@@ -37,17 +37,20 @@ pub fn handle_hook(print_config: bool, fail_closed: bool) {
 }
 
 fn run() -> Result<Verdict, Failure> {
-    let mut raw = String::new();
+    let mut bytes = Vec::new();
     std::io::stdin()
         .take(MAX_INPUT_BYTES + 1)
-        .read_to_string(&mut raw)
+        .read_to_end(&mut bytes)
         .map_err(|e| Failure::Soft(format!("cannot read stdin: {e}")))?;
-    if raw.len() as u64 > MAX_INPUT_BYTES {
+    if bytes.len() as u64 > MAX_INPUT_BYTES {
         return Err(Failure::Block(
             "the input is too large to inspect (over 8 MiB); split it into smaller pieces"
                 .to_string(),
         ));
     }
+    let raw = String::from_utf8(bytes).map_err(|_| {
+        Failure::Block("the input is not valid UTF-8, so it cannot be inspected".to_string())
+    })?;
     let input: serde_json::Value = serde_json::from_str(&raw)
         .map_err(|e| Failure::Soft(format!("input is not valid JSON: {e}")))?;
     let scanner = Scanner::trusted()

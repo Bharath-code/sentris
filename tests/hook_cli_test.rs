@@ -129,3 +129,22 @@ fn oversize_input_is_blocked_even_when_failing_open() {
     assert_eq!(out.status.code(), Some(2));
     assert!(String::from_utf8_lossy(&out.stderr).contains("too large"));
 }
+
+#[test]
+fn input_that_is_not_utf8_is_blocked_even_when_failing_open() {
+    let mut child = Command::new(PathBuf::from(env!("CARGO_BIN_EXE_sentris")))
+        .arg("hook")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(&[0xff, 0xfe, 0x00, 0xc3])
+        .unwrap();
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(2));
+}
