@@ -22,6 +22,8 @@ pub struct Investigation {
     pub supported: bool,
     pub exposure: Option<Exposure>,
     pub since: Option<u64>,
+    /// First-exposure time usable as a label: `None` when unknown or not credible (author dates are forgeable and may lie in the future).
+    pub exposure_at: Option<u64>,
     pub usage: Option<UsageReport>,
     pub known_ips: Vec<String>,
 }
@@ -59,6 +61,7 @@ where
         supported: finding.rule_id == AWS_RULE,
         exposure: None,
         since: None,
+        exposure_at: None,
         usage: None,
         known_ips: known_ips.to_vec(),
     };
@@ -68,6 +71,11 @@ where
     let exposure = window::first_exposure(repo, &finding.fingerprint)?;
     // Commit dates are attacker-controlled metadata: never let them narrow the query. They only label events as before/after exposure.
     let since = now.saturating_sub(LOOKBACK_SECS);
+    inv.exposure_at = exposure
+        .start
+        .as_ref()
+        .map(|s| s.author_time)
+        .filter(|t| *t <= now);
     inv.usage = Some(usage(secret, since)?);
     inv.exposure = Some(exposure);
     inv.since = Some(since);
@@ -100,9 +108,9 @@ pub fn investigate_target(
     result.map(Some)
 }
 
-/// `Some(true)` when the group's latest use is at or after the first-exposure time; `None` when that time is unknown.
+/// `Some(true)` only when the group's latest use is at or after a credible first-exposure time. Never `Some(false)`: a forged commit date must not be able to label real use "before exposure".
 fn after_exposure(g: &UsageGroup, exposure_at: Option<u64>) -> Option<bool> {
-    exposure_at.map(|t| g.last >= t)
+    exposure_at.filter(|t| g.last >= *t).map(|_| true)
 }
 
 fn group_json(g: &UsageGroup, exposure_at: Option<u64>) -> Value {
@@ -145,7 +153,7 @@ impl Investigation {
             "author_time": exposure.start.as_ref().map(|s| s.author_time),
             "note": exposure.note,
         });
-        let exposure_at = exposure.start.as_ref().map(|s| s.author_time);
+        let exposure_at = self.exposure_at;
         let groups: Vec<Value> = usage
             .groups(&self.known_ips)
             .iter()
@@ -192,12 +200,11 @@ impl Investigation {
                 l.region
             ));
         }
-        let exposure_at = exposure.start.as_ref().map(|s| s.author_time);
+        let exposure_at = self.exposure_at;
         for g in usage.groups(&self.known_ips) {
             let flag = if g.unknown_ip { "  UNKNOWN IP" } else { "" };
             let when = match after_exposure(&g, exposure_at) {
-                Some(true) => "  after exposure",
-                Some(false) => "  before exposure",
+                Some(_) => "  after exposure",
                 None => "",
             };
             s.push_str(&format!(
@@ -278,6 +285,7 @@ mod tests {
                 note: window::TIME_NOTE.into(),
             }),
             since: Some(1_790_000_000),
+            exposure_at: Some(1_790_000_000),
             usage: Some(usage),
             known_ips: vec!["203.0.113.10".into()],
         }
