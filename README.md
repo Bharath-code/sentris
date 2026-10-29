@@ -170,7 +170,7 @@ brew install sentris-security/tap/sentris
 
 #### One-Line Shell Installer (macOS & Linux)
 ```bash
-curl -fsSL https://sentris.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Bharath-code/sentris/master/install.sh | sh
 ```
 
 #### Cargo (Rust)

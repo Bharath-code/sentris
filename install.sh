@@ -1,10 +1,10 @@
 #!/bin/sh
 # --- Sentris One-Line Automated Installer ---
-# Usage: curl -fsSL https://sentris.dev/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/Bharath-code/sentris/master/install.sh | sh
 
 set -e
 
-REPO="sentris-security/sentris"
+REPO="Bharath-code/sentris"
 VERSION="v0.1.0"
 
 echo "⚡ Installing Sentris Secret Scanner (${VERSION})..."
