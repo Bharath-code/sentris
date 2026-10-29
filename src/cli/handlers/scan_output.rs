@@ -191,7 +191,7 @@ pub(super) fn sync_cloud_report(cli: &Cli, report: &ScanReport) {
     }
 }
 
-fn print_blast_radius(insights: &[MultiRepoBlastRadiusInsight]) {
+pub(super) fn print_blast_radius(insights: &[MultiRepoBlastRadiusInsight]) {
     let multi_repo: Vec<_> = insights
         .iter()
         .filter(|i| i.affected_repos.len() > 1)

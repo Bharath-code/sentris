@@ -1,4 +1,5 @@
 pub mod audit;
+pub mod auth;
 pub mod cloud;
 pub mod quarantine;
 pub mod remediate;
@@ -94,7 +95,7 @@ pub fn execute(cli: Cli) {
             output,
             force,
         } => audit::handle_migrate_gitleaks(&cli, input, output, force),
-        Commands::Auth { subcommand } => cloud::handle_auth(&cli, subcommand),
+        Commands::Auth { subcommand } => auth::handle_auth(&cli, subcommand),
         Commands::Sync { path, repo, branch } => cloud::handle_sync(&cli, path, repo, branch),
         Commands::Team => cloud::handle_team(&cli),
         Commands::Mcp { print_config } => cloud::handle_mcp(&cli, print_config),
