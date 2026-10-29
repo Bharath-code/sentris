@@ -285,3 +285,16 @@ url	curl https://api.internal.net:8443/v1/health
 url	http://localhost:3000/callback?code=abc123
 url	https://<user>:<token>@github.com/org/repo
 url	https://{{ user }}:{{ pass }}@registry.internal.net/
+credata	PeerKey=ALICE_cf_sect283k1_PUB
+credata	PublicKey=KAS-ECC-CDH_P-521_C16-Peer-PUBLIC
+credata	PrivateKey=BOB_cf_brainpoolP320r1
+credata	exports.assertTSBigIntKeyword = assertTSBigIntKeyword;
+credata	        asymmetricKeyType: AsymmetricKeyType;
+credata	<Style x:Key="TreeViewItem_NonStyle"
+credata	Key = 2718281828459045235360287471352631415926535897932384626433832795
+credata	"KeyMaterialId": "0b7fd7ddbac6eef27907413567cad8c810e2883dc8a7534067a82ee1142fc1e6"
+credata	const pubkey256 = 'pL1+qb9HTMRZJmuC/bB/ZI9d302BYrrqiVuRyW+DGrU=';
+credata	'key': 'V1001_TODAY_SINGER'
+credata	curl -H "Authorization: Basic dXNlcjpwYXNzd29yZA==" https://api.internal.net
+credata	// Basic Authentication is described in RFC 7617 section two
+credata	Basic authentication should be enabled for the management endpoint

@@ -15,11 +15,21 @@ fn secret_group<'h>(caps: &regex::Captures<'h>) -> Option<regex::Match<'h>> {
     caps.iter().skip(1).flatten().next().or_else(|| caps.get(0))
 }
 
+/// Shannon entropy is capped by alphabet size (hex tops out at 4.0), so hex literals get a lower bar.
+fn effective_min_entropy(min_entropy: f64, candidate: &str) -> f64 {
+    if candidate.len() >= 16 && candidate.bytes().all(|b| b.is_ascii_hexdigit()) {
+        min_entropy.min(3.0)
+    } else {
+        min_entropy
+    }
+}
+
 /// 0 = vendor-specific, 1 = keyed generic, 2 = broad generic
 fn rule_tier(rule_id: &str) -> u8 {
     match rule_id {
         "generic-api-key" | "url-basic-auth" => 1,
         "credential-assignment" | "credential-assignment-unquoted" => 2,
+        "keyed-secret-value" => 3,
         _ => 0,
     }
 }
@@ -298,7 +308,7 @@ impl DetectorEngine {
 
                 // Check Shannon entropy threshold
                 let entropy = entropy::calculate_shannon_entropy(matched_str);
-                if entropy < rule.min_entropy {
+                if entropy < effective_min_entropy(rule.min_entropy, matched_str) {
                     continue;
                 }
 

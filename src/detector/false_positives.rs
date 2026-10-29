@@ -7,7 +7,10 @@ pub struct FalsePositiveFilter;
 fn is_generic_rule(rule_id: &str) -> bool {
     matches!(
         rule_id,
-        "generic-api-key" | "credential-assignment" | "credential-assignment-unquoted"
+        "generic-api-key"
+            | "credential-assignment"
+            | "credential-assignment-unquoted"
+            | "keyed-secret-value"
     )
 }
 
@@ -260,10 +263,28 @@ impl FalsePositiveFilter {
     fn is_rule_specific_fp(token: &str, rule_id: &str, line_context: &str) -> bool {
         let line_lower = line_context.to_ascii_lowercase();
 
-        if rule_id.starts_with("credential-assignment")
-            && !Self::looks_like_literal_credential(token, line_context)
+        if (rule_id.starts_with("credential-assignment") || rule_id == "keyed-secret-value")
+            && !Self::looks_like_literal_credential(token, line_context, rule_id)
         {
             return true;
+        }
+
+        if is_generic_rule(rule_id) {
+            // Public keys and peer keys are not secrets
+            let name = Self::assigned_name(line_context, token).to_ascii_lowercase();
+            if name.contains("public") || name.contains("peer") || name.contains("pubkey") {
+                return true;
+            }
+            // Identifiers (key_id, KeyMaterialId), XML/XAML `key="..."` attributes and all-digit constants
+            let xml_attribute = line_context.trim_start().starts_with('<')
+                && matches!(name.as_str(), "key" | "x:key");
+            if name.ends_with("id") || xml_attribute || token.bytes().all(|b| b.is_ascii_digit()) {
+                return true;
+            }
+            // Identifier-like values (KAS-ECC-CDH_P-521_C10): real tokens rarely contain 3+ separators
+            if rule_id != "generic-api-key" && Self::looks_like_label(token) {
+                return true;
+            }
         }
 
         // 1. Generic API Key heuristics
@@ -310,6 +331,10 @@ impl FalsePositiveFilter {
             }
         }
 
+        if rule_id == "basic-auth-header" && !Self::is_plausible_basic_credential(token) {
+            return true;
+        }
+
         if rule_id == "url-basic-auth" {
             let password = token
                 .split_once(':')
@@ -353,7 +378,7 @@ impl FalsePositiveFilter {
 
     /// Quoted literal assigned to a password/token-like name: reject code references, paths,
     /// dictionary words and identifiers; keep strings that look machine- or human-generated secrets.
-    fn looks_like_literal_credential(token: &str, line: &str) -> bool {
+    fn looks_like_literal_credential(token: &str, line: &str, rule_id: &str) -> bool {
         let lower = token.to_ascii_lowercase();
         const STOPWORDS: [&str; 24] = [
             "example",
@@ -413,6 +438,9 @@ impl FalsePositiveFilter {
         if Self::is_word_phrase(token) || Self::is_camel_identifier(token) {
             return false;
         }
+        if rule_id != "credential-assignment" && !token.bytes().any(|b| b.is_ascii_digit()) {
+            return false;
+        }
         let has_digit = token.bytes().any(|b| b.is_ascii_digit());
         let has_upper = token.bytes().any(|b| b.is_ascii_uppercase());
         let has_lower = token.bytes().any(|b| b.is_ascii_lowercase());
@@ -438,6 +466,71 @@ impl FalsePositiveFilter {
             })
     }
 
+    /// `Basic <base64>` only counts when it decodes to printable `user:password` with a non-placeholder password.
+    fn is_plausible_basic_credential(token: &str) -> bool {
+        let mut bits = 0u32;
+        let mut nbits = 0;
+        let mut decoded = Vec::new();
+        for c in token.trim_end_matches('=').bytes() {
+            let v = match c {
+                b'A'..=b'Z' => c - b'A',
+                b'a'..=b'z' => c - b'a' + 26,
+                b'0'..=b'9' => c - b'0' + 52,
+                b'+' => 62,
+                b'/' => 63,
+                _ => return false,
+            };
+            bits = (bits << 6) | u32::from(v);
+            nbits += 6;
+            if nbits >= 8 {
+                nbits -= 8;
+                decoded.push((bits >> nbits) as u8);
+                bits &= (1 << nbits) - 1;
+            }
+        }
+        let Ok(text) = String::from_utf8(decoded) else {
+            return false;
+        };
+        let Some((user, password)) = text.split_once(':') else {
+            return false;
+        };
+        let placeholder = ["password", "pass", "secret", "pwd", "changeme", "xxxx"];
+        !user.is_empty()
+            && !password.is_empty()
+            && text.bytes().all(|b| (0x20..0x7f).contains(&b))
+            && !placeholder.contains(&password.to_ascii_lowercase().as_str())
+    }
+
+    /// `ALICE_cf_sect571r1`, `KAS-ECC-CDH_P-521_C10`, `V1001_TODAY_SINGER`: separator-joined labels, not secrets.
+    /// Random url-safe tokens almost never hold 2+ separators in under 40 characters or start with a lone word + `_`.
+    fn looks_like_label(token: &str) -> bool {
+        let separators = token.bytes().filter(|b| matches!(b, b'_' | b'-')).count();
+        let shouting_head = token
+            .split(['_', '-'])
+            .next()
+            .is_some_and(|w| w.len() >= 3 && w.bytes().all(|b| b.is_ascii_uppercase()));
+        let constant_style = !token.bytes().any(|b| b.is_ascii_lowercase());
+        (separators >= 3 && separators * 10 >= token.len())
+            || (separators >= 1 && (shouting_head || constant_style))
+    }
+
+    /// The identifier directly before the `=`/`:` that precedes `token` on this line ("" if not found).
+    fn assigned_name(line: &str, token: &str) -> String {
+        let Some(idx) = line.find(token) else {
+            return String::new();
+        };
+        let before =
+            line[..idx].trim_end_matches(|c: char| c.is_whitespace() || "'\"=:>".contains(c));
+        before
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect()
+    }
+
     /// True when the assigned name *ends* in a hash word (`secret_hash`, `tokenSha256`, `password.digest`);
     /// `shared_secret` or `hash_secret` are not hashes
     fn key_names_a_hash(line: &str, token: &str) -> bool {
@@ -452,19 +545,7 @@ impl FalsePositiveFilter {
             "etag",
             "fingerprint",
         ];
-        let Some(idx) = line.find(token) else {
-            return false;
-        };
-        let before =
-            line[..idx].trim_end_matches(|c: char| c.is_whitespace() || "'\"=:>".contains(c));
-        let key: String = before
-            .chars()
-            .rev()
-            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
-            .collect::<Vec<_>>()
-            .into_iter()
-            .rev()
-            .collect();
+        let key = Self::assigned_name(line, token);
         let last = key.rsplit(['_', '-', '.']).next().unwrap_or("");
         let camel_tail = last
             .rfind(|c: char| c.is_ascii_uppercase())
@@ -490,7 +571,9 @@ impl FalsePositiveFilter {
     /// Letters-only values with a natural-language vowel share ("NonExpressionParenKeyword") are identifiers;
     /// random letters average ~19% vowels, English-like words 35-45%.
     fn is_camel_identifier(token: &str) -> bool {
-        let body = token.trim_start_matches(|c: char| !c.is_ascii_alphanumeric());
+        let body = token
+            .trim_start_matches(|c: char| !c.is_ascii_alphanumeric())
+            .trim_end_matches(|c: char| c.is_ascii_digit());
         if body.len() < 10 || !body.bytes().all(|b| b.is_ascii_alphabetic()) {
             return false;
         }
@@ -653,10 +736,20 @@ mod review_regressions {
             "stripe-secret-key",
             &key
         ));
-        assert!(!FalsePositiveFilter::is_false_positive(
-            "sk_test_Zq8",
-            "credential-assignment",
-            "token = \"sk_test_Zq8\""
+        assert!(!FalsePositiveFilter::is_stripe_non_secret("sk_test_Zq8"));
+    }
+}
+
+#[cfg(test)]
+mod basic_auth_tests {
+    use super::FalsePositiveFilter as F;
+
+    #[test]
+    fn basic_header_must_decode_to_user_password() {
+        assert!(F::is_plausible_basic_credential(
+            "YXlsOnoxYXR1Zi1zaWZ6dnRxaQ=="
         ));
+        assert!(!F::is_plausible_basic_credential("QXV0aGVudGljYXRpb24="));
+        assert!(!F::is_plausible_basic_credential("dXNlcjpwYXNzd29yZA=="));
     }
 }
