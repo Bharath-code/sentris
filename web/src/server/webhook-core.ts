@@ -44,7 +44,9 @@ export async function applyWebhook(db: Db, evt: WebhookEvent, log: Pick<Console,
     log.warn('webhook: unknown org', { id: evt.id, subscription: s.subscription_id })
     return ok('unknown org')
   }
-  if (!shouldApply(org, s.subscription_id, ending, at)) return ok('stale')
+  // updated/plan_changed also fire for pending or failed subscriptions, so entitlement follows status, not event type
+  const down = ending || s.status !== 'active'
+  if (!shouldApply(org, s.subscription_id, down, at)) return ok('stale')
 
   const taken = await db.query.org.findFirst({
     where: and(eq(schema.org.dodoSubscriptionId, s.subscription_id), ne(schema.org.id, org.id)),
@@ -58,8 +60,8 @@ export async function applyWebhook(db: Db, evt: WebhookEvent, log: Pick<Console,
     .update(schema.org)
     .set({
       billingEventAt: at,
-      plan: ending ? 'free' : 'pro',
-      seats: ending ? 1 : s.quantity,
+      plan: down ? 'free' : 'pro',
+      seats: down ? 1 : s.quantity,
       subscriptionStatus: s.status,
       dodoCustomerId: s.customer.customer_id,
       dodoSubscriptionId: s.subscription_id,

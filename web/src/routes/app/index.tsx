@@ -82,11 +82,14 @@ function Dashboard() {
 
 function PlanBadge({ org }: { org: Data['org'] }) {
   const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const manage = async () => {
     setBusy(true)
+    setError(null)
     try {
       window.location.href = (await openPortal()).url
-    } catch {
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not open billing')
       setBusy(false)
     }
   }
@@ -98,6 +101,7 @@ function PlanBadge({ org }: { org: Data['org'] }) {
       {org.hasBilling && (
         <button onClick={manage} disabled={busy} className="text-muted hover:text-fg disabled:opacity-50">Manage billing</button>
       )}
+      {error && <span className="text-xs text-crit">{error}</span>}
     </div>
   )
 }

@@ -37,6 +37,21 @@ test('activation upgrades the org and a cancel downgrades it', async () => {
   assert.deepEqual([(await org()).plan, (await org()).seats], ['free', 1])
 })
 
+test('an updated event for a failed or pending subscription never grants pro', async () => {
+  const { db, org } = await setup()
+  for (const [i, status] of ['failed', 'pending'].entries()) {
+    await applyWebhook(db, evt({ id: `wh_${i}`, type: 'subscription.updated', timestamp: `2026-11-01T00:00:0${i}Z`, data: sub({ status }) }), quiet)
+    assert.deepEqual([(await org()).plan, (await org()).seats], ['free', 1])
+  }
+})
+
+test('a failed attempt on an old subscription cannot downgrade the current active one', async () => {
+  const { db, org } = await setup()
+  await applyWebhook(db, evt(), quiet)
+  await applyWebhook(db, evt({ id: 'wh_2', type: 'subscription.updated', timestamp: '2026-11-02T00:00:00Z', data: sub({ subscription_id: 'sub_old', status: 'failed' }) }), quiet)
+  assert.deepEqual([(await org()).plan, (await org()).dodoSubscriptionId], ['pro', 'sub_1'])
+})
+
 test('malformed payloads are acknowledged and logged without touching the org', async () => {
   const { db, org } = await setup()
   for (const data of [sub({ customer: null }), sub({ customer: undefined }), sub({ quantity: 'x' }), sub({ next_billing_date: 'not a date' }), null, 'junk']) {
