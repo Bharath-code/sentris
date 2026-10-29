@@ -2,6 +2,7 @@ pub mod audit;
 pub mod auth;
 pub mod cloud;
 pub mod hook;
+pub mod investigate;
 pub mod quarantine;
 pub mod remediate;
 pub mod review;
@@ -84,6 +85,10 @@ pub fn execute(cli: Cli) {
             print_config,
             fail_closed,
         } => hook::handle_hook(print_config, fail_closed),
+        Commands::Investigate {
+            finding_id,
+            known_ips,
+        } => investigate::handle_investigate(&cli, finding_id, known_ips),
         Commands::Rotate { subcommand } => rotate::handle_rotate(&cli, subcommand),
         Commands::Quarantine { finding_id, branch } => {
             quarantine::handle_quarantine(&cli, finding_id, branch)

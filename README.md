@@ -283,6 +283,11 @@ sentris remediate config/aws.py --rotate --yes
 sentris rotate status
 sentris rotate finish <rot_id>      # deactivates the old key; refuses inside the grace window
 sentris rotate undo <rot_id>        # reactivates the old key, deletes the new one
+
+# Was a leaked AWS key used? Read-only: first commit containing it + CloudTrail event history for it.
+# Needs cloudtrail:LookupEvents on your own AWS credentials. Management events only, last 90 days;
+# an empty result is not evidence the key went unused. Other providers: "no forensics yet".
+sentris investigate config/aws.py --known-ip 203.0.113.10
 ```
 
 #### 1-Click Atomic Rollback
@@ -317,7 +322,7 @@ sentris team --json
 ```
 
 #### Model Context Protocol (`sentris mcp`) — 9 Tools, 3 Resources & 2 Prompts
-Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, `sentris_redact_text`, `sentris_rotate_status`, `sentris_rotate_finish`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
+Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, `sentris_redact_text`, `sentris_rotate_status`, `sentris_rotate_finish`, `sentris_investigate`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
 ```bash
 # Print ready-to-paste mcpServers JSON for Claude Code, Cursor, Windsurf & Antigravity
 sentris mcp --print-config

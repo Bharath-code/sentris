@@ -7,6 +7,7 @@ pub mod error;
 pub mod fsutil;
 pub mod git;
 pub mod hook;
+pub mod investigate;
 pub mod keystore;
 pub mod lsp;
 pub mod mcp;

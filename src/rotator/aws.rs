@@ -52,7 +52,7 @@ impl AwsCli {
         )))
     }
 
-    fn json(&self, args: &[&str]) -> Result<serde_json::Value, SentrisError> {
+    pub(crate) fn json(&self, args: &[&str]) -> Result<serde_json::Value, SentrisError> {
         let mut raw = self.run(args)?;
         let parsed = serde_json::from_str(&raw);
         Remediator::zeroize_secret_string(&mut raw);
