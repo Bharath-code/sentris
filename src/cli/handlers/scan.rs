@@ -2,18 +2,16 @@ use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use super::die;
 use super::scan_output::{
     dispatch_webhook, render_scan_report, sync_cloud_report, verify_findings_live,
 };
-use crate::audit::{AuditAction, AuditLedger};
+use super::{die, record_audit_event};
+use crate::audit::AuditAction;
 use crate::cli::{Cli, OutputFormat};
 use crate::detector::baseline::BaselineFile;
 use crate::git::GitManager;
 use crate::model::{ScanReport, Severity};
 use crate::scanner::Scanner;
-
-const AUDIT_LEDGER_PATH: &str = ".sentris/audit_ledger.json";
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle_scan(
@@ -171,12 +169,4 @@ fn record_scan_audit(
             "fail_on_secret": fail_on_secret,
         }),
     );
-}
-
-/// Best-effort append to the SOC 2 audit ledger; a ledger problem never fails a scan.
-fn record_audit_event(action: AuditAction, details: serde_json::Value) {
-    if let Ok(mut ledger) = AuditLedger::load_or_init(AUDIT_LEDGER_PATH) {
-        let _ = ledger.record_event(action, details);
-        let _ = ledger.save();
-    }
 }

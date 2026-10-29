@@ -1,5 +1,6 @@
 pub mod audit;
 pub mod cloud;
+pub mod quarantine;
 pub mod remediate;
 pub mod review;
 pub mod scan;
@@ -8,6 +9,24 @@ mod scan_output;
 use owo_colors::OwoColorize;
 
 use crate::cli::{Cli, Commands};
+
+const AUDIT_LEDGER_PATH: &str = ".sentris/audit_ledger.json";
+
+/// Best-effort append to the SOC 2 audit ledger; a ledger problem never fails the command.
+pub(super) fn record_audit_event(action: crate::audit::AuditAction, details: serde_json::Value) {
+    if let Ok(mut ledger) = crate::audit::AuditLedger::load_or_init(AUDIT_LEDGER_PATH) {
+        let _ = ledger.record_event(action, details);
+        let _ = ledger.save();
+    }
+}
+
+/// Pretty-prints a machine-readable (agent mode) result to stdout.
+pub(super) fn print_json(value: serde_json::Value) {
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&value).unwrap_or_default()
+    );
+}
 
 /// Prints `ERROR: <context>: <err>` to stderr and exits with status 1.
 pub(super) fn die(context: &str, err: impl std::fmt::Display) -> ! {
@@ -59,7 +78,7 @@ pub fn execute(cli: Cli) {
         } => remediate::handle_remediate(&cli, finding_id, dry_run, yes, backend, rotate, all),
         Commands::Rollback { session } => remediate::handle_rollback(&cli, session),
         Commands::Quarantine { finding_id, branch } => {
-            remediate::handle_quarantine(&cli, finding_id, branch)
+            quarantine::handle_quarantine(&cli, finding_id, branch)
         }
         Commands::Completions { shell } => audit::handle_completions(shell),
         Commands::Init { force } => audit::handle_init(force),
@@ -82,4 +101,10 @@ pub fn execute(cli: Cli) {
         Commands::Lsp => cloud::handle_lsp(),
         Commands::Agent { setup, path } => cloud::handle_agent(setup, path),
     }
+}
+
+/// Prints `ERROR: <message>` to stderr and exits with status 1.
+pub(super) fn fail(message: &str) -> ! {
+    eprintln!("{} {}", "ERROR:".red().bold(), message);
+    std::process::exit(1)
 }
