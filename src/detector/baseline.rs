@@ -203,6 +203,8 @@ mod tests {
             entropy: 4.5,
             fingerprint: fingerprint.to_string(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         }
     }
 

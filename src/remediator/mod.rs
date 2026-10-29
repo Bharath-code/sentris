@@ -451,6 +451,8 @@ mod tests {
             entropy: 4.0,
             fingerprint: "0123456789abcdef0123456789abcdef".into(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         };
         for dry_run in [true, false] {
             let err = Remediator::new()
@@ -481,6 +483,8 @@ mod tests {
             entropy: 4.0,
             fingerprint: fp.into(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         }
     }
 

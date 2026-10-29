@@ -20,6 +20,8 @@ fn create_test_finding(
         entropy,
         fingerprint: "test-fingerprint-123".to_string(),
         commit_hash: None,
+        commit_author: None,
+        commit_date: None,
     }
 }
 

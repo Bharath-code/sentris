@@ -177,9 +177,10 @@ Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 afte
 - **AC:** `cargo test corpus` prints P/R table; CI fails if any rule's precision < 0.9 or overall recall regresses > 2 pts.
 - **Done:** `tests/corpus_test.rs` generates ≥388 positives from per-rule templates (nothing secret committed; `CORPUS_DUMP=<dir>` exports them for other scanners) and `tests/corpus/negatives.txt` holds 262 hard negatives; baseline recall in `tests/corpus/baseline_recall.txt`.
 
-### T3.3 ⬜ Git history scan parity (M)
+### T3.3 ✅ Git history scan parity (M)
 - Verify `scan --since` + full-history mode vs gitleaks `detect` on a repo with a secret added then deleted.
 - **AC:** secret in a deleted commit is found with commit/author/date; documented in README.
+- **Done:** both tools find a key added then deleted (gitleaks: stripe-access-token; Sentris: stripe-secret-key). Sentris now reports `commit_hash`, `commit_author`, `commit_date` (ISO-8601) in JSON; covered by `test_git_history_finds_deleted_secret_with_commit_author_date`. Gaps vs gitleaks: no reflog/unreachable-object scan (README previously claimed reflog), no email-only author field, SARIF/text output show hash only.
 
 ### T3.4 ⬜ Reproducible benchmark (M)
 - `bench/run.sh`: pinned versions of gitleaks/trufflehog/kingfisher, same corpus + a public repo (e.g. 5k-file checkout), reports time, RSS, precision, recall; output committed with date and hardware.

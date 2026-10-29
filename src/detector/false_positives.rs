@@ -56,14 +56,16 @@ impl FalsePositiveFilter {
             || trimmed_line.starts_with('#')
             || trimmed_line.starts_with("/*")
             || trimmed_line.starts_with("* ")
-            || trimmed_line.starts_with("--");
+            || (trimmed_line.starts_with("--")
+                && trimmed_line[2..].starts_with(|c: char| c.is_whitespace()));
 
         if !is_comment {
             return false;
         }
 
-        // Generic assignments inside code comments are almost universally documentation prose
-        if is_generic_rule(rule_id) {
+        // Keyed generic assignments inside code comments are almost universally documentation prose;
+        // credential-assignment needs an explicit doc marker because commented-out credentials are still leaks
+        if rule_id == "generic-api-key" {
             return true;
         }
 
@@ -306,9 +308,8 @@ impl FalsePositiveFilter {
         }
 
         // 2. Stripe test keys and publishable keys are not production secrets, whichever rule matched them
-        if ["sk_test_", "rk_test_", "pk_test_", "pk_live_"]
-            .iter()
-            .any(|p| token.starts_with(p))
+        if (rule_id.starts_with("stripe-") || is_generic_rule(rule_id))
+            && Self::is_stripe_non_secret(token)
         {
             return true;
         }
@@ -374,10 +375,7 @@ impl FalsePositiveFilter {
         if HASH_PREFIXES.iter().any(|p| token.starts_with(p)) || lower.starts_with("pbkdf2_") {
             return false;
         }
-        let line_is_about_hashes = ["hash", "digest", "checksum", "sha", "md5", "etag"]
-            .iter()
-            .any(|w| line.to_ascii_lowercase().contains(w));
-        if line_is_about_hashes
+        if Self::key_names_a_hash(line, token)
             && matches!(token.len(), 32 | 40 | 64 | 128)
             && token.bytes().all(|b| b.is_ascii_hexdigit())
         {
@@ -399,6 +397,52 @@ impl FalsePositiveFilter {
                 .count()
                 >= 3
             || Self::case_flip_ratio(token) >= 0.3
+    }
+
+    /// Stripe test-mode and publishable keys (sk_test_, rk_test_, pk_test_, pk_live_) with a full-length body
+    fn is_stripe_non_secret(token: &str) -> bool {
+        ["sk_test_", "rk_test_", "pk_test_", "pk_live_"]
+            .iter()
+            .find_map(|p| token.strip_prefix(p))
+            .is_some_and(|body| {
+                body.len() >= 16 && body.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            })
+    }
+
+    /// True when the assigned name *ends* in a hash word (`secret_hash`, `tokenSha256`, `password.digest`);
+    /// `shared_secret` or `hash_secret` are not hashes
+    fn key_names_a_hash(line: &str, token: &str) -> bool {
+        const HASH_WORDS: [&str; 9] = [
+            "hash",
+            "digest",
+            "checksum",
+            "sha1",
+            "sha256",
+            "sha512",
+            "md5",
+            "etag",
+            "fingerprint",
+        ];
+        let Some(idx) = line.find(token) else {
+            return false;
+        };
+        let before =
+            line[..idx].trim_end_matches(|c: char| c.is_whitespace() || "'\"=:>".contains(c));
+        let key: String = before
+            .chars()
+            .rev()
+            .take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'))
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect();
+        let last = key.rsplit(['_', '-', '.']).next().unwrap_or("");
+        let camel_tail = last
+            .rfind(|c: char| c.is_ascii_uppercase())
+            .map_or(last, |i| &last[i..]);
+        [last, camel_tail]
+            .iter()
+            .any(|w| HASH_WORDS.contains(&w.to_ascii_lowercase().as_str()))
     }
 
     /// Separator-joined lowercase words ("group-2024-xmas-party", "auth.reset.expired") are names, not secrets
@@ -553,6 +597,37 @@ mod tests {
             "xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2",
             "generic-api-key",
             concat!("# api_key = '", "xK9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2'")
+        ));
+    }
+}
+
+#[cfg(test)]
+mod review_regressions {
+    use super::*;
+
+    #[test]
+    fn hash_key_detection_uses_last_name_segment() {
+        let hash = |line: &str, token: &str| FalsePositiveFilter::key_names_a_hash(line, token);
+        let hex = "a737a27cef579e9dfeeaf6d87209f034";
+        assert!(hash(&format!("secret_hash = \"{hex}\""), hex));
+        assert!(hash(&format!("tokenSha256: '{hex}'"), hex));
+        assert!(!hash(&format!("shared_secret = \"{hex}\""), hex));
+        assert!(!hash(&format!("hash_secret = \"{hex}\""), hex));
+    }
+
+    #[test]
+    fn stripe_exemption_needs_stripe_rule_and_full_body() {
+        let body = "51AbcDefGhIjKlMnOpQrStUv";
+        let key = format!("sk_test_{body}");
+        assert!(FalsePositiveFilter::is_false_positive(
+            &key,
+            "stripe-secret-key",
+            &key
+        ));
+        assert!(!FalsePositiveFilter::is_false_positive(
+            "sk_test_Zq8",
+            "credential-assignment",
+            "token = \"sk_test_Zq8\""
         ));
     }
 }

@@ -34,7 +34,10 @@ impl GitManager {
     pub fn scan_git_history(
         detector: &crate::detector::DetectorEngine,
     ) -> Result<(Vec<crate::model::Finding>, usize, u64), SentrisError> {
-        Self::scan_git_log_args(detector, &["log", "-p", "-U0", "--full-history"])
+        Self::scan_git_log_args(
+            detector,
+            &["log", "-p", "-U0", "--full-history", "--date=iso-strict"],
+        )
     }
 
     /// Scans git commits since a given ref or commit range (e.g. `HEAD~1` or `origin/main..HEAD`)
@@ -52,7 +55,7 @@ impl GitManager {
         } else {
             format!("{since_ref}..HEAD")
         };
-        Self::scan_git_log_args(detector, &["log", &range, "-p", "-U0"])
+        Self::scan_git_log_args(detector, &["log", &range, "-p", "-U0", "--date=iso-strict"])
     }
 
     fn scan_git_log_args(
@@ -80,6 +83,8 @@ impl GitManager {
 
         let mut findings = Vec::new();
         let mut current_commit: Option<String> = None;
+        let mut current_author: Option<String> = None;
+        let mut current_date: Option<String> = None;
         let mut current_file: Option<String> = None;
         let mut current_line: usize = 0;
         let mut commits_count: usize = 0;
@@ -97,8 +102,14 @@ impl GitManager {
                     current_commit = Some(hash);
                     commits_count += 1;
                 }
+                current_author = None;
+                current_date = None;
                 current_file = None;
                 current_line = 0;
+            } else if current_file.is_none() && line.starts_with("Author: ") {
+                current_author = Some(line["Author: ".len()..].trim().to_string());
+            } else if current_file.is_none() && line.starts_with("Date: ") {
+                current_date = Some(line["Date: ".len()..].trim().to_string());
             } else if line.starts_with("diff --git ") {
                 if let Some(pos) = line.rfind(" b/") {
                     current_file = Some(line[pos + 3..].trim().to_string());
@@ -120,7 +131,11 @@ impl GitManager {
 
                 let hits =
                     detector.scan_single_line(content, file_path, line_num, current_commit.clone());
-                findings.extend(hits);
+                findings.extend(hits.into_iter().map(|mut f| {
+                    f.commit_author = current_author.clone();
+                    f.commit_date = current_date.clone();
+                    f
+                }));
 
                 current_line += 1;
             } else if line.starts_with(' ') {

@@ -293,6 +293,8 @@ mod tests {
                 entropy: 4.85,
                 fingerprint: "a1b2c3d4e5f6".to_string(),
                 commit_hash: None,
+                commit_author: None,
+                commit_date: None,
             },
             Finding {
                 rule_id: "aws-access-key-id".to_string(),
@@ -305,6 +307,8 @@ mod tests {
                 entropy: 3.8,
                 fingerprint: "f6e5d4c3b2a1".to_string(),
                 commit_hash: Some("abcdef1".to_string()),
+                commit_author: None,
+                commit_date: None,
             },
         ];
 

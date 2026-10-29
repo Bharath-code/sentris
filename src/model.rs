@@ -73,6 +73,10 @@ pub struct Finding {
     pub fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_date: Option<String>,
 }
 
 impl Serialize for Finding {
@@ -81,7 +85,10 @@ impl Serialize for Finding {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let field_count = if self.commit_hash.is_some() { 14 } else { 13 };
+        let field_count = 13
+            + usize::from(self.commit_hash.is_some())
+            + usize::from(self.commit_author.is_some())
+            + usize::from(self.commit_date.is_some());
         let mut state = serializer.serialize_struct("Finding", field_count)?;
         state.serialize_field("rule_id", &self.rule_id)?;
         state.serialize_field("description", &self.description)?;
@@ -94,6 +101,12 @@ impl Serialize for Finding {
         state.serialize_field("fingerprint", &self.fingerprint)?;
         if let Some(ref ch) = self.commit_hash {
             state.serialize_field("commit_hash", ch)?;
+        }
+        if let Some(ref author) = self.commit_author {
+            state.serialize_field("commit_author", author)?;
+        }
+        if let Some(ref date) = self.commit_date {
+            state.serialize_field("commit_date", date)?;
         }
         state.serialize_field("context_kind", &self.context_kind())?;
         let env_var = crate::remediator::Remediator::env_var_name_for_rule(&self.rule_id);

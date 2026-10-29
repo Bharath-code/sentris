@@ -113,6 +113,11 @@ const CASES: &[(&str, &str, bool)] = &[
     ("credential-assignment", "db_password = \"{a:16}9!\"", false),
     ("credential-assignment", "client_token: '{a:24}'", false),
     ("credential-assignment", "admin_password=\"{a:12}#\"", false),
+    ("credential-assignment", "shared_secret = \"{h:64}\"", false),
+    ("credential-assignment", "# db_password = \"{a:16}9!\"", false),
+    ("credential-assignment", "mysql --password=\"{a:16}9!\"", false),
+    ("credential-assignment", "--password=\"{a:16}9!\"", false),
+    ("credential-assignment", "hash_secret: '{h:40}'", false),
 ];
 
 const CONTEXTS: [&str; 4] = ["{}", "KEY=\"{}\"", "\"value\": \"{}\"", "export CRED='{}'"];

@@ -192,7 +192,8 @@ sentris scan --staged
 # Scan commits in a branch or push range (e.g. origin/main..HEAD)
 sentris scan --since HEAD~1
 
-# Deep git commit graph & reflog history scan
+# Deep git commit graph history scan: finds secrets that were added and later deleted,
+# reporting commit hash, author and date (JSON: commit_hash, commit_author, commit_date)
 sentris scan --git-history
 
 # Verify detected credentials against live provider APIs & map permission scopes

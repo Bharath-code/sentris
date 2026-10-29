@@ -229,6 +229,8 @@ impl DetectorEngine {
                         entropy,
                         fingerprint,
                         commit_hash: commit_hash.clone(),
+                        commit_author: None,
+                        commit_date: None,
                     },
                 ));
             }

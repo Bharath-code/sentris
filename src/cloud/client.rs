@@ -365,6 +365,8 @@ mod tests {
             entropy: 4.85,
             fingerprint: "hash_a1b2c3d4e5f6".to_string(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         };
 
         let report = ScanReport {
@@ -484,6 +486,8 @@ mod tests {
             fingerprint: "94a3ab2d2b40bf154ebe81310bb8e0f21f511a0d3d54c743a2668f5fd9226ccc"
                 .to_string(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         };
 
         let report = ScanReport {

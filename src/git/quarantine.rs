@@ -183,6 +183,8 @@ mod tests {
             fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 .to_string(),
             commit_hash: Some("abcdef1234567890".to_string()),
+            commit_author: None,
+            commit_date: None,
         };
 
         let report =
