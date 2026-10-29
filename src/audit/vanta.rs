@@ -7,6 +7,7 @@ use crate::error::SentrisError;
 impl AuditLedger {
     /// Exports a 1-Click Vanta / Drata SOC 2 Type II (CC6.1, CC6.7, CC6.8) & ISO 27001 (A.8.24)
     /// cryptographic compliance evidence JSON bundle.
+    #[allow(clippy::too_many_lines)]
     pub fn export_vanta_evidence_pack<P: AsRef<Path>>(
         &self,
         output_path: P,

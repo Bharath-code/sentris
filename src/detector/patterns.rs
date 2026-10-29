@@ -11,6 +11,7 @@ pub struct Rule {
 }
 
 /// Curated registry of 50+ high-fidelity secret signatures
+#[allow(clippy::too_many_lines)]
 pub fn get_rules() -> Vec<Rule> {
     vec![
         // ==================== Cloud Providers ====================

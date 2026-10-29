@@ -179,6 +179,7 @@ fn draw_findings_list(f: &mut Frame, app: &App, area: Rect) {
     f.render_widget(list, area);
 }
 
+#[allow(clippy::too_many_lines)]
 fn draw_finding_details(f: &mut Frame, app: &App, area: Rect) {
     let finding = match app.selected_finding() {
         Some(f) => f,

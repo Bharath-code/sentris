@@ -3,7 +3,7 @@ import DodoPayments from 'dodopayments'
 import { db } from './db'
 import type { Org } from './org'
 import { assertConfig } from './config'
-import { applyWebhook } from './webhook-core.ts'
+import { handleWebhookRequest } from './webhook-core.ts'
 
 // Lazy: secrets don't exist at build/prerender time
 const dodo = () =>
@@ -32,22 +32,7 @@ export async function portalLink(org: Org) {
   return link
 }
 
-export async function handleDodoWebhook(request: Request): Promise<Response> {
+export function handleDodoWebhook(request: Request): Promise<Response> {
   assertConfig()
-  const body = await request.text()
-  const headers = Object.fromEntries(request.headers)
-  let event: ReturnType<DodoPayments['webhooks']['unwrap']>
-  try {
-    event = dodo().webhooks.unwrap(body, { headers })
-  } catch {
-    return new Response('invalid signature', { status: 401 })
-  }
-
-  try {
-    const { status, body: out } = await applyWebhook(db, { id: request.headers.get('webhook-id'), type: event.type, timestamp: event.timestamp, data: event.data })
-    return new Response(out, { status })
-  } catch (err) {
-    console.error('webhook: transient failure, asking Dodo to retry', err)
-    return new Response('retry', { status: 503 })
-  }
+  return handleWebhookRequest(request, { db, unwrap: (body, headers) => dodo().webhooks.unwrap(body, { headers }) })
 }

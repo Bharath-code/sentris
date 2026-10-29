@@ -261,6 +261,7 @@ impl FalsePositiveFilter {
     }
 
     /// Rule-specific false positive rules
+    #[allow(clippy::too_many_lines)]
     fn is_rule_specific_fp(token: &str, rule_id: &str, line_context: &str) -> bool {
         let line_lower = line_context.to_ascii_lowercase();
 

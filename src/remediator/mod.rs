@@ -200,6 +200,7 @@ impl Remediator {
 
     /// Executes the 7-step autonomous remediation workflow with an explicit `quiet` flag for MCP & JSON agent mode
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_lines)]
     pub fn remediate_finding_with_options(
         &self,
         finding: &Finding,

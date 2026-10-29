@@ -142,6 +142,7 @@ impl LspServer {
     }
 
     /// Processes a single incoming JSON-RPC LSP frame and returns `(outbound_messages, should_exit)`.
+    #[allow(clippy::too_many_lines)]
     pub fn handle_raw_message(&mut self, raw_json: &str) -> (Vec<LspOutbound>, bool) {
         let msg: LspMessage = match serde_json::from_str(raw_json) {
             Ok(m) => m,

@@ -21,6 +21,7 @@ pub struct QuarantineManager;
 
 impl QuarantineManager {
     /// Creates a Zone 3 isolated quarantine branch and generates an actionable history scrub playbook
+    #[allow(clippy::too_many_lines)]
     pub fn quarantine_finding(
         finding: &Finding,
         custom_branch: Option<&str>,

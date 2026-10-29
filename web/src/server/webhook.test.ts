@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { testDb } from './testdb.ts'
 import * as schema from './schema.ts'
-import { applyWebhook, type WebhookEvent } from './webhook-core.ts'
+import { applyWebhook, handleWebhookRequest, type WebhookEvent } from './webhook-core.ts'
 import { eq } from 'drizzle-orm'
 
 const quiet = { logs: [] as string[], error(...a: unknown[]) { this.logs.push(String(a[0])) }, warn(...a: unknown[]) { this.logs.push(String(a[0])) } }
@@ -109,4 +109,34 @@ test('out-of-order and same-instant events resolve as before', async () => {
 test('unrelated event types are ignored', async () => {
   const { db } = await setup()
   assert.equal((await applyWebhook(db, evt({ type: 'payment.succeeded' }), quiet)).body, 'ignored')
+})
+
+const lines = () => {
+  const out: Record<string, string[]> = { info: [], warn: [], error: [] }
+  return { out, logger: { info: (l: string) => out.info.push(l), warn: (l: string) => out.warn.push(l), error: (l: string) => out.error.push(l) } }
+}
+const post = (id = 'wh_9') => new Request('https://app.test/api/webhooks/dodo', { method: 'POST', headers: { 'webhook-id': id }, body: '{}' })
+
+test('a webhook with a bad signature is rejected and logged with its reason', async () => {
+  const { db } = await setup()
+  const { out, logger } = lines()
+  const unwrap = () => { throw new Error('bad sig') }
+  const res = await handleWebhookRequest(post(), { db, unwrap, out: logger })
+  assert.equal(res.status, 401)
+  assert.deepEqual(out.warn.map((l) => JSON.parse(l)), [{ event: 'webhook', id: 'wh_9', status: 401, reason: 'invalid signature' }])
+})
+
+test('handled webhooks log their outcome, and a database failure logs an error and asks Dodo to retry', async () => {
+  const { db } = await setup()
+  const { out, logger } = lines()
+  const good = () => ({ type: 'subscription.active', timestamp: '2026-11-01T00:00:10Z', data: sub() })
+  assert.equal((await handleWebhookRequest(post(), { db, unwrap: good, out: logger })).status, 200)
+  assert.equal((await handleWebhookRequest(post(), { db, unwrap: good, out: logger })).status, 200)
+  assert.deepEqual(out.info.map((l) => JSON.parse(l).outcome), ['ok', 'duplicate'])
+
+  const broken = { ...db, query: { ...db.query, webhookEvent: { findFirst: () => { throw new Error('D1 down') } } } } as unknown as typeof db
+  const res = await handleWebhookRequest(post('wh_10'), { db: broken, unwrap: good, out: logger })
+  assert.equal(res.status, 503)
+  const err = JSON.parse(out.error[0])
+  assert.deepEqual([err.event, err.status, err.reason], ['webhook', 503, 'transient failure'])
 })

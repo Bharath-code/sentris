@@ -187,3 +187,16 @@ test('blast radius ranks severity by level and splits repos containing commas', 
   assert.deepEqual([...r.affected_repos].sort(), ['a,b', 'c'])
   assert.equal(r.total_occurrences, 2)
 })
+
+test('writes a per-scan severity rollup, folding case and chunking many distinct severities', async () => {
+  const { send, sqlite } = await setup({}, 'pro')
+  const findings = [finding(0, { severity: 'HIGH' }), finding(1, { severity: 'high' }), finding(2, { severity: 'Critical' })]
+  assert.equal((await send(scan(0, { findings }))).status, 200)
+  const rows = sqlite.prepare('select severity, n from scan_severity order by severity').all() as { severity: string; n: number }[]
+  assert.deepEqual(rows.map((r) => [r.severity, r.n]), [['critical', 1], ['high', 2]])
+
+  // 100 distinct severities exceed one INSERT's bound-parameter budget
+  const many = Array.from({ length: 100 }, (_, i) => finding(i + 10, { severity: `sev${i}` }))
+  assert.equal((await send(scan(0, { scan_id: 'scn_many', findings: many }))).status, 200)
+  assert.equal(count(sqlite, 'scan_severity'), 2 + 100)
+})

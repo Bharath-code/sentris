@@ -46,6 +46,7 @@ const chunk = <T,>(xs: T[], n: number) =>
 
 // D1 allows 100 bound parameters per statement; a finding row binds 12
 const ROWS_PER_INSERT = 8
+const ROLLUPS_PER_INSERT = 19
 const STATEMENTS_PER_BATCH = 50
 const KEY_TOUCH_MS = 60_000
 
@@ -117,6 +118,14 @@ export async function handleScanUpload(request: Request, deps: IngestDeps): Prom
     preview: '[redacted]',
   }))
 
+  const bySeverity = new Map<string, number>()
+  for (const f of findings) {
+    const sev = f.severity.toLowerCase()
+    bySeverity.set(sev, (bySeverity.get(sev) ?? 0) + 1)
+  }
+  const createdAt = new Date(now())
+  const rollup = [...bySeverity].map(([severity, n]) => ({ scanId, orgId, severity, n, createdAt }))
+
   const statements = [
     db.insert(schema.scan).values({
       id: scanId,
@@ -128,8 +137,9 @@ export async function handleScanUpload(request: Request, deps: IngestDeps): Prom
       filesScanned: p.files_scanned,
       durationMs: Math.round(p.duration_ms),
       findingsCount: findings.length,
-      createdAt: new Date(now()),
+      createdAt,
     }),
+    ...chunk(rollup, ROLLUPS_PER_INSERT).map((c) => db.insert(schema.scanSeverity).values(c)),
     ...chunk(findings, ROWS_PER_INSERT).map((c) => db.insert(schema.finding).values(c)),
   ]
   try {
@@ -182,9 +192,21 @@ async function replayOf(db: Db, orgId: string, idemKey: string, deps: IngestDeps
     })
 }
 
-// Same fingerprint in more than one repo = one leaked credential, wider blast radius
+// Same fingerprint in more than one repo = one leaked credential, wider blast radius.
+// Step 1 finds the widest fingerprints from the (org, fingerprint, repo) index alone; step 2 reads full rows for just those.
 export async function blastRadius(db: Db, orgId: string, fps?: string[]) {
   const f = schema.finding
+  const scope = fps ? and(eq(f.orgId, orgId), inArray(f.fingerprint, fps.slice(0, 90))) : eq(f.orgId, orgId)
+  const wide = await db
+    .select({ fp: f.fingerprint })
+    .from(f)
+    .where(scope)
+    .groupBy(f.fingerprint)
+    .having(sql`count(distinct ${f.repo}) > 1`)
+    .orderBy(sql`count(distinct ${f.repo}) desc`, f.fingerprint)
+    .limit(50)
+  if (!wide.length) return []
+
   const rank = sql<number>`max(case lower(${f.severity}) when 'critical' then 4 when 'high' then 3 when 'medium' then 2 when 'low' then 1 else 0 end)`
   const rows = await db
     .select({
@@ -196,9 +218,8 @@ export async function blastRadius(db: Db, orgId: string, fps?: string[]) {
       total_occurrences: sql<number>`count(*)`,
     })
     .from(f)
-    .where(fps ? and(eq(f.orgId, orgId), inArray(f.fingerprint, fps.slice(0, 90))) : eq(f.orgId, orgId))
+    .where(and(eq(f.orgId, orgId), inArray(f.fingerprint, wide.map((w) => w.fp))))
     .groupBy(f.fingerprint)
-    .having(sql`count(distinct ${f.repo}) > 1`)
-    .limit(50)
+    .orderBy(sql`count(distinct ${f.repo}) desc`, f.fingerprint)
   return rows.map(({ repos, rank, ...r }) => ({ ...r, severity: severityName(rank).toUpperCase(), affected_repos: JSON.parse(repos) as string[] }))
 }
