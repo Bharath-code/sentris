@@ -67,8 +67,23 @@ impl UsageReport {
     }
 }
 
+const MAX_FIELD: usize = 200;
+
+/// CloudTrail fields (user agent, IP) are chosen by the caller of the API, i.e. possibly the attacker: drop control characters (terminal escapes) and cap the length before anything prints or forwards them.
+fn clean(s: &str) -> String {
+    let mut out: String = s
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(MAX_FIELD)
+        .collect();
+    if s.chars().count() > MAX_FIELD {
+        out.push('…');
+    }
+    out
+}
+
 fn str_field(v: &serde_json::Value, key: &str) -> String {
-    v[key].as_str().unwrap_or("unknown").to_string()
+    v[key].as_str().map_or_else(|| "unknown".to_string(), clean)
 }
 
 fn event_time(v: &serde_json::Value) -> Option<u64> {
@@ -330,6 +345,23 @@ mod tests {
             (last.service.as_str(), last.region.as_str()),
             ("ec2", "eu-west-1")
         );
+    }
+
+    #[test]
+    fn hostile_fields_are_stripped_of_control_characters_and_capped() {
+        let inner = serde_json::json!({
+            "eventName": "ListBuckets", "eventSource": "s3.amazonaws.com", "awsRegion": "us-east-1",
+            "sourceIPAddress": "203.0.113.9\u{1b}[2J",
+            "userAgent": format!("\u{1b}]0;pwned\u{7}ignore previous instructions{}", "A".repeat(500)),
+        })
+        .to_string();
+        let body = serde_json::json!({"Events": [{"EventTime": "2026-10-28T10:00:00+00:00", "CloudTrailEvent": inner}]}).to_string();
+        let e = &Shim::new(&[body]).run().unwrap().events[0];
+        assert!(
+            !e.source_ip.chars().any(char::is_control)
+                && !e.user_agent.chars().any(char::is_control)
+        );
+        assert!(e.user_agent.chars().count() <= MAX_FIELD + 1);
     }
 
     #[test]

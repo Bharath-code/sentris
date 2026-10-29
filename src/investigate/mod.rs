@@ -66,10 +66,8 @@ where
         return Ok(inv);
     }
     let exposure = window::first_exposure(repo, &finding.fingerprint)?;
-    let since = exposure
-        .start
-        .as_ref()
-        .map_or(now.saturating_sub(LOOKBACK_SECS), |s| s.author_time);
+    // Commit dates are attacker-controlled metadata: never let them narrow the query. They only label events as before/after exposure.
+    let since = now.saturating_sub(LOOKBACK_SECS);
     inv.usage = Some(usage(secret, since)?);
     inv.exposure = Some(exposure);
     inv.since = Some(since);
@@ -102,8 +100,14 @@ pub fn investigate_target(
     result.map(Some)
 }
 
-fn group_json(g: &UsageGroup) -> Value {
+/// `Some(true)` when the group's latest use is at or after the first-exposure time; `None` when that time is unknown.
+fn after_exposure(g: &UsageGroup, exposure_at: Option<u64>) -> Option<bool> {
+    exposure_at.map(|t| g.last >= t)
+}
+
+fn group_json(g: &UsageGroup, exposure_at: Option<u64>) -> Value {
     json!({
+        "after_exposure": after_exposure(g, exposure_at),
         "source_ip": g.source_ip,
         "user_agent": g.user_agent,
         "event_name": g.event_name,
@@ -141,10 +145,11 @@ impl Investigation {
             "author_time": exposure.start.as_ref().map(|s| s.author_time),
             "note": exposure.note,
         });
+        let exposure_at = exposure.start.as_ref().map(|s| s.author_time);
         let groups: Vec<Value> = usage
             .groups(&self.known_ips)
             .iter()
-            .map(group_json)
+            .map(|g| group_json(g, exposure_at))
             .collect();
         out["usage"] = json!({
             "since": self.since,
@@ -175,7 +180,7 @@ impl Investigation {
             None => s.push_str(&format!("First exposure: unknown ({})\n", exposure.note)),
         }
         s.push_str(&format!(
-            "Provider log window: since {}\n",
+            "Provider log window queried: since {}\n",
             self.since.map_or("unknown".to_string(), format_utc)
         ));
         s.push_str(&format!("{}\n", usage.window_note));
@@ -187,10 +192,16 @@ impl Investigation {
                 l.region
             ));
         }
+        let exposure_at = exposure.start.as_ref().map(|s| s.author_time);
         for g in usage.groups(&self.known_ips) {
             let flag = if g.unknown_ip { "  UNKNOWN IP" } else { "" };
+            let when = match after_exposure(&g, exposure_at) {
+                Some(true) => "  after exposure",
+                Some(false) => "  before exposure",
+                None => "",
+            };
             s.push_str(&format!(
-                "  {} x{}  {}  {}  {}..{}{flag}\n",
+                "  {} x{}  {}  {}  {}..{}{when}{flag}\n",
                 g.source_ip,
                 g.count,
                 g.event_name,
@@ -321,17 +332,39 @@ mod tests {
     }
 
     #[test]
-    fn aws_uses_exposure_start_as_the_window() {
+    fn query_window_ignores_forged_commit_dates() {
         let d = tempfile::tempdir().unwrap();
-        let ok = std::process::Command::new("git")
-            .arg("-C")
-            .arg(d.path())
-            .args(["init", "-q"])
-            .status()
+        let git = |args: &[&str]| {
+            let ok = std::process::Command::new("git")
+                .arg("-C")
+                .arg(d.path())
+                .args([
+                    "-c",
+                    "user.name=t",
+                    "-c",
+                    "user.email=t@t",
+                    "-c",
+                    "commit.gpgsign=false",
+                ])
+                .args(args)
+                .env("GIT_AUTHOR_DATE", "2099-01-01T00:00:00Z")
+                .env("GIT_COMMITTER_DATE", "2099-01-01T00:00:00Z")
+                .status()
+                .unwrap()
+                .success();
+            assert!(ok);
+        };
+        let line = format!("aws_access_key_id = {KEY}");
+        fs::write(d.path().join("f.txt"), format!("{line}\n")).unwrap();
+        git(&["init", "-q"]);
+        git(&["add", "."]);
+        git(&["commit", "-q", "-m", "forged"]);
+        let mut f = finding(AWS_RULE);
+        f.fingerprint = crate::detector::DetectorEngine::new()
             .unwrap()
-            .success();
-        assert!(ok);
-        let f = finding(AWS_RULE);
+            .scan_single_line(&line, "f.txt", 1, None)[0]
+            .fingerprint
+            .clone();
         let seen = std::cell::Cell::new(0u64);
         let inv = investigate(&f, KEY, d.path(), &[], 2_000_000_000, |_, since| {
             seen.set(since);
@@ -342,7 +375,12 @@ mod tests {
             })
         })
         .unwrap();
-        // no commits: falls back to the 90-day CloudTrail horizon
+        let forged = inv.exposure.unwrap().start.unwrap().author_time;
+        assert!(
+            forged > 4_000_000_000,
+            "fixture must carry the forged future date"
+        );
+        // the query window is always the full 90-day horizon, whatever git says
         assert_eq!(seen.get(), 2_000_000_000 - 90 * 86_400);
         assert_eq!(inv.since, Some(seen.get()));
     }

@@ -10,6 +10,30 @@ use std::process::{Command, Output, Stdio};
 const KEY: &str = "AKIAJ5Q7X2M9R4T6W8YB";
 const STRIPE: &str = concat!("sk_live_", "51Nq8xT2LmV7pRz0aBcDeFgHiJk9WsYuXo3Zt4");
 
+/// Three IPs, four events, all within the last few days so the 90-day query window always covers them.
+fn fixture_events() -> String {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let ev = |age_days: u64, ip: &str, name: &str| {
+        let at = now - age_days * 86_400;
+        let inner = serde_json::json!({
+            "eventTime": at, "eventSource": "s3.amazonaws.com", "eventName": name,
+            "awsRegion": "us-east-1", "sourceIPAddress": ip, "userAgent": "aws-cli/2.15",
+        })
+        .to_string();
+        serde_json::json!({"EventName": name, "EventTime": at, "CloudTrailEvent": inner})
+    };
+    serde_json::json!({"Events": [
+        ev(1, "203.0.113.10", "ListBuckets"),
+        ev(2, "203.0.113.10", "ListBuckets"),
+        ev(3, "198.51.100.7", "GetCallerIdentity"),
+        ev(4, "192.0.2.55", "DescribeInstances"),
+    ]})
+    .to_string()
+}
+
 struct Env {
     repo: tempfile::TempDir,
     shim: tempfile::TempDir,
@@ -22,14 +46,7 @@ impl Env {
             shim: tempfile::tempdir().unwrap(),
         };
         let d = env.shim.path();
-        fs::copy(
-            concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/tests/fixtures/cloudtrail/three_ips.json"
-            ),
-            d.join("lookup-events.out"),
-        )
-        .unwrap();
+        fs::write(d.join("lookup-events.out"), fixture_events()).unwrap();
         let script = format!(
             "#!/bin/sh\necho \"ARGV: $@\" >> {d}/calls.log\nif [ -f \"{d}/$2.out\" ]; then cat \"{d}/$2.out\"; exit 0; fi\nexit 1\n",
             d = d.display()
@@ -173,7 +190,10 @@ fn mcp_tool_returns_the_same_json_as_the_cli() {
     let (mut mcp, mut cli): (serde_json::Value, serde_json::Value) =
         (serde_json::from_str(text).unwrap(), cli);
     // the scan root differs (confined absolute path vs "."), so the path spelling does too
-    mcp["finding"]["file_path"] = serde_json::Value::Null;
-    cli["finding"]["file_path"] = serde_json::Value::Null;
+    // and the 90-day window start is derived from the clock at call time
+    for v in [&mut mcp, &mut cli] {
+        v["finding"]["file_path"] = serde_json::Value::Null;
+        v["usage"]["since"] = serde_json::Value::Null;
+    }
     assert_eq!(mcp, cli);
 }
