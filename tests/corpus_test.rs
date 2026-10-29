@@ -12,7 +12,7 @@ const MIN_PRECISION: f64 = 0.9;
 const MAX_RECALL_DROP: f64 = 0.02;
 
 /// (rule_id, template, wrap). Placeholders: {kind:len}; wrap=true embeds the token in several code contexts.
-/// kinds: a alnum, h lower-hex, d digits, u upper+digits, l lower+digits, s alnum+_-, b base64, B base32 (A-Z2-7),
+/// kinds: a alnum, A letters, h lower-hex, d digits, u upper+digits, l lower+digits, s alnum+_-, b base64, B base32 (A-Z2-7),
 /// x alnum+_~., K bech32, U uuid.
 #[rustfmt::skip]
 const CASES: &[(&str, &str, bool)] = &[
@@ -118,6 +118,25 @@ const CASES: &[(&str, &str, bool)] = &[
     ("credential-assignment", "mysql --password=\"{a:16}9!\"", false),
     ("credential-assignment", "--password=\"{a:16}9!\"", false),
     ("credential-assignment", "hash_secret: '{h:40}'", false),
+    ("onepassword-secret-key", "A3-{u:6}-{u:11}-{u:5}-{u:5}-{u:5}", true),
+    ("adobe-client-secret", "p8e-{a:32}", true),
+    ("artifactory-api-key", "AKCp{a:69}", true),
+    ("artifactory-reference-token", "cmVmd{a:59}", true),
+    ("clojars-api-token", "CLOJARS_{a:60}", true),
+    ("easypost-api-token", "EZAK{a:54}", true),
+    ("facebook-page-access-token", "EAAM{a:120}", true),
+    ("flutterwave-key", "FLWSECK_TEST-{h:32}-X", true),
+    ("gitlab-other-token", "glffct-{s:20}", true),
+    ("gitlab-other-token", "glptt-{h:40}", true),
+    ("huggingface-org-token", "api_org_{A:34}", true),
+    ("intra42-client-secret", "s-s4t2ud-{h:64}", true),
+    ("microsoft-teams-webhook", "https://acme.webhook.office.com/webhookb2/{h:8}-{h:4}-{h:4}-{h:4}-{h:12}@{h:8}-{h:4}-{h:4}-{h:4}-{h:12}/IncomingWebhook/{h:32}/{h:8}-{h:4}-{h:4}-{h:4}-{h:12}", true),
+    ("octopus-deploy-api-key", "API-{u:26}", true),
+    ("planetscale-oauth-token", "pscale_oauth_{s:40}", true),
+    ("settlemint-token", "sm_aat_{a:16}", true),
+    ("slack-config-token", "xoxe-1-{u:150}", true),
+    ("slack-workflow-webhook", "https://hooks.slack.com/workflows/{a:48}", true),
+    ("vault-batch-token", "hvb.{s:150}", true),
     ("basic-auth-header", "Authorization: \"Basic YXlsOnoxYXR1Zi1zaWZ6dnRxaQ==\"", false),
     ("credential-assignment", "\"secret_key\": \"{U:0}\"", false),
     ("credential-assignment-unquoted", "user_token: {U:0}", false),
@@ -125,7 +144,7 @@ const CASES: &[(&str, &str, bool)] = &[
     ("password-literal", "MasterUserPassword=\"cnrltkl\"", false),
     ("keyed-secret-value", "Key = {h:32}", false),
     ("credential-assignment-unquoted", "SharedSecret={h:40}", false),
-    ("keyed-secret-value", "wrapping_key: '{s:32}'", false),
+    ("keyed-secret-value", "wrapping_key: '{a:32}'", false),
     ("url-basic-auth", "https://deploy{l:3}:{a:16}@git.internal.net/org/repo.git", false),
     ("url-basic-auth", "curl -u x https://admin:admin@the-internet.herokuapp.com/basic_auth", false),
     ("vendor-keyed-token", "KUCOIN_SECRET=\"{h:24}\"", false),
@@ -164,6 +183,7 @@ impl Rng {
 fn alphabet(kind: char) -> &'static str {
     match kind {
         'a' => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+        'A' => "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ",
         'h' => "0123456789abcdef",
         'd' => "0123456789",
         'u' => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",

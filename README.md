@@ -144,7 +144,7 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) |
 | **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` |
-| **Detection Engine** | **85+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules |
+| **Detection Engine** | **110+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules |
 | **Live API Verification** | **Yes (`--verify` w/ zero-egress `--offline` default)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No |
 | **Post-Detection Action** | **Extracts to `.env`/Vault/1Password/Infisical + Patches Code** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table |
 | **Local Dev App Safety** | **Safe Local Extraction + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual |
