@@ -206,7 +206,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Perplexity AI API Key",
             description: "Identifies Perplexity Sonar API keys (pplx-)",
             severity: Severity::High,
-            pattern: r"\bpplx-[a-fA-F0-9]{48}\b",
+            pattern: r"\bpplx-[a-zA-Z0-9]{48}\b",
             min_entropy: 3.2,
         },
         // ==================== Messaging & Notifications ====================
@@ -215,7 +215,7 @@ pub fn get_rules() -> Vec<Rule> {
             name: "Slack Bot Token",
             description: "Identifies Slack Bot User OAuth Tokens (xoxb)",
             severity: Severity::Critical,
-            pattern: r"\bxoxb-[0-9]{11,13}-[0-9]{11,13}-[0-9a-zA-Z]{24}\b",
+            pattern: r"\bxoxb-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*",
             min_entropy: 3.0,
         },
         Rule {
@@ -482,7 +482,7 @@ pub fn get_rules() -> Vec<Rule> {
         Rule { rule_id: "grafana-cloud-token", name: "Grafana Cloud API Token", description: "Identifies Grafana Cloud API tokens", severity: Severity::High, pattern: r"\bglc_[A-Za-z0-9+/]{32,400}={0,3}", min_entropy: 4.0 },
         Rule { rule_id: "databricks-api-token", name: "Databricks API Token", description: "Identifies Databricks personal access tokens", severity: Severity::Critical, pattern: r"\bdapi[a-f0-9]{32}(?:-[0-9])?\b", min_entropy: 3.0 },
         Rule { rule_id: "dynatrace-api-token", name: "Dynatrace API Token", description: "Identifies Dynatrace API tokens", severity: Severity::High, pattern: r"\bdt0c01\.[A-Z0-9]{24}\.[A-Z0-9]{64}\b", min_entropy: 3.5 },
-        Rule { rule_id: "flyio-access-token", name: "Fly.io Access Token", description: "Identifies Fly.io access tokens", severity: Severity::High, pattern: r"\bfo1_[A-Za-z0-9_-]{43}", min_entropy: 3.5 },
+        Rule { rule_id: "flyio-access-token", name: "Fly.io Access Token", description: "Identifies Fly.io access tokens", severity: Severity::High, pattern: r"\b(?:fo1_[A-Za-z0-9_-]{43}|fm1[ar]_[A-Za-z0-9+/]{100,}={0,3}|fm2_[A-Za-z0-9+/]{100,}={0,3})", min_entropy: 3.5 },
         Rule { rule_id: "sourcegraph-access-token", name: "Sourcegraph Access Token", description: "Identifies Sourcegraph access tokens", severity: Severity::High, pattern: r"\bsgp_(?:[a-fA-F0-9]{16}|local)_[a-fA-F0-9]{40}\b|\bsgp_[a-fA-F0-9]{40}\b", min_entropy: 3.0 },
         Rule { rule_id: "notion-api-token", name: "Notion Integration Token", description: "Identifies Notion integration tokens", severity: Severity::High, pattern: r"\bntn_[0-9A-Za-z]{43,46}\b", min_entropy: 3.5 },
         Rule { rule_id: "age-secret-key", name: "Age Secret Key", description: "Identifies age encryption secret keys", severity: Severity::Critical, pattern: r"\bAGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}\b", min_entropy: 3.0 },
@@ -497,5 +497,9 @@ pub fn get_rules() -> Vec<Rule> {
         Rule { rule_id: "credential-assignment", name: "Hardcoded Credential Assignment", description: "Identifies quoted high-entropy literals assigned to password, secret, token or key variables", severity: Severity::Medium, pattern: r#"(?i)(?:password|passwd|secret|token|auth[_-]?key|access[_-]?key|private[_-]?key)[a-z0-9_]*['"`]?(?:\s+[a-z]+)?\s*(?:=>|[:?+.]{0,3}=|:)\s*['"`]([^'"`\s]{12,100})['"`]"#, min_entropy: 3.2 },
         Rule { rule_id: "credential-assignment-unquoted", name: "Unquoted Credential Assignment", description: "Identifies high-entropy unquoted values assigned to password, secret, token or key names (env, ini, yaml, make)", severity: Severity::Medium, pattern: r#"(?i)(?:password|passwd|secret|token|auth[_-]?key|access[_-]?key|private[_-]?key|api[_-]?key)[a-z0-9_]*['"]?\s*(?:[:?+.]{0,3}=|:)\s*([A-Za-z0-9+/=_.~!@#$%^&*-]{16,100})(?:[\s,;\\]|$)"#, min_entropy: 3.6 },
         Rule { rule_id: "keyed-uuid-credential", name: "Vendor-Keyed UUID Credential", description: "Identifies UUID-format API keys assigned to vendor-named variables (HubSpot, Snyk, Squarespace)", severity: Severity::High, pattern: r#"(?i)(?:hubspot|snyk|squarespace)[a-z0-9_ .\-]{0,20}['"]?\s*(?:[:?+.]{0,3}=|:)\s*['"]?([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"#, min_entropy: 3.0 },
+        Rule { rule_id: "vendor-keyed-token", name: "Vendor-Keyed Token", description: "Identifies fixed-shape tokens assigned to variables named after the vendor (KuCoin, Discord, Asana, SendBird, MessageBird, Twitter, Algolia, Dropbox, LinkedIn, Sidekiq)", severity: Severity::High, pattern: r#"(?i)(?:kucoin)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-f0-9]{24})(?:[`\'"\s;]|\\[nr]|$)|(?:discord)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-f0-9]{64})(?:[`\'"\s;]|\\[nr]|$)|(?:asana)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([0-9]{16})(?:[`\'"\s;]|\\[nr]|$)|(?:sendbird)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-f0-9]{40})(?:[`\'"\s;]|\\[nr]|$)|(?:message[_-]?bird)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-z0-9]{25})(?:[`\'"\s;]|\\[nr]|$)|(?:twitter)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-z0-9]{25})(?:[`\'"\s;]|\\[nr]|$)|(?:algolia)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-z0-9]{32})(?:[`\'"\s;]|\\[nr]|$)|(?:dropbox)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-z0-9]{15})(?:[`\'"\s;]|\\[nr]|$)|(?:linked[_-]?in)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-z0-9]{14})(?:[`\'"\s;]|\\[nr]|$)|(?:BUNDLE_ENTERPRISE__CONTRIBSYS__COM|BUNDLE_GEMS__CONTRIBSYS__COM)[ \t\w.-]{0,20}['"`\s]{0,3}(?:[:?]{0,3}=|:|=>)['"`\s=]{0,5}([a-f0-9]{8}:[a-f0-9]{8})(?:[`\'"\s;]|\\[nr]|$)"#, min_entropy: 3.0 },
+        Rule { rule_id: "openshift-user-token", name: "OpenShift User Token", description: "Identifies OpenShift user tokens (sha256~)", severity: Severity::High, pattern: r"\bsha256~[A-Za-z0-9_-]{43}", min_entropy: 3.5 },
+        Rule { rule_id: "vault-legacy-token", name: "HashiCorp Vault Legacy Token", description: "Identifies legacy Vault service tokens (s.) assigned to token-like names", severity: Severity::High, pattern: r#"(?i)vault[a-z0-9_ .\-]{0,20}token['"]?\s*(?:[:?+.]{0,3}=|:)\s*['"]?(s\.[a-z0-9]{24})(?:['"\s;]|$)"#, min_entropy: 3.5 },
+        Rule { rule_id: "url-basic-auth", name: "Credentials in URL", description: "Identifies user:password credentials embedded in http(s) URLs", severity: Severity::High, pattern: r#"\bhttps?://([A-Za-z0-9._%+-]{1,64}:[^\s:@/'"<>{}$\[\]()*]{4,64})@[A-Za-z0-9.-]+"#, min_entropy: 1.5 },
     ]
 }

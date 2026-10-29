@@ -277,3 +277,11 @@ code-ref	TOKEN_LIST=1234567890,1234567891,1234567892
 code-ref	password = hash_password_with_salt_and_pepper_value
 code-ref	private_key = rsa.generate_private_key_with_defaults
 code-ref	access_key: aws_access_key_id_from_profile_default
+url	git clone https://username:password@github.com/org/repo.git
+url	DATABASE_URL=https://user:${DB_PASSWORD}@db.internal.net/app
+url	proxy = http://user:pass@proxy.example.net:3128
+url	https://user:xxxxxxxx@host.example.org/path
+url	curl https://api.internal.net:8443/v1/health
+url	http://localhost:3000/callback?code=abc123
+url	https://<user>:<token>@github.com/org/repo
+url	https://{{ user }}:{{ pass }}@registry.internal.net/

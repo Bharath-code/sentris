@@ -310,6 +310,32 @@ impl FalsePositiveFilter {
             }
         }
 
+        if rule_id == "url-basic-auth" {
+            let password = token
+                .split_once(':')
+                .map_or("", |(_, p)| p)
+                .to_ascii_lowercase();
+            const PLACEHOLDERS: [&str; 12] = [
+                "password",
+                "pass",
+                "passwd",
+                "pwd",
+                "secret",
+                "token",
+                "changeme",
+                "example",
+                "yourpassword",
+                "your_password",
+                "xxxx",
+                "user",
+            ];
+            if PLACEHOLDERS.contains(&password.as_str())
+                || password.chars().all(|c| c == 'x' || c == '*')
+            {
+                return true;
+            }
+        }
+
         // 2. Stripe test keys and publishable keys are not production secrets, whichever rule matched them
         if (rule_id.starts_with("stripe-") || is_generic_rule(rule_id))
             && Self::is_stripe_non_secret(token)

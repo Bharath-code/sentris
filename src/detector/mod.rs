@@ -10,10 +10,15 @@ use regex::Regex;
 use regex_syntax::hir::literal::{ExtractKind, Extractor};
 use sha2::{Digest, Sha256};
 
+/// The secret is the first participating capture group (rules may alternate several), else the whole match.
+fn secret_group<'h>(caps: &regex::Captures<'h>) -> Option<regex::Match<'h>> {
+    caps.iter().skip(1).flatten().next().or_else(|| caps.get(0))
+}
+
 /// 0 = vendor-specific, 1 = keyed generic, 2 = broad generic
 fn rule_tier(rule_id: &str) -> u8 {
     match rule_id {
-        "generic-api-key" => 1,
+        "generic-api-key" | "url-basic-auth" => 1,
         "credential-assignment" | "credential-assignment-unquoted" => 2,
         _ => 0,
     }
@@ -55,6 +60,8 @@ fn allows_unquoted_assignments(file_path: &str) -> bool {
 
 /// Case-folded literal prefixes every match of `pattern` must start with, or None if unbounded/too short.
 fn required_prefixes(pattern: &str) -> Option<Vec<String>> {
+    // The Aho-Corasick prefilter is ASCII case-insensitive, so a leading (?i) need not be expanded into literals
+    let pattern = pattern.strip_prefix("(?i)").unwrap_or(pattern);
     let hir = regex_syntax::ParserBuilder::new()
         .build()
         .parse(pattern)
@@ -166,7 +173,7 @@ impl DetectorEngine {
     pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
         if let Some(rule) = self.rules.iter().find(|r| r.rule_id == rule_id) {
             if let Some(caps) = rule.regex.captures(line) {
-                let mat = caps.get(1).or_else(|| caps.get(0))?;
+                let mat = secret_group(&caps)?;
                 return Some(mat.as_str().to_string());
             }
         }
@@ -182,7 +189,7 @@ impl DetectorEngine {
     ) -> Option<String> {
         let rule = self.rules.iter().find(|r| r.rule_id == rule_id)?;
         rule.regex.captures_iter(line).find_map(|caps| {
-            let m = caps.get(1).or_else(|| caps.get(0))?.as_str();
+            let m = secret_group(&caps)?.as_str();
             (hex::encode(Sha256::digest(m.as_bytes())) == fingerprint).then(|| m.to_string())
         })
     }
@@ -283,7 +290,7 @@ impl DetectorEngine {
                 continue;
             }
             for caps in rule.regex.captures_iter(line) {
-                let mat = match caps.get(1).or_else(|| caps.get(0)) {
+                let mat = match secret_group(&caps) {
                     Some(m) => m,
                     None => continue,
                 };
