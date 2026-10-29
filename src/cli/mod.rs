@@ -124,7 +124,7 @@ pub enum Commands {
         #[arg(long, default_value = "env")]
         backend: String,
 
-        /// Rotate the credential via provider API instead of safe local extraction
+        /// Provider-side rotation (not supported yet: errors out before touching anything)
         #[arg(long, default_value_t = false)]
         rotate: bool,
 
@@ -269,6 +269,12 @@ pub enum AuthSubcommand {
         /// Custom Sentris Pro Cloud API endpoint (defaults to https://api.sentris.dev)
         #[arg(long)]
         server: Option<String>,
+
+        /// Join an existing team with the 64-hex team secret from your first teammate's login.
+        /// Pass `-` to paste it at a prompt (keeps it out of shell history), or set SENTRIS_TEAM_SECRET.
+        /// Omit on the first machine to generate one. Never sent to Sentris Cloud.
+        #[arg(long)]
+        team_secret: Option<String>,
     },
 
     /// Check active authentication and organization subscription status

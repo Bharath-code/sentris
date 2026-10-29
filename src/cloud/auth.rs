@@ -1,3 +1,4 @@
+use crate::cloud::client::{mock_mode, validate_server_url, DEFAULT_SERVER_URL};
 use crate::error::SentrisError;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -15,6 +16,31 @@ pub struct Credentials {
     pub seats_used: u32,
     pub user_email: String,
     pub expires_at: Option<String>,
+    /// 256-bit team secret (hex) used as the HMAC key for zero-knowledge fingerprints.
+    /// Shared between teammates out of band and never transmitted to Sentris Cloud.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub team_secret: Option<String>,
+}
+
+/// Generate a fresh 256-bit team secret from the OS CSPRNG.
+pub fn generate_team_secret() -> Result<String, SentrisError> {
+    let mut bytes = [0u8; 32];
+    getrandom::getrandom(&mut bytes)
+        .map_err(|e| SentrisError::Cloud(format!("OS random number generator unavailable: {e}")))?;
+    Ok(hex::encode(bytes))
+}
+
+/// Accept only 64 hex chars (256 bits); anything shorter weakens the fingerprint HMAC.
+pub fn validate_team_secret(secret: &str) -> Result<String, SentrisError> {
+    let s = secret.trim().to_ascii_lowercase();
+    if s.len() == 64 && s.bytes().all(|b| b.is_ascii_hexdigit()) {
+        Ok(s)
+    } else {
+        Err(SentrisError::Cloud(
+            "Team secret must be 64 hex characters (as printed by the first teammate's `sentris auth login`)."
+                .to_string(),
+        ))
+    }
 }
 
 impl Credentials {
@@ -53,12 +79,36 @@ impl Credentials {
 
     /// Save credentials securely to a specific file path (creating parent directories as needed)
     pub fn save_to_path(&self, path: &Path) -> Result<(), SentrisError> {
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
         let json = serde_json::to_string_pretty(self)
             .map_err(|e| SentrisError::Cloud(format!("Failed to serialize credentials: {e}")))?;
-        fs::write(path, json)?;
+        // Holds the API key and team secret: created owner-only, never briefly world-readable
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+            if let Some(parent) = path.parent() {
+                fs::DirBuilder::new()
+                    .recursive(true)
+                    .mode(0o700)
+                    .create(parent)?;
+            }
+            let mut file = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(path)?;
+            // mode() only applies on create; tighten files left by older versions
+            file.set_permissions(fs::Permissions::from_mode(0o600))?;
+            file.write_all(json.as_bytes())?;
+        }
+        #[cfg(not(unix))]
+        {
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::write(path, json)?;
+        }
         Ok(())
     }
 
@@ -94,35 +144,66 @@ impl Credentials {
             ));
         }
 
-        let default_url = server_url.unwrap_or_else(|| "https://api.sentris.dev".to_string());
+        let default_url = server_url.unwrap_or_else(|| DEFAULT_SERVER_URL.to_string());
+        validate_server_url(&default_url)?;
 
-        // Extract organization slug or assign default team metadata
-        let (org_id, org_name, email) = if trimmed.starts_with("sp_live_") {
-            let hash_part = &trimmed[8..trimmed.len().min(16)];
-            (
-                format!("org_{hash_part}"),
-                "Sentris Engineering Team".to_string(),
-                "dev@sentris.dev".to_string(),
-            )
-        } else {
-            (
-                "org_team_pro".to_string(),
-                "Acme Security Operations".to_string(),
-                "sec-ops@acme.corp".to_string(),
-            )
-        };
-
+        // Org details are unknown until the server confirms the key (`refresh_from_server`)
         Ok(Credentials {
             api_key: trimmed.to_string(),
             server_url: default_url,
-            org_id,
-            org_name,
-            tier: "Pro ($8/seat)".to_string(),
-            seat_limit: 25,
-            seats_used: 14,
-            user_email: email,
-            expires_at: Some("2027-10-08T00:00:00Z".to_string()),
+            org_id: String::new(),
+            org_name: "(unverified)".to_string(),
+            tier: "Unverified".to_string(),
+            seat_limit: 0,
+            seats_used: 0,
+            user_email: String::new(),
+            expires_at: None,
+            team_secret: None,
         })
+    }
+
+    /// Validates the key against the server and replaces placeholders with the real org, plan and seats.
+    pub fn refresh_from_server(&mut self) -> Result<(), SentrisError> {
+        validate_server_url(&self.server_url)?;
+        if mock_mode() {
+            self.org_id = "org_mock".to_string();
+            self.org_name = "[MOCK] offline workspace".to_string();
+            self.tier = "Mock".to_string();
+            return Ok(());
+        }
+        let url = format!("{}/api/v1/me", self.server_url.trim_end_matches('/'));
+        let res = ureq::get(&url)
+            .set("Authorization", &format!("Bearer {}", self.api_key))
+            .timeout(std::time::Duration::from_secs(8))
+            .call();
+        let me: serde_json::Value = match res {
+            Ok(r) => r
+                .into_json()
+                .map_err(|e| SentrisError::Cloud(format!("Unreadable response from {url}: {e}")))?,
+            Err(ureq::Error::Status(401, _)) => {
+                return Err(SentrisError::Cloud(
+                    "The server rejected this API key (invalid or revoked).".to_string(),
+                ))
+            }
+            Err(ureq::Error::Status(code, _)) => {
+                return Err(SentrisError::Cloud(format!("{url} returned HTTP {code}")))
+            }
+            Err(ureq::Error::Transport(e)) => {
+                return Err(SentrisError::Cloud(format!("Could not reach {url}: {e}")))
+            }
+        };
+        let text = |k: &str| me[k].as_str().unwrap_or_default().to_string();
+        self.org_id = text("org_id");
+        self.org_name = text("org_name");
+        self.user_email = text("owner_email");
+        self.tier = if me["plan"] == "pro" {
+            "Pro".into()
+        } else {
+            "Free (beta)".into()
+        };
+        self.seat_limit = me["seats"].as_u64().unwrap_or(1) as u32;
+        self.seats_used = 1;
+        Ok(())
     }
 }
 
@@ -136,9 +217,11 @@ mod tests {
         let token = "sp_live_9f8e7d6c5b4a3210deadbeef";
         let creds = Credentials::from_token(token, None).expect("Valid token should parse");
         assert_eq!(creds.api_key, token);
-        assert_eq!(creds.tier, "Pro ($8/seat)");
-        assert_eq!(creds.seat_limit, 25);
-        assert_eq!(creds.server_url, "https://api.sentris.dev");
+        assert_eq!(creds.tier, "Unverified");
+        assert_eq!(creds.seat_limit, 0);
+        assert_eq!(creds.server_url, DEFAULT_SERVER_URL);
+        assert!(Credentials::from_token(token, Some("http://example.com".into())).is_err());
+        assert!(Credentials::from_token(token, Some("https://u:p@evil.test".into())).is_err());
     }
 
     #[test]
@@ -163,6 +246,7 @@ mod tests {
             seats_used: 28,
             user_email: "lead@acme.com".to_string(),
             expires_at: Some("2028-01-01T00:00:00Z".to_string()),
+            team_secret: None,
         };
 
         creds.save_to_path(&path).expect("Save should succeed");

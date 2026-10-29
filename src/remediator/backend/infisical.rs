@@ -1,8 +1,6 @@
 use crate::error::SentrisError;
-use crate::remediator::backend::SecretStoreBackend;
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::remediator::backend::{mock_notice, mock_requested, record_mock, SecretStoreBackend};
+use std::path::PathBuf;
 
 /// Infisical Cloud / Self-Hosted Secret Manager backend driver.
 #[derive(Debug, Clone)]
@@ -15,13 +13,10 @@ pub struct InfisicalBackend {
 
 impl InfisicalBackend {
     pub fn new() -> Self {
-        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
         Self {
             env_slug: std::env::var("INFISICAL_ENV").unwrap_or_else(|_| "dev".to_string()),
             secret_path: std::env::var("INFISICAL_PATH").unwrap_or_else(|_| "/".to_string()),
-            mock: !live_mode,
+            mock: mock_requested(),
             mock_ledger_path: None,
         }
     }
@@ -80,36 +75,33 @@ impl SecretStoreBackend for InfisicalBackend {
         secret: &str,
         dry_run: bool,
     ) -> Result<String, SentrisError> {
-        let cli_cmd = self.format_cli_command(key, secret);
-        let payload = self.format_api_payload(key, secret);
-
         if dry_run {
+            let shown = "<redacted>";
             return Ok(format!(
-                "[dry-run] Staged Infisical secret '{key}' (CLI: '{cli_cmd}', API: {})",
-                serde_json::to_string(&payload)?
+                "[dry-run] Staged Infisical secret '{key}' (CLI: '{}', API: {})",
+                self.format_cli_command(key, shown),
+                serde_json::to_string(&self.format_api_payload(key, shown))?
             ));
         }
 
         if self.mock {
-            let ledger_path = self
-                .mock_ledger_path
-                .clone()
-                .unwrap_or_else(|| Path::new(".sentris").join("infisical_mock.json"));
-            if let Some(parent) = ledger_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut existing: HashMap<String, serde_json::Value> = if ledger_path.exists() {
-                let content = fs::read_to_string(&ledger_path)?;
-                serde_json::from_str(&content).unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-            existing.insert(key.to_string(), payload);
-            fs::write(&ledger_path, serde_json::to_string_pretty(&existing)?)?;
+            let path = record_mock(
+                self.mock_ledger_path.as_deref(),
+                "infisical_mock.json",
+                key,
+                self.format_api_payload(key, secret),
+            )?;
             return Ok(format!(
-                "Recorded Infisical secret '{key}' to {}",
-                ledger_path.display()
+                "{} (ledger: {})",
+                mock_notice("Infisical"),
+                path.display()
             ));
+        }
+
+        if !crate::remediator::backend::argv_secrets_allowed() {
+            return Err(SentrisError::Scan(format!(
+                "Live {name} writes pass the secret as a CLI argument, visible to other local users via ps. Refusing; set SENTRIS_ALLOW_ARGV_SECRETS=1 to accept that risk, or use the aws, doppler or vault backend."
+            , name = self.backend_name())));
         }
 
         let kv_arg = format!("{key}={secret}");
@@ -135,6 +127,10 @@ impl SecretStoreBackend for InfisicalBackend {
                 "Failed to spawn 'infisical' CLI for '{key}': {e}"
             ))),
         }
+    }
+
+    fn is_mock(&self) -> bool {
+        self.mock
     }
 }
 

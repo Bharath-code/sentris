@@ -186,6 +186,8 @@ mod tests {
                 entropy: 4.8,
                 fingerprint: "abcdef123456".to_string(),
                 commit_hash: None,
+                commit_author: None,
+                commit_date: None,
             }],
         };
 

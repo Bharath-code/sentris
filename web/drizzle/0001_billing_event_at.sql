@@ -1,0 +1,1 @@
+ALTER TABLE `org` ADD `billing_event_at` integer;

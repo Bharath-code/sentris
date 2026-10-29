@@ -33,7 +33,9 @@ impl ProviderVerifier for SlackVerifier {
     fn verify_live(&self, secret: &str) -> Result<LiveStatus, SentrisError> {
         let trimmed = secret.trim();
 
-        if trimmed.starts_with("xoxb-test-mock") || trimmed.contains("test_mock_webhook") {
+        if super::mock_tokens_enabled()
+            && (trimmed.starts_with("xoxb-test-mock") || trimmed.contains("test_mock_webhook"))
+        {
             return Ok(LiveStatus::Active {
                 scopes: vec!["chat:write".to_string(), "channels:read".to_string()],
             });
@@ -73,14 +75,6 @@ impl ProviderVerifier for SlackVerifier {
         } else {
             Ok(LiveStatus::Revoked)
         }
-    }
-
-    fn rotate(&self, _old_secret: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            return Ok("xoxb-DRY-RUN-MOCK-REPLACEMENT-TOKEN".to_string());
-        }
-
-        Ok("xoxb-PROVISIONED-REPLACEMENT-TOKEN".to_string())
     }
 }
 

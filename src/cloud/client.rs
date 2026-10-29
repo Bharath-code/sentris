@@ -4,11 +4,15 @@ use crate::model::ScanReport;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+/// Uploaded in place of `redacted_match`: even a prefix + last 4 chars is partial key material.
+pub const CLOUD_PREVIEW_MASK: &str = "[redacted]";
+
 /// Zero-knowledge finding payload transmitted to Sentris Pro Cloud
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CloudFindingPayload {
-    pub finding_id: String,
-    pub fingerprint: String, // Salted SHA-256 / HMAC hash — never the raw secret!
+    /// HMAC-SHA256(team secret, secret hash). The server never holds the key, so it
+    /// cannot test a guessed secret against this value.
+    pub fingerprint: String,
     pub rule_id: String,
     pub description: String,
     pub severity: String,
@@ -149,14 +153,14 @@ pub fn record_and_correlate_local_blast_radius(
     correlate_multi_repo_blast_radius(&payloads)
 }
 
-/// Compute a zero-knowledge salted SHA-256 fingerprint from a finding fingerprint
-pub fn compute_zero_knowledge_fingerprint(base_fp: &str, salt: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(salt.as_bytes());
-    hasher.update(b":");
-    hasher.update(base_fp.as_bytes());
-    let result = hasher.finalize();
-    format!("zk_{}", hex::encode(result))
+/// Keyed zero-knowledge fingerprint: `zk_` + HMAC-SHA256(team_secret, base_fp).
+/// `team_secret` is the 64-hex team secret; teammates sharing it get identical fingerprints.
+pub fn compute_zero_knowledge_fingerprint(base_fp: &str, team_secret: &str) -> String {
+    let key = hex::decode(team_secret).unwrap_or_else(|_| team_secret.as_bytes().to_vec());
+    format!(
+        "zk_{}",
+        hex::encode(crate::audit::hmac_sha256(&key, base_fp.as_bytes()))
+    )
 }
 
 /// Build a zero-knowledge cloud scan payload from a local ScanReport
@@ -166,38 +170,36 @@ pub fn build_cloud_payload(
     repo_name: Option<&str>,
     branch: Option<&str>,
     commit_hash: Option<String>,
-) -> CloudScanPayload {
+) -> Result<CloudScanPayload, SentrisError> {
+    let team_secret = creds.team_secret.as_deref().ok_or_else(|| {
+        SentrisError::Cloud(
+            "No team secret configured. Re-run `sentris auth login --token <KEY>` (add `--team-secret <SECRET>` to join an existing team)."
+                .to_string(),
+        )
+    })?;
     let stats_hash = Sha256::digest(format!("{:?}", report.stats).as_bytes());
     let hex_hash = hex::encode(stats_hash);
     let scan_id = format!("scn_{}", &hex_hash[..8]);
     let effective_repo = repo_name.unwrap_or("local-workspace").to_string();
     let effective_branch = branch.unwrap_or("main").to_string();
 
-    let salt = &creds.org_id;
-
     let findings: Vec<CloudFindingPayload> = report
         .findings
         .iter()
-        .map(|f| {
-            // Salted zero-knowledge fingerprint ensures raw finding identity is cryptographically salted
-            let zk_fingerprint = compute_zero_knowledge_fingerprint(&f.fingerprint, salt);
-
-            CloudFindingPayload {
-                finding_id: f.fingerprint.clone(),
-                fingerprint: zk_fingerprint,
-                rule_id: f.rule_id.clone(),
-                description: f.description.clone(),
-                severity: f.severity.to_string(),
-                file_path: f.file_path.clone(),
-                line_number: f.line_number,
-                entropy: f.entropy,
-                redacted_preview: f.redacted_match.clone(),
-                zone: "Zone 1 (Staged / Working Tree)".to_string(),
-            }
+        .map(|f| CloudFindingPayload {
+            fingerprint: compute_zero_knowledge_fingerprint(&f.fingerprint, team_secret),
+            rule_id: f.rule_id.clone(),
+            description: f.description.clone(),
+            severity: f.severity.to_string(),
+            file_path: f.file_path.clone(),
+            line_number: f.line_number,
+            entropy: f.entropy,
+            redacted_preview: CLOUD_PREVIEW_MASK.to_string(),
+            zone: "Zone 1 (Staged / Working Tree)".to_string(),
         })
         .collect();
 
-    CloudScanPayload {
+    Ok(CloudScanPayload {
         scan_id,
         org_id: creds.org_id.clone(),
         repo_name: effective_repo,
@@ -207,6 +209,50 @@ pub fn build_cloud_payload(
         files_scanned: report.stats.files_scanned,
         duration_ms: report.stats.duration_ms,
         findings,
+    })
+}
+
+/// Production API until a custom domain exists.
+pub const DEFAULT_SERVER_URL: &str = "https://sentris-web.kumarbharath63.workers.dev";
+
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+}
+
+/// Explicit offline simulation for tests/demos. Never inferred from the server URL.
+pub fn mock_mode() -> bool {
+    env_flag("SENTRIS_CLOUD_MOCK")
+}
+
+/// The bearer API key is sent to this URL, so require https (plain http only for loopback with an explicit opt-in).
+pub fn validate_server_url(url: &str) -> Result<(), SentrisError> {
+    let bad = |why: &str| SentrisError::Cloud(format!("Refusing server URL '{url}': {why}"));
+    let (scheme, rest) = url
+        .split_once("://")
+        .ok_or_else(|| bad("expected https://host"))?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    if authority.is_empty() || authority.contains('@') {
+        return Err(bad("missing host or embedded credentials"));
+    }
+    let host = if let Some(v6) = authority.strip_prefix('[') {
+        v6.split(']').next().unwrap_or("")
+    } else {
+        authority.split(':').next().unwrap_or("")
+    };
+    match scheme.to_ascii_lowercase().as_str() {
+        "https" => Ok(()),
+        "http" if matches!(host, "localhost" | "127.0.0.1" | "::1") => {
+            if env_flag("SENTRIS_ALLOW_INSECURE") {
+                Ok(())
+            } else {
+                Err(bad(
+                    "http is only allowed for loopback with SENTRIS_ALLOW_INSECURE=1",
+                ))
+            }
+        }
+        _ => Err(bad("the API key would travel unencrypted; use https")),
     }
 }
 
@@ -222,19 +268,19 @@ pub fn upload_scan(
         ));
     }
 
+    validate_server_url(&creds.server_url)?;
     let url = format!("{}/api/v1/scans", creds.server_url.trim_end_matches('/'));
 
     let blast_radius_insights = record_and_correlate_local_blast_radius(payload);
 
-    // Check if test/mock mode or non-reachable endpoint
-    if creds.server_url.contains("mock") || creds.server_url.contains("localhost") {
+    if mock_mode() {
         return Ok(CloudUploadResponse {
             success: true,
             scan_id: payload.scan_id.clone(),
-            dashboard_url: format!("{}/dashboard/scans/{}", creds.server_url, payload.scan_id),
+            dashboard_url: String::new(),
             new_findings_count: payload.findings.len(),
             message: format!(
-                "Successfully synchronized {} zero-knowledge finding(s) with Sentris Pro Cloud.",
+                "[MOCK] SENTRIS_CLOUD_MOCK is set: nothing was uploaded ({} finding(s) correlated locally only).",
                 payload.findings.len()
             ),
             blast_radius_insights,
@@ -269,21 +315,10 @@ pub fn upload_scan(
                 "Cloud API rejected sync (HTTP {status}): {body}"
             )))
         }
-        Err(ureq::Error::Transport(err)) => {
-            // Graceful fallback for offline / unconfigured cloud endpoint
-            Ok(CloudUploadResponse {
-                success: true,
-                scan_id: payload.scan_id.clone(),
-                dashboard_url: format!("{}/dashboard/scans/{}", creds.server_url, payload.scan_id),
-                new_findings_count: payload.findings.len(),
-                message: format!(
-                    "Queued {} zero-knowledge finding(s) for local team ledger (endpoint offline: {}).",
-                    payload.findings.len(),
-                    err.kind()
-                ),
-                blast_radius_insights,
-            })
-        }
+        Err(ureq::Error::Transport(err)) => Err(SentrisError::Cloud(format!(
+            "Could not reach {}: {err}. Nothing was synced.",
+            creds.server_url
+        ))),
     }
 }
 
@@ -295,9 +330,9 @@ mod tests {
     #[test]
     fn test_compute_zero_knowledge_fingerprint_deterministic() {
         let base_fp = "fp_abc123456789";
-        let salt = "org_sentris_test";
-        let fp1 = compute_zero_knowledge_fingerprint(base_fp, salt);
-        let fp2 = compute_zero_knowledge_fingerprint(base_fp, salt);
+        let secret = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+        let fp1 = compute_zero_knowledge_fingerprint(base_fp, secret);
+        let fp2 = compute_zero_knowledge_fingerprint(base_fp, secret);
         assert_eq!(fp1, fp2);
         assert!(fp1.starts_with("zk_"));
         assert_eq!(fp1.len(), 3 + 64);
@@ -306,8 +341,14 @@ mod tests {
     #[test]
     fn test_compute_zero_knowledge_fingerprint_salt_variance() {
         let base_fp = "fp_abc123456789";
-        let fp1 = compute_zero_knowledge_fingerprint(base_fp, "org_a");
-        let fp2 = compute_zero_knowledge_fingerprint(base_fp, "org_b");
+        let fp1 = compute_zero_knowledge_fingerprint(
+            base_fp,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        let fp2 = compute_zero_knowledge_fingerprint(
+            base_fp,
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        );
         assert_ne!(fp1, fp2);
     }
 
@@ -324,6 +365,8 @@ mod tests {
             entropy: 4.85,
             fingerprint: "hash_a1b2c3d4e5f6".to_string(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         };
 
         let report = ScanReport {
@@ -349,7 +392,16 @@ mod tests {
             seats_used: 12,
             user_email: "dev@acme.corp".to_string(),
             expires_at: None,
+            team_secret: Some(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            ),
         };
+
+        let no_secret = Credentials {
+            team_secret: None,
+            ..creds.clone()
+        };
+        assert!(build_cloud_payload(&report, &no_secret, None, None, None).is_err());
 
         let payload = build_cloud_payload(
             &report,
@@ -357,15 +409,21 @@ mod tests {
             Some("backend-api"),
             Some("feature-payments"),
             None,
-        );
+        )
+        .unwrap();
         assert_eq!(payload.findings.len(), 1);
         let item = &payload.findings[0];
         assert_eq!(item.rule_id, "stripe-api-key");
         assert!(item.fingerprint.starts_with("zk_"));
 
         let json = serde_json::to_string(&payload).unwrap();
-        assert!(json.contains("sk_live_51...f89a"));
+        assert!(!json.contains("sk_live_51...f89a"));
+        assert!(!json.contains("f89a"));
+        assert_eq!(item.redacted_preview, CLOUD_PREVIEW_MASK);
         assert!(!json.contains("raw_unmasked"));
+        // The unsalted secret hash must never leave the machine
+        assert!(!json.contains("hash_a1b2c3d4e5f6"));
+        assert!(!json.contains("finding_id"));
     }
 
     #[test]
@@ -392,6 +450,7 @@ mod tests {
             seats_used: 12,
             user_email: "dev@acme.corp".to_string(),
             expires_at: None,
+            team_secret: None,
         };
 
         let err = upload_scan(&payload, &creds, true).unwrap_err();
@@ -410,6 +469,9 @@ mod tests {
             seats_used: 24,
             user_email: "ciso@acme.corp".to_string(),
             expires_at: None,
+            team_secret: Some(
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".to_string(),
+            ),
         };
 
         let shared_pg_finding = Finding {
@@ -424,6 +486,8 @@ mod tests {
             fingerprint: "94a3ab2d2b40bf154ebe81310bb8e0f21f511a0d3d54c743a2668f5fd9226ccc"
                 .to_string(),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         };
 
         let report = ScanReport {
@@ -442,7 +506,9 @@ mod tests {
         let repos = ["billing-svc", "auth-worker", "analytics-etl", "admin-api"];
         let payloads: Vec<CloudScanPayload> = repos
             .iter()
-            .map(|repo| build_cloud_payload(&report, &creds, Some(repo), Some("main"), None))
+            .map(|repo| {
+                build_cloud_payload(&report, &creds, Some(repo), Some("main"), None).unwrap()
+            })
             .collect();
 
         let insights = correlate_multi_repo_blast_radius(&payloads);
@@ -454,5 +520,48 @@ mod tests {
             vec!["billing-svc", "auth-worker", "analytics-etl", "admin-api"]
         );
         assert!(insights[0].zk_fingerprint.starts_with("zk_"));
+    }
+
+    #[test]
+    fn server_url_validation() {
+        assert!(validate_server_url("https://app.example.com").is_ok());
+        assert!(validate_server_url("http://example.com").is_err());
+        assert!(validate_server_url("http://localhost:3000").is_err());
+        assert!(validate_server_url("ftp://example.com").is_err());
+        assert!(validate_server_url("https://user:pw@example.com").is_err());
+        assert!(validate_server_url("https://").is_err());
+        assert!(validate_server_url("example.com").is_err());
+        // A hostile name containing "mock"/"localhost" gets no special treatment
+        assert!(validate_server_url("https://mock.evil.tld").is_ok());
+        assert!(validate_server_url("http://mock.evil.tld/localhost").is_err());
+    }
+
+    #[test]
+    fn unreachable_server_is_an_error_not_a_success() {
+        let payload = CloudScanPayload {
+            scan_id: "s".into(),
+            org_id: "o".into(),
+            repo_name: "r".into(),
+            branch: "b".into(),
+            commit_hash: None,
+            timestamp: "t".into(),
+            files_scanned: 0,
+            duration_ms: 0,
+            findings: vec![],
+        };
+        let creds = Credentials {
+            api_key: "sp_live_x".into(),
+            server_url: "https://127.0.0.1:9".into(),
+            org_id: String::new(),
+            org_name: String::new(),
+            tier: String::new(),
+            seat_limit: 0,
+            seats_used: 0,
+            user_email: String::new(),
+            expires_at: None,
+            team_secret: None,
+        };
+        let err = upload_scan(&payload, &creds, false).unwrap_err();
+        assert!(err.to_string().contains("Nothing was synced"));
     }
 }

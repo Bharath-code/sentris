@@ -30,6 +30,37 @@ pub struct JsonRpcResponse {
     pub error: Option<Value>,
 }
 
+const MAX_LINE_BYTES: usize = 1 << 20;
+
+pub(crate) enum Line {
+    Text(String),
+    TooLong,
+}
+
+/// Reads one `\n`-terminated line without ever buffering more than `max` bytes; oversize lines are drained and reported.
+pub(crate) fn read_capped_line<R: BufRead>(r: &mut R, max: usize) -> io::Result<Option<Line>> {
+    use std::io::Read;
+    let mut buf = Vec::new();
+    let n = r
+        .by_ref()
+        .take(max as u64 + 1)
+        .read_until(b'\n', &mut buf)?;
+    if n == 0 {
+        return Ok(None);
+    }
+    if buf.len() > max && !buf.ends_with(b"\n") {
+        loop {
+            let mut sink = Vec::new();
+            let m = r.by_ref().take(64 * 1024).read_until(b'\n', &mut sink)?;
+            if m == 0 || sink.ends_with(b"\n") {
+                break;
+            }
+        }
+        return Ok(Some(Line::TooLong));
+    }
+    Ok(Some(Line::Text(String::from_utf8_lossy(&buf).into_owned())))
+}
+
 pub struct McpServer;
 
 impl McpServer {
@@ -52,10 +83,27 @@ impl McpServer {
         let stdin = io::stdin();
         let mut stdout = io::stdout();
 
-        for line_res in stdin.lock().lines() {
-            let line = match line_res {
-                Ok(l) => l,
-                Err(_) => break,
+        let mut input = stdin.lock();
+        loop {
+            let line = match read_capped_line(&mut input, MAX_LINE_BYTES) {
+                Ok(Some(Line::Text(l))) => l,
+                Ok(Some(Line::TooLong)) => {
+                    let resp = JsonRpcResponse {
+                        jsonrpc: "2.0",
+                        id: Value::Null,
+                        result: None,
+                        error: Some(json!({
+                            "code": -32600,
+                            "message": format!("Request exceeds {MAX_LINE_BYTES} bytes")
+                        })),
+                    };
+                    if let Ok(serialized) = serde_json::to_string(&resp) {
+                        let _ = writeln!(stdout, "{serialized}");
+                        let _ = stdout.flush();
+                    }
+                    continue;
+                }
+                Ok(None) | Err(_) => break,
             };
             let trimmed = line.trim();
             if trimmed.is_empty() {
@@ -158,6 +206,12 @@ mod tests {
             .clone();
         assert_eq!(tools.len(), 6);
 
+        // Without credentials the tool reports an error instead of inventing sample data
+        let _guard = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let empty = tempfile::tempdir().unwrap();
+        std::env::set_var("SENTRIS_CONFIG_DIR", empty.path());
         let br_req = r#"{
             "jsonrpc": "2.0",
             "id": 20,
@@ -168,12 +222,12 @@ mod tests {
             }
         }"#;
         let br_resp = McpServer::handle_raw_message(br_req, true).expect("Expected response");
-        let br_text = br_resp.result.unwrap()["content"][0]["text"]
+        std::env::remove_var("SENTRIS_CONFIG_DIR");
+        assert!(br_resp.result.is_none());
+        assert!(br_resp.error.unwrap()["message"]
             .as_str()
             .unwrap()
-            .to_string();
-        assert!(br_text.contains("postgres-connection-uri"));
-        assert!(br_text.contains("zero_knowledge_bytes_ingested"));
+            .contains("Not logged in"));
     }
 
     #[test]
@@ -247,5 +301,21 @@ mod tests {
             .path()
             .join(".agents/skills/sentris-security/SKILL.md")
             .exists());
+    }
+
+    #[test]
+    fn oversize_line_is_drained_and_reported_without_buffering_it() {
+        let mut data = vec![b'a'; 5000];
+        data.extend_from_slice(b"\nnext\n");
+        let mut r = std::io::Cursor::new(data);
+        assert!(matches!(
+            read_capped_line(&mut r, 1024).unwrap(),
+            Some(Line::TooLong)
+        ));
+        match read_capped_line(&mut r, 1024).unwrap() {
+            Some(Line::Text(t)) => assert_eq!(t.trim(), "next"),
+            _ => panic!("expected the following line"),
+        }
+        assert!(read_capped_line(&mut r, 1024).unwrap().is_none());
     }
 }

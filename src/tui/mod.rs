@@ -115,6 +115,8 @@ mod tests {
             entropy: 4.5,
             fingerprint: format!("fp_{rule_id}_{line}"),
             commit_hash: None,
+            commit_author: None,
+            commit_date: None,
         }
     }
 

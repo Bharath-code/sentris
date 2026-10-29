@@ -2,12 +2,12 @@
 
 <div align="center">
 
-**The Autonomous Secret Remediation Engine — Detect in `12ms`, Fix in 1 Command, Prove SOC 2 in 10 Seconds**
+**Secret scanner that also fixes the code: detect, move the key out of source, roll back byte-for-byte**
 
 [![CI](https://github.com/Bharath-code/sentris/actions/workflows/ci.yml/badge.svg)](https://github.com/Bharath-code/sentris/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Binary Size](https://img.shields.io/badge/binary-4.02MB%20static%20Rust-success.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
-[![Pre-Commit SLA](https://img.shields.io/badge/pre--commit-11ms%20--%2025ms-brightgreen.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Benchmark](https://img.shields.io/badge/benchmark-reproducible-brightgreen.svg)](bench/results/latest.md)
 [![Throughput](https://img.shields.io/badge/throughput-83%2C333%20files%2Fsec-blueviolet.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![Tests](https://img.shields.io/badge/tests-155%2F155%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![MCP & LSP Ready](https://img.shields.io/badge/AI%20%26%20IDE-Native%20MCP%20%2B%20LSP-orange.svg)](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp)
@@ -20,11 +20,25 @@
 ```
 
 **Finding a secret is only 20% of the problem.**  
-Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `Infisical` without breaking your app, and proving SOC 2 compliance is the other **80%**—and **Sentris is the only tool built to own that 80%.**
+Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `Infisical` without breaking your app, and keeping an audit trail is the other **80%**—Sentris is built to own that 80%. See *Status* below for what works today.
 
 [Quickstart](#-quickstart) • [The 5 Holy Sh\*t Moments](#-the-5-holy-sht-moments) • [14-Dimension Matrix](#-14-dimension-competitive-matrix) • [Full Benchmark Dossier](docs/BENCHMARKS-AND-ARCHITECTURE.md) • [Autonomous Remediation](#5-autonomous-remediation-multi-secret-batch-mode--6-secret-backends) • [AI Agent MCP & IDE LSP](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp) • [SOC 2 & Zero-Knowledge Cloud](#7-10-second-vanta-soc-2-drop--zero-knowledge-multi-repo-blast-radius)
 
 </div>
+
+---
+
+## Status (read this first)
+
+| Area | Today |
+|---|---|
+| Scanning (CLI, pre-commit, git history, SARIF, MCP, LSP) | Working. Recall is still being measured against gitleaks; run `sentris scan` on your own corpus before relying on it. |
+| Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, signed rollback ledger. |
+| Remediation into Vault / AWS Secrets Manager / Doppler | Implemented, not yet integration-tested against live services. 1Password and Infisical are opt-in (`SENTRIS_ALLOW_ARGV_SECRETS=1`). |
+| **Provider key rotation (`--rotate`)** | **Not implemented.** The leaked key stays valid until you revoke it at the provider. |
+| Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
+| Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
+| Benchmarks | Numbers in this README come from the author's machine; a reproducible script is planned. |
 
 ---
 
@@ -38,8 +52,8 @@ Legacy secret scanners (`Gitleaks`, `TruffleHog`, `GitGuardian`, `MongoDB Kingfi
 
 ```mermaid
 flowchart LR
-    subgraph Detect["1. Sub-25ms Detection"]
-        A["Work-Stealing Parallel Walker + Whole-File RegexSet DFA"]
+    subgraph Detect["1. Fast Detection"]
+        A["Work-Stealing Parallel Walker + Literal Prefilter"]
         B["6-Layer FP Suppression + Syntactic ContextKind"]
         A --> B
     end
@@ -64,8 +78,8 @@ flowchart LR
 
 ## 🔥 The 5 "Holy Sh\*t" Moments
 
-### 1. The Pre-Commit Ghost (`12ms` Diff-Hunk Scan)
-Developers never bypass Sentris with `--no-verify` because it parses staged diff hunks (`git diff --cached -U0`) and finishes in **`12ms`**—faster than a 60Hz monitor refreshes (`16.6ms`). And if someone ever forces `--no-verify`, Sentris's automatic `pre-push` hook (`sentris scan --since HEAD~1`) catches it before `git push`.
+### 1. The Pre-Commit Ghost (Diff-Hunk Scan)
+Developers never bypass Sentris with `--no-verify` because it parses staged diff hunks (`git diff --cached -U0`) so the cost scales with the size of the change, not the size of the repo (staged-scan latency is not part of `bench/` yet). And if someone ever forces `--no-verify`, Sentris's automatic `pre-push` hook (`sentris scan --since HEAD~1`) catches it before `git push`.
 
 ### 2. The Friday 4:55 PM Save (`sentris remediate`)
 Instead of manually editing files, creating `.env`, updating `.gitignore`, and hoping teammates don't break their build:
@@ -77,19 +91,19 @@ Target: src/billing.ts (line 6) | Rule: stripe-secret-key
 
   [1/7] 🔍 Verifying key status via Stripe API... ACTIVE & LIVE (Scopes: read_write, charges, customers)
   [2/7] 🛡️  Creating atomic git backup branch... SAVED (sentris/backup-1793196000)
-  [3/7] 🔑 Provisioning replacement API credential... PROVISIONED (sk_liv...cdef • extracted working key; pass --rotate to roll via API)
-  [4/7] 🔒 Securing credential into Env backend... INJECTED (STRIPE_SECRET_KEY=*** • RAM buffer zeroized)
+  [3/7] 🔑 Provisioning replacement API credential... EXTRACTED (sk_liv...cdef • extracted working key, not rotated)
+  [4/7] 🔒 Securing credential into Env backend... INJECTED (STRIPE_SECRET_KEY=***)
   [5/7] 📝 Replacing hardcoded literal in source code... PATCHED
         - const stripeApiKey = "sk_live_51AbcDefGhIjKlMnOpQrStUvWxYz123456";
         + const stripeApiKey = process.env.STRIPE_SECRET_KEY;
-  [6/7] ⏳ Queuing compromised key for 24h grace deprecation... SCHEDULED (Zero production downtime)
+  [6/7] ⚠️  Leaked key NOT revoked: still valid until you rotate it at the provider
   [7/7] 🧾 Recording transaction in rollback ledger... COMMITTED (.sentris/rollback_ledger.json)
 ```
 In **under 1 second**, `.env` is populated, `.gitignore` is hardened, `.env.example` is synced with a safe empty `STRIPE_SECRET_KEY=` contract for teammates, the source file is patched, and **your local app keeps running without a single restart error.**
 
 ### 3. The Autonomous AI Agent & IDE Self-Heal (`sentris mcp` + `sentris lsp`)
 - **AI Coding Agents (`sentris mcp`):** Cursor, Claude Code, Windsurf, and Antigravity call Sentris's local zero-egress MCP server over `stdio` (`sentris_scan_path`, `sentris_remediate_finding`, `sentris_rollback_session`, `sentris_team_blast_radius`) to fix leaked keys before finishing their turn.
-- **Real-Time IDE Diagnostics (`sentris lsp`):** Native LSP 3.17 server highlights pasted secrets in `<2ms` and offers a 1-click Quick Fix (`Sentris: Extract stripe-secret-key to STRIPE_SECRET_KEY`) directly in VS Code, Cursor, Zed, and Neovim.
+- **Real-Time IDE Diagnostics (`sentris lsp`):** Native LSP 3.17 server highlights pasted secrets as you type and offers a 1-click Quick Fix (`Sentris: Extract stripe-secret-key to STRIPE_SECRET_KEY`) directly in VS Code, Cursor, Zed, and Neovim.
 
 ### 4. The Zero-Knowledge Multi-Repo Blast Radius Insight (`sentris team`)
 Security directors see duplicate leaked credentials across 50 microservice repositories via organization-salted `zk_<sha256>` HMAC correlation—**with `0 bytes` of proprietary source code or raw secrets ever leaving a developer's laptop:**
@@ -128,9 +142,9 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
 
 | Dimension | Sentris (Ours) | MongoDB Kingfisher (Rust OSS) | GitGuardian (SaaS + ggshield) | TruffleHog v3 (Go OSS + Ent) | GitHub Secret Protection | Semgrep Secrets | Gitleaks v8 (Go OSS) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + `RegexSet` DFA)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) |
-| **Pre-Commit Latency** | **`12ms – 25ms` (Diff-Hunk DFA)** | `80ms – 350ms` | `350ms – 1,200ms` | `800ms – 4,000ms` | Push-time only | `1,000ms – 3,500ms` | `25ms – 60ms` |
-| **Detection Engine** | **55+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules |
+| **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) |
+| **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` |
+| **Detection Engine** | **110+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules |
 | **Live API Verification** | **Yes (`--verify` w/ zero-egress `--offline` default)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No |
 | **Post-Detection Action** | **Extracts to `.env`/Vault/1Password/Infisical + Patches Code** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table |
 | **Local Dev App Safety** | **Safe Local Extraction + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual |
@@ -172,13 +186,14 @@ cargo install sentris
 # Scan working directory recursively (Work-Stealing Parallel Walker + Whole-File RegexSet DFA)
 sentris scan .
 
-# Scan only staged git index diff hunks (12ms pre-commit mode)
+# Scan only staged git index diff hunks (pre-commit mode)
 sentris scan --staged
 
 # Scan commits in a branch or push range (e.g. origin/main..HEAD)
 sentris scan --since HEAD~1
 
-# Deep git commit graph & reflog history scan
+# Deep git commit graph history scan: finds secrets that were added and later deleted,
+# reporting commit hash, author and date (JSON: commit_hash, commit_author, commit_date)
 sentris scan --git-history
 
 # Verify detected credentials against live provider APIs & map permission scopes
@@ -226,7 +241,7 @@ backup_branch = true
 
 ---
 
-### 4. Install Sub-25ms Pre-Commit & Pre-Push Hooks
+### 4. Install Pre-Commit & Pre-Push Hooks
 
 ```bash
 # Installs both .git/hooks/pre-commit (--staged) and .git/hooks/pre-push (--since HEAD~1)
@@ -252,17 +267,16 @@ repos:
 sentris remediate src/billing.ts --dry-run
 
 # Safe Local Extraction (default): moves working key to .env, syncs .env.example,
-# hardens .gitignore, scrubs RAM buffer, and patches source code so local dev never breaks
+# hardens .gitignore, and patches source code so local dev never breaks
 sentris remediate src/billing.ts --yes
 
 # Batch-remediate ALL secrets across a file or directory in one atomic pass
 sentris remediate . --all --yes
 
-# Rotate compromised key via provider API (24h dual-key grace window) + Enterprise Backends:
-# Supported backends: env, vault, aws, doppler, 1password, infisical
-sentris remediate src/billing.ts --rotate --backend 1password --yes
-sentris remediate src/billing.ts --rotate --backend infisical --yes
-sentris remediate src/billing.ts --rotate --backend vault --yes
+# Secret store backends: env (default), vault, aws, doppler.
+# 1password and infisical pass the value as a CLI argument and need SENTRIS_ALLOW_ARGV_SECRETS=1.
+# Provider-side key rotation (--rotate) is NOT implemented yet and exits with an error.
+sentris remediate src/billing.ts --backend vault --yes
 ```
 
 #### 1-Click Atomic Rollback
@@ -320,13 +334,16 @@ sentris lsp
 # Verify RFC 2104 HMAC-SHA256 hash chain and export SOC 2 CC6.1/CC6.7/CC6.8 & ISO 27001 A.8.24 evidence
 sentris audit --verify --export-vanta vanta-evidence.json
 
-# Authenticate workstation with Sentris Pro Cloud ($8/seat/mo)
+# Authenticate workstation with Sentris Pro Cloud ($8/seat/mo).
+# First machine prints a 256-bit team secret; it keys every fingerprint and never leaves your machines.
 sentris auth login --token sp_live_9f8e7d6c5b4a3210deadbeef
+# Teammates join the same fingerprint space (share the secret privately, e.g. via your password manager):
+sentris auth login --token <their key> --team-secret -   # paste at the prompt; or set SENTRIS_TEAM_SECRET
 
 # View team seats, run-rate, and Zero-Knowledge Multi-Repo Blast Radius Insight table
 sentris team
 
-# Sync salted HMAC-SHA256 fingerprints (0 bytes of source code or plaintext secrets uploaded)
+# Sync team-secret-keyed HMAC-SHA256 fingerprints (0 bytes of source code or plaintext secrets uploaded)
 sentris sync
 ```
 
@@ -336,10 +353,11 @@ sentris sync
 
 > 📄 **Full Benchmark & Systems Architecture Report:** See [**`docs/BENCHMARKS-AND-ARCHITECTURE.md`**](docs/BENCHMARKS-AND-ARCHITECTURE.md) for complete binary footprint, RSS memory hygiene, throughput across 1,000–5,000 files, and subsystem latency breakdowns.
 
-Measured on Apple Silicon M-series (`target/release/sentris`, `4.02 MB` stripped binary, zero C/C++/VM dependencies):
+Numbers are generated, never hand-typed: `bench/run.sh` builds Sentris, runs every installed scanner (gitleaks, TruffleHog, Kingfisher via `bench/fetch-tools.sh`, pinned versions) on the same pinned public checkout (django 5.1.4, about 6,800 files) and on the labeled detection corpus (`tests/corpus_test.rs`), then writes [`bench/results/latest.md`](bench/results/latest.md) with wall-clock median, peak RSS, hardware, versions and exact commands.
 
-| Workload | Sentris (Rust) | Gitleaks v8 (Go) | MongoDB Kingfisher | TruffleHog v3 |
-| :--- | :---: | :---: | :---: | :---: |
+The corpus is authored by this project, so its recall column is a regression gauge, not a neutral ranking. The latest committed run covers only the tools listed in that file.
+
+--- | :---: | :---: | :---: | :---: |
 | **Staged Git Index Diff (`--staged`)** | **`11ms`** | `45ms` | `180ms` | `850ms` |
 | **1,000-File Repository (`1.34 MB`)** | **`16ms` (`62,500 files/sec`)** | `95ms` | `260ms` | `1,250ms` |
 | **5,000-File Monorepo (`7.98 MB`)** | **`60ms` (`83,333 files/sec`)** | `420ms` | `1,150ms` | `4,800ms` |
@@ -364,6 +382,8 @@ The following results were measured against the compiled release binary (`target
 2. **`monorepo_5000_files`**: A 5,000-file TypeScript monorepo (`50` packages × `100` modules) where every file contains UUIDv4 strings and placeholder env lookups, plus 2 injected live secrets.
 
 ### 1. Performance & Efficiency Metrics (`/usr/bin/time -l`)
+
+> Historical figures from an earlier build and workload; not regenerated. The reproducible numbers live in `bench/results/latest.md`.
 
 | Benchmark Scenario | Files Evaluated | Internal Engine Latency | Full CLI Wall-Clock | Throughput | Peak RSS Memory | False Positives |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |
@@ -407,7 +427,7 @@ Every regex candidate in our False Positive Gauntlet was evaluated against `Fals
 ### 4. Autonomous Remediation across All 6 Secret Backends, Multi-Line PEM & Rollback
 
 - **All 6 Secret Store Backends Verified (`exit_code: 0`)**:
-  - `env` (`246.07 ms`), `vault` (`241.29 ms`), `aws` (`250.75 ms`), `doppler` (`241.56 ms`), `1password` (`275.30 ms`), and `infisical` (`256.56 ms`). Set `SENTRIS_LIVE_BACKEND=1` to execute real CLI subprocesses (`vault`, `aws secretsmanager`, `doppler`, `op`, `infisical`).
+  - `env` (`246.07 ms`), `vault` (`241.29 ms`), `aws` (`250.75 ms`), `doppler` (`241.56 ms`), `1password` (`275.30 ms`), and `infisical` (`256.56 ms`). These timings were measured against the built-in simulation; real backends run by default and `SENTRIS_MOCK_BACKEND=1` selects the simulation.
 - **Live Code Patching + Multi-Line RSA PEM Block Replacement (`263.14 ms`)**:
   - Rewrote Python `STRIPE_SECRET_KEY = "sk_live_..."` → `os.environ.get("STRIPE_SECRET_KEY")`.
   - Collapsed the 4-line `-----BEGIN RSA PRIVATE KEY-----...-----END RSA PRIVATE KEY-----` block in `src/infra/deploy.sh` into `export TLS_PRIVATE_KEY="${PRIVATE_KEY_PEM}"` and injected the escaped single-line PEM into `.env` (`multiline_pem_rewritten_in_bash: true`).
@@ -419,7 +439,7 @@ Every regex candidate in our False Positive Gauntlet was evaluated against `Fals
 
 ---
 
-## ☁️ Cloudflare Zero-Knowledge Edge (`cloud/`) & Web Platform (`web/`)
+## ☁️ Web Platform (`web/`)
 
 Sentris includes a complete Cloudflare Worker + Cloudflare D1 (serverless SQLite) + KV backend and a TanStack + React Bits web console wired to **Dodo Payments** (Merchant of Record for global USD & India INR/UPI billing):
 

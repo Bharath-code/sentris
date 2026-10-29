@@ -38,7 +38,7 @@ impl ProviderVerifier for GithubVerifier {
         let trimmed = secret.trim();
 
         // Unit test mock token support
-        if trimmed.starts_with("ghp_test_mock_") {
+        if super::mock_tokens_enabled() && trimmed.starts_with("ghp_test_mock_") {
             return Ok(LiveStatus::Active {
                 scopes: vec![
                     "repo".to_string(),
@@ -82,15 +82,6 @@ impl ProviderVerifier for GithubVerifier {
                 "Network probe failed: {err}"
             ))),
         }
-    }
-
-    fn rotate(&self, old_secret: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            return Ok("ghp_DRY_RUN_MOCK_PROVISIONED_KEY_123456789".to_string());
-        }
-
-        let prefix = &old_secret.chars().take(8).collect::<String>();
-        Ok(format!("ghp_rotated_{prefix}_dual_key_provisioned"))
     }
 }
 

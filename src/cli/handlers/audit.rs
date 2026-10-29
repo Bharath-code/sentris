@@ -137,7 +137,16 @@ pub fn handle_audit(cli: &Cli, ledger: PathBuf, verify: bool, export_vanta: Opti
 
     let chain_verified = if verify {
         match audit_ledger.verify_integrity() {
-            Ok(true) => Some(true),
+            Ok(true) => {
+                if audit_ledger.anchor_status().ok() == Some(crate::audit::AnchorStatus::Unanchored)
+                    && !audit_ledger.records.is_empty()
+                {
+                    eprintln!(
+                        "   Note: chain is valid but not anchored on this machine; truncation of the ledger cannot be detected here."
+                    );
+                }
+                Some(true)
+            }
             Ok(false) => {
                 if is_agent {
                     println!(
@@ -282,7 +291,7 @@ pub fn handle_audit(cli: &Cli, ledger: PathBuf, verify: bool, export_vanta: Opti
         println!("   Recent Audit Events:");
         for record in audit_ledger.records.iter().rev().take(5) {
             let hash_prefix = if record.entry_hash.len() >= 8 {
-                &record.entry_hash[..8]
+                crate::model::short(&record.entry_hash, 8)
             } else {
                 &record.entry_hash
             };

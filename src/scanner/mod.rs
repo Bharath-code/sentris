@@ -12,6 +12,26 @@ use crate::detector::DetectorEngine;
 use crate::error::SentrisError;
 use crate::model::{Finding, ScanReport, ScanStats};
 
+/// Patterns that would match every path (or none meaningfully) are refused.
+fn is_safe_ignore(pattern: &str) -> bool {
+    let p = pattern.trim().trim_matches('/');
+    !(p.is_empty() || matches!(p, "." | ".." | "*" | "**"))
+}
+
+/// Component-aware match: `vendor` hides `a/vendor/x` but not `my-vendor-notes.txt`.
+fn path_matches_ignore(path: &str, pattern: &str) -> bool {
+    let pat = pattern.trim().trim_matches('/');
+    if !is_safe_ignore(pattern) {
+        return false;
+    }
+    let norm = path.replace('\\', "/");
+    let norm = norm.trim_start_matches("./");
+    norm == pat
+        || norm.starts_with(&format!("{pat}/"))
+        || norm.contains(&format!("/{pat}/"))
+        || norm.ends_with(&format!("/{pat}"))
+}
+
 pub struct Scanner {
     detector: DetectorEngine,
     config: Option<Config>,
@@ -19,12 +39,57 @@ pub struct Scanner {
 
 impl Scanner {
     pub fn new() -> Result<Self, SentrisError> {
-        let config = Config::load_from_dir(Path::new("."));
+        // CI should point SENTRIS_CONFIG_FILE at a config the scanned (possibly hostile) tree cannot edit
+        let mut config = match std::env::var_os("SENTRIS_CONFIG_FILE").filter(|v| !v.is_empty()) {
+            Some(file) => Some(Config::load_file(Path::new(&file)).map_err(|e| {
+                SentrisError::Config(format!("Cannot load SENTRIS_CONFIG_FILE: {e}"))
+            })?),
+            None => Config::load_from_dir(Path::new(".")),
+        };
+        if let Some(cfg) = config.as_mut() {
+            let before = cfg.scanner.ignore_paths.len();
+            cfg.scanner.ignore_paths.retain(|p| is_safe_ignore(p));
+            if cfg.scanner.ignore_paths.len() != before {
+                eprintln!("warning: ignored overly broad ignore_paths entries (empty, '/', '.', '*'); they would hide every file");
+            }
+        }
         let detector = DetectorEngine::with_config(config.as_ref())?;
         Ok(Self { detector, config })
     }
 
     /// Extracts the raw secret token from a line using the compiled rule's regex capture
+    /// Resolves the secret a finding points at, shared by CLI and MCP remediation.
+    /// PEM blocks come from the file; anything else must hash to the finding's fingerprint.
+    pub fn resolve_finding_secret(
+        &self,
+        content: &str,
+        finding: &Finding,
+    ) -> Result<String, SentrisError> {
+        if let Some((_, _, pem)) = crate::detector::DetectorEngine::extract_multiline_pem_block(
+            content,
+            finding.line_number,
+        ) {
+            return Ok(pem);
+        }
+        let line = content
+            .lines()
+            .nth(finding.line_number.saturating_sub(1))
+            .ok_or_else(|| {
+                SentrisError::Scan(format!(
+                    "Line {} no longer exists in {}",
+                    finding.line_number, finding.file_path
+                ))
+            })?;
+        self.detector
+            .extract_secret_for_fingerprint(line, &finding.rule_id, &finding.fingerprint)
+            .ok_or_else(|| {
+                SentrisError::Scan(format!(
+                    "Could not isolate the flagged secret on line {} of {} (file changed since the scan?); refusing to guess",
+                    finding.line_number, finding.file_path
+                ))
+            })
+    }
+
     pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
         self.detector.extract_raw_secret(line, rule_id)
     }
@@ -67,6 +132,7 @@ impl Scanner {
         builder.build_parallel().run(|| {
             let detector = &self.detector;
             let config = &self.config;
+            let root = path;
             let files_ignored = &files_ignored;
             let total_files_scanned = &total_files_scanned;
             let total_bytes_scanned = &total_bytes_scanned;
@@ -86,11 +152,12 @@ impl Scanner {
                     None => return WalkState::Continue,
                 };
 
-                // Skip .git and .sentris internal state directory trees immediately
-                if entry.path().components().any(|c| {
-                    let s = c.as_os_str();
-                    s == ".git" || s == ".sentris" || s == ".sentris-baseline.json"
-                }) {
+                // Git internals are never tracked content; .sentris/ is scanned (its ledgers hold secrets)
+                // unless the user's gitignore already excludes it. Only look below the scan root.
+                let rel = entry.path().strip_prefix(root).unwrap_or(entry.path());
+                if rel.components().any(|c| c.as_os_str() == ".git")
+                    || entry.file_name() == ".sentris-baseline.json"
+                {
                     files_ignored.fetch_add(1, Ordering::Relaxed);
                     return WalkState::Skip;
                 }
@@ -108,7 +175,7 @@ impl Scanner {
                         .scanner
                         .ignore_paths
                         .iter()
-                        .any(|p| path_str.contains(p))
+                        .any(|p| path_matches_ignore(&path_str, p))
                     {
                         files_ignored.fetch_add(1, Ordering::Relaxed);
                         return WalkState::Continue;
@@ -307,5 +374,83 @@ mod tests {
         let report = scanner.scan_path(dir.path()).unwrap();
 
         assert_eq!(report.stats.findings_count, 0);
+    }
+
+    #[test]
+    fn resolve_picks_the_flagged_secret_not_the_first_match() {
+        let dir = tempdir().unwrap();
+        let a = concat!("ghp_", "R8sT2vXq9LmN4pWz7KdJ3hYb6FcA1eUo5GtV");
+        let b = concat!("ghp_", "Zq7Lm3Xv9Tn2Kp8Wd4Rb6Yc1Fa5Ho0Ej9Gsq");
+        let src = format!("x = \"{a}\"; y = \"{b}\"\n");
+        let p = dir.path().join("t.py");
+        fs::write(&p, &src).unwrap();
+        let scanner = Scanner::new().unwrap();
+        let report = scanner.scan_path(&p).unwrap();
+        assert_eq!(report.findings.len(), 2);
+        for f in &report.findings {
+            let got = scanner.resolve_finding_secret(&src, f).unwrap();
+            assert!(got == a || got == b);
+            assert_eq!(
+                f.fingerprint,
+                hex::encode(<sha2::Sha256 as sha2::Digest>::digest(got.as_bytes()))
+            );
+        }
+        let mut stale = report.findings[0].clone();
+        stale.fingerprint = "0".repeat(64);
+        assert!(scanner.resolve_finding_secret(&src, &stale).is_err());
+    }
+}
+
+#[cfg(test)]
+mod ignore_tests {
+    use super::*;
+
+    #[test]
+    fn ignore_patterns_are_component_aware_and_never_match_everything() {
+        assert!(path_matches_ignore("./vendor/a.js", "vendor"));
+        assert!(path_matches_ignore("src/vendor/a.js", "vendor/"));
+        assert!(path_matches_ignore(
+            "tests/fixtures/x.env",
+            "tests/fixtures"
+        ));
+        assert!(!path_matches_ignore("src/my-vendor-notes.txt", "vendor"));
+        for bad in ["", "/", ".", "*", "**", "  "] {
+            assert!(!path_matches_ignore("src/secrets.env", bad), "{bad:?}");
+            assert!(!is_safe_ignore(bad));
+        }
+    }
+
+    #[test]
+    fn config_file_env_overrides_the_scanned_trees_own_config() {
+        let _g = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        let trusted = tempfile::tempdir().unwrap();
+        let cfg = trusted.path().join("ci.toml");
+        std::fs::write(
+            &cfg,
+            "[scanner]\nmax_file_size_mb = 3\nignore_paths = [\"\", \"/\", \"vendor\"]\n",
+        )
+        .unwrap();
+        std::env::set_var("SENTRIS_CONFIG_FILE", &cfg);
+        let scanner = Scanner::new();
+        std::env::remove_var("SENTRIS_CONFIG_FILE");
+        let c = scanner.unwrap().config.unwrap();
+        assert_eq!(c.scanner.max_file_size_mb, 3);
+        assert_eq!(c.scanner.ignore_paths, vec!["vendor".to_string()]);
+    }
+
+    #[test]
+    fn secrets_under_dot_sentris_and_nested_dirs_are_scanned() {
+        let dir = tempfile::tempdir().unwrap();
+        let hidden = dir.path().join("sub").join(".sentris");
+        std::fs::create_dir_all(&hidden).unwrap();
+        std::fs::write(
+            hidden.join("note.txt"),
+            concat!("token = \"ghp_", "R8sT2vXq9LmN4pWz7KdJ3hYb6FcA1eUo5GtV\"\n"),
+        )
+        .unwrap();
+        let report = Scanner::new().unwrap().scan_path(dir.path()).unwrap();
+        assert_eq!(report.findings.len(), 1);
     }
 }

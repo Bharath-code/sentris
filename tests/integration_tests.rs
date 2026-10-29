@@ -287,7 +287,7 @@ fn test_cli_remediate_dry_run_backends() {
         let stdout = String::from_utf8_lossy(&output.stdout);
         assert!(stdout.contains("Autonomous Remediation Session"));
         assert!(stdout.contains("Zero-egress offline mode active"));
-        assert!(stdout.contains("PROVISIONED"));
+        assert!(stdout.contains("EXTRACTED"));
         assert!(stdout.contains("PATCHED"));
     }
 }
@@ -485,6 +485,7 @@ fn test_cli_auth_login_status_logout_flow() {
     // 1. Auth Login
     let login_output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args([
             "auth",
             "login",
@@ -496,11 +497,12 @@ fn test_cli_auth_login_status_logout_flow() {
     assert!(login_output.status.success());
     let login_stdout = String::from_utf8_lossy(&login_output.stdout);
     assert!(login_stdout.contains("Successfully authenticated with Sentris Pro Cloud"));
-    assert!(login_stdout.contains("Pro ($8/seat)"));
+    assert!(login_stdout.contains("Mock"));
 
     // 2. Auth Status
     let status_output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["auth", "status"])
         .output()
         .expect("Failed to execute auth status");
@@ -512,6 +514,7 @@ fn test_cli_auth_login_status_logout_flow() {
     // 3. Auth Logout
     let logout_output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["auth", "logout"])
         .output()
         .expect("Failed to execute auth logout");
@@ -529,11 +532,13 @@ fn test_cli_team_overview_command() {
     // Seed credentials
     let _ = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["auth", "login", "--token", "sp_live_test_team_998877665544"])
         .output();
 
     let output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["--no-color", "team"])
         .output()
         .expect("Failed to execute sentris team");
@@ -569,6 +574,7 @@ fn test_cli_sync_with_mock_credentials() {
     // Authenticate with a mock endpoint
     let _ = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args([
             "auth",
             "login",
@@ -581,6 +587,7 @@ fn test_cli_sync_with_mock_credentials() {
 
     let output = Command::new(&bin)
         .env("SENTRIS_CONFIG_DIR", config_dir)
+        .env("SENTRIS_CLOUD_MOCK", "1")
         .args(["sync", "src/error.rs"])
         .output()
         .expect("Failed to execute sentris sync");
@@ -628,4 +635,76 @@ fn test_cli_agent_manifest_and_json_mode() {
     assert_eq!(team_json["ok"], true);
     assert_eq!(team_json["command"], "team");
     assert_eq!(team_json["zero_knowledge_bytes_ingested"], 0);
+}
+
+fn git(dir: &std::path::Path, args: &[&str], date: &str) {
+    let status = Command::new("git")
+        .args(args)
+        .current_dir(dir)
+        .env("GIT_AUTHOR_DATE", date)
+        .env("GIT_COMMITTER_DATE", date)
+        .env("GIT_AUTHOR_NAME", "Dana Dev")
+        .env("GIT_AUTHOR_EMAIL", "dana@acme.test")
+        .env("GIT_COMMITTER_NAME", "Dana Dev")
+        .env("GIT_COMMITTER_EMAIL", "dana@acme.test")
+        .status()
+        .expect("git");
+    assert!(status.success(), "git {args:?} failed");
+}
+
+#[test]
+fn test_git_history_finds_deleted_secret_with_commit_author_date() {
+    let dir = tempfile::tempdir().unwrap();
+    let repo = dir.path();
+    git(repo, &["init", "-q"], "2026-03-01T09:00:00+00:00");
+    std::fs::write(repo.join("README.md"), "# app\n").unwrap();
+    git(repo, &["add", "."], "2026-03-01T09:00:00+00:00");
+    git(
+        repo,
+        &["commit", "-q", "-m", "init"],
+        "2026-03-01T09:00:00+00:00",
+    );
+    let key = concat!(
+        "sk_live_",
+        "51Kx9mP2vL8qR4tW7zN1bY5jC3dF6hT0sU8yA2cB9xQ4wE7rG"
+    );
+    std::fs::write(repo.join(".env"), format!("STRIPE_KEY={key}\n")).unwrap();
+    git(repo, &["add", "."], "2026-03-01T10:00:00+00:00");
+    git(
+        repo,
+        &["commit", "-q", "-m", "add env"],
+        "2026-03-01T10:00:00+00:00",
+    );
+    git(repo, &["rm", "-q", ".env"], "2026-03-02T10:00:00+00:00");
+    git(
+        repo,
+        &["commit", "-q", "-m", "remove env"],
+        "2026-03-02T10:00:00+00:00",
+    );
+
+    let scan = |extra: &[&str]| {
+        let out = Command::new(get_sentris_bin())
+            .args(["scan", "."])
+            .args(extra)
+            .args(["-f", "json"])
+            .current_dir(repo)
+            .output()
+            .unwrap();
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).expect("json output")
+    };
+
+    assert_eq!(scan(&[])["findings"].as_array().unwrap().len(), 0);
+
+    for extra in [&["--git-history"][..], &["--since", "HEAD~2"][..]] {
+        let findings = scan(extra);
+        let hit = &findings["findings"][0];
+        assert_eq!(hit["rule_id"], "stripe-secret-key", "{extra:?}");
+        assert_eq!(hit["file_path"], ".env");
+        assert_eq!(hit["commit_author"], "Dana Dev <dana@acme.test>");
+        assert!(hit["commit_date"]
+            .as_str()
+            .unwrap()
+            .starts_with("2026-03-01T10:00:00"));
+        assert_eq!(hit["commit_hash"].as_str().unwrap().len(), 40);
+    }
 }

@@ -25,4 +25,7 @@ pub enum SentrisError {
 
     #[error("Cloud error: {0}")]
     Cloud(String),
+
+    #[error("Not supported yet: {0}")]
+    NotImplemented(String),
 }

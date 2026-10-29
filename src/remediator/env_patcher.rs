@@ -15,7 +15,7 @@ impl EnvPatcher {
         if !gitignore_path.exists() {
             fs::write(
                 &gitignore_path,
-                ".env\n.env.*\n!.env.example\n.sentris/rollback_ledger.json\n*.log\n",
+                ".env\n.env.*\n!.env.example\n.sentris/\n*.log\n",
             )?;
             return Ok(());
         }
@@ -33,8 +33,8 @@ impl EnvPatcher {
         if !lines.contains(&"!.env.example") {
             additions.push("!.env.example");
         }
-        if !lines.contains(&".sentris/rollback_ledger.json") {
-            additions.push(".sentris/rollback_ledger.json");
+        if !lines.contains(&".sentris/") {
+            additions.push(".sentris/");
         }
 
         if !additions.is_empty() {
@@ -48,6 +48,15 @@ impl EnvPatcher {
         }
 
         Ok(())
+    }
+
+    /// Current value of `var_name` in `<base_dir>/.env`, if any.
+    pub fn existing_value_in(base_dir: &Path, var_name: &str) -> Option<String> {
+        let prefix = format!("{var_name}=");
+        fs::read_to_string(base_dir.join(".env"))
+            .ok()?
+            .lines()
+            .find_map(|l| l.trim().strip_prefix(&prefix).map(str::to_string))
     }
 
     /// Injects or updates an environment variable inside `.env`
@@ -66,7 +75,7 @@ impl EnvPatcher {
         let new_line = format!("{var_name}={secret_value}");
 
         if !env_path.exists() {
-            fs::write(&env_path, format!("{new_line}\n"))?;
+            crate::remediator::backend::write_private(&env_path, &format!("{new_line}\n"))?;
             let _ = Self::sync_env_example_in(base_dir, var_name);
             return Ok(());
         }
@@ -79,8 +88,12 @@ impl EnvPatcher {
         let mut found = false;
 
         for line in &mut lines {
-            if line.trim().starts_with(&prefix) {
-                *line = new_line.clone();
+            if let Some(current) = line.trim().strip_prefix(&prefix) {
+                if current != secret_value {
+                    return Err(SentrisError::Scan(format!(
+                        "{var_name} already holds a different value in .env; refusing to overwrite it"
+                    )));
+                }
                 found = true;
                 break;
             }
@@ -139,6 +152,22 @@ mod tests {
         EnvPatcher::ensure_env_gitignored_in(dir.path()).unwrap();
         let content = fs::read_to_string(dir.path().join(".gitignore")).unwrap();
         assert!(content.contains(".env"));
+    }
+
+    #[test]
+    fn inject_refuses_to_overwrite_a_different_value() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join(".env"), "A=1\nSTRIPE_KEY=prod\n").unwrap();
+        assert!(EnvPatcher::inject_env_variable_in(dir.path(), "STRIPE_KEY", "leaked").is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join(".env")).unwrap(),
+            "A=1\nSTRIPE_KEY=prod\n"
+        );
+        EnvPatcher::inject_env_variable_in(dir.path(), "STRIPE_KEY", "prod").unwrap();
+        EnvPatcher::inject_env_variable_in(dir.path(), "OTHER", "x").unwrap();
+        assert!(fs::read_to_string(dir.path().join(".env"))
+            .unwrap()
+            .contains("OTHER=x"));
     }
 
     #[test]

@@ -40,3 +40,13 @@ jobs:
 
       - name: Verify Release Build & Binary Size Gate
         run: cargo build --release
+
+  fp-sweep:
+    name: False-positive sweep (django 5.1.4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - run: ./bench/fp-sweep.sh

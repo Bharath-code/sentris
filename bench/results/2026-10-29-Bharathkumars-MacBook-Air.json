@@ -1,0 +1,82 @@
+{
+  "date": "2026-10-29",
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu": "Apple M1",
+    "cores": 8,
+    "ram_gb": 8
+  },
+  "workload": {
+    "repo": "https://github.com/django/django",
+    "tag": "5.1.4",
+    "files": 6827,
+    "mb": 42.0
+  },
+  "corpus": {
+    "positives": 568,
+    "negatives": 299,
+    "note": "Authored by the Sentris project; recall favours Sentris' own rule list. Treat as a regression gauge, not a neutral ranking."
+  },
+  "sentris_commit": "85932de",
+  "sentris_dirty": true,
+  "skipped_tools": [],
+  "results": [
+    {
+      "name": "Sentris",
+      "version": "0.1.0",
+      "pinned_version_match": true,
+      "ms_median": 188,
+      "ms_min": 166,
+      "runs": 5,
+      "peak_rss_mb": 24.6,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "corpus_true_positives": 568,
+      "corpus_false_positives": 0,
+      "command": "sentris scan <dir> -f json"
+    },
+    {
+      "name": "Kingfisher",
+      "version": "2.15.0",
+      "pinned_version_match": true,
+      "ms_median": 1031,
+      "ms_min": 970,
+      "runs": 5,
+      "peak_rss_mb": 130.0,
+      "recall": 0.542,
+      "false_positive_rate": 0.023,
+      "corpus_true_positives": 308,
+      "corpus_false_positives": 7,
+      "command": "kingfisher scan <dir> --no-validate --format json"
+    },
+    {
+      "name": "Gitleaks",
+      "version": "8.30.1",
+      "pinned_version_match": true,
+      "ms_median": 2032,
+      "ms_min": 1612,
+      "runs": 5,
+      "peak_rss_mb": 107.5,
+      "recall": 0.711,
+      "false_positive_rate": 0.097,
+      "corpus_true_positives": 404,
+      "corpus_false_positives": 29,
+      "command": "gitleaks dir <dir> --no-banner -l error -r <report>"
+    },
+    {
+      "name": "TruffleHog",
+      "version": "3.99.7",
+      "pinned_version_match": true,
+      "ms_median": 2084,
+      "ms_min": 1784,
+      "runs": 5,
+      "peak_rss_mb": 230.6,
+      "recall": 0.271,
+      "false_positive_rate": 0.027,
+      "corpus_true_positives": 154,
+      "corpus_false_positives": 8,
+      "command": "trufflehog filesystem <dir> --no-update --no-verification --json"
+    }
+  ]
+}

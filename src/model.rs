@@ -73,6 +73,10 @@ pub struct Finding {
     pub fingerprint: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commit_hash: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_author: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit_date: Option<String>,
 }
 
 impl Serialize for Finding {
@@ -81,7 +85,10 @@ impl Serialize for Finding {
         S: serde::Serializer,
     {
         use serde::ser::SerializeStruct;
-        let field_count = if self.commit_hash.is_some() { 14 } else { 13 };
+        let field_count = 13
+            + usize::from(self.commit_hash.is_some())
+            + usize::from(self.commit_author.is_some())
+            + usize::from(self.commit_date.is_some());
         let mut state = serializer.serialize_struct("Finding", field_count)?;
         state.serialize_field("rule_id", &self.rule_id)?;
         state.serialize_field("description", &self.description)?;
@@ -95,6 +102,12 @@ impl Serialize for Finding {
         if let Some(ref ch) = self.commit_hash {
             state.serialize_field("commit_hash", ch)?;
         }
+        if let Some(ref author) = self.commit_author {
+            state.serialize_field("commit_author", author)?;
+        }
+        if let Some(ref date) = self.commit_date {
+            state.serialize_field("commit_date", date)?;
+        }
         state.serialize_field("context_kind", &self.context_kind())?;
         let env_var = crate::remediator::Remediator::env_var_name_for_rule(&self.rule_id);
         state.serialize_field("recommended_env_var", env_var)?;
@@ -104,24 +117,30 @@ impl Serialize for Finding {
     }
 }
 
+/// First `n` bytes of `s` (or all of it), never panicking on short or non-ASCII input.
+pub fn short(s: &str, n: usize) -> &str {
+    s.get(..n).unwrap_or(s)
+}
+
 impl Finding {
     /// Returns the syntactic file context classification (Production vs TestFixture)
     pub fn context_kind(&self) -> ContextKind {
         ContextKind::from_file_path(&self.file_path)
     }
 
+    /// Shows at most a third of the secret (capped at 10 characters), so short and low-entropy values
+    /// such as `admin:admin` or 9-15 character passwords are not effectively disclosed.
     pub fn mask_secret(secret: &str) -> String {
         let len = secret.len();
-        if len <= 8 {
-            "********".to_string()
-        } else {
-            let prefix_len = if len >= 16 { 6 } else { 4 };
-            let suffix_len = 4;
-            format!(
-                "{}...{}",
-                &secret[..prefix_len],
-                &secret[len - suffix_len..]
-            )
+        let shown = (len / 3).min(10);
+        if len <= 8 || shown < 3 {
+            return "********".to_string();
+        }
+        let prefix_len = (shown * 3).div_ceil(5);
+        let suffix_len = shown - prefix_len;
+        match (secret.get(..prefix_len), secret.get(len - suffix_len..)) {
+            (Some(head), Some(tail)) => format!("{head}...{tail}"),
+            _ => "********".to_string(),
         }
     }
 }
@@ -169,5 +188,30 @@ mod tests {
             ContextKind::from_file_path("tests/fixtures/secrets.env"),
             ContextKind::TestFixture
         );
+    }
+}
+
+#[cfg(test)]
+mod mask_tests {
+    use super::Finding;
+
+    #[test]
+    fn masks_reveal_at_most_a_third_of_any_secret() {
+        for len in 1..80 {
+            let secret: String = (0..len)
+                .map(|i| char::from(b'a' + (i % 26) as u8))
+                .collect();
+            let masked = Finding::mask_secret(&secret);
+            let revealed = masked
+                .replace("...", "")
+                .chars()
+                .filter(|c| *c != '*')
+                .count();
+            assert!(
+                revealed * 3 <= len.max(1),
+                "{len}: {masked} reveals {revealed}"
+            );
+        }
+        assert_eq!(Finding::mask_secret("admin:admin"), "ad...n");
     }
 }

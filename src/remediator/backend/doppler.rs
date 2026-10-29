@@ -1,8 +1,8 @@
 use crate::error::SentrisError;
-use crate::remediator::backend::SecretStoreBackend;
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::remediator::backend::{
+    mock_notice, mock_requested, record_mock, run_with_stdin, SecretStoreBackend,
+};
+use std::path::PathBuf;
 
 /// Doppler backend driver supporting CLI command generation and REST API payload formatting.
 #[derive(Debug, Clone)]
@@ -17,13 +17,10 @@ impl DopplerBackend {
     pub fn new() -> Self {
         let project = std::env::var("DOPPLER_PROJECT").unwrap_or_else(|_| "sentris".to_string());
         let config = std::env::var("DOPPLER_CONFIG").unwrap_or_else(|_| "prd".to_string());
-        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
         Self {
             project,
             config,
-            mock: !live_mode,
+            mock: mock_requested(),
             mock_ledger_path: None,
         }
     }
@@ -85,54 +82,43 @@ impl SecretStoreBackend for DopplerBackend {
         secret: &str,
         dry_run: bool,
     ) -> Result<String, SentrisError> {
-        let api_payload = self.format_api_payload(key, secret);
-        let cli_cmd = self.format_cli_command(key, secret);
-
         if dry_run {
+            let shown = "<redacted>";
             return Ok(format!(
-                "[dry-run] Formatted Doppler secret update for '{key}' (CLI: '{cli_cmd}', API: {})",
-                serde_json::to_string(&api_payload)?
+                "[dry-run] Formatted Doppler secret update for '{key}' (CLI: '{}', API: {})",
+                self.format_cli_command(key, shown),
+                serde_json::to_string(&self.format_api_payload(key, shown))?
             ));
         }
 
         if self.mock {
-            let ledger_path = self
-                .mock_ledger_path
-                .clone()
-                .unwrap_or_else(|| Path::new(".sentris").join("doppler_mock.json"));
-            if let Some(parent) = ledger_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut existing: HashMap<String, serde_json::Value> = if ledger_path.exists() {
-                let content = fs::read_to_string(&ledger_path)?;
-                serde_json::from_str(&content).unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-            existing.insert(key.to_string(), api_payload);
-            fs::write(&ledger_path, serde_json::to_string_pretty(&existing)?)?;
-
+            let path = record_mock(
+                self.mock_ledger_path.as_deref(),
+                "doppler_mock.json",
+                key,
+                self.format_api_payload(key, secret),
+            )?;
             return Ok(format!(
-                "Recorded Doppler secret update for '{key}' to mock ledger at {} (CLI: '{cli_cmd}')",
-                ledger_path.display()
+                "{} (ledger: {})",
+                mock_notice("Doppler"),
+                path.display()
             ));
         }
 
-        let kv_arg = format!("{key}={secret}");
-        let output = std::process::Command::new("doppler")
-            .args([
-                "secrets",
-                "set",
-                &kv_arg,
-                "--project",
-                &self.project,
-                "--config",
-                &self.config,
-                "--silent",
-            ])
-            .output();
+        // Value goes over stdin, never argv
+        let mut cmd = std::process::Command::new("doppler");
+        cmd.args([
+            "secrets",
+            "set",
+            key,
+            "--project",
+            &self.project,
+            "--config",
+            &self.config,
+            "--silent",
+        ]);
 
-        match output {
+        match run_with_stdin(cmd, secret) {
             Ok(out) if out.status.success() => Ok(format!(
                 "Updated Doppler secret '{key}' via doppler CLI in project '{}', config '{}'",
                 self.project, self.config
@@ -148,6 +134,10 @@ impl SecretStoreBackend for DopplerBackend {
                 "Failed to spawn 'doppler' CLI for '{key}': {e}"
             ))),
         }
+    }
+
+    fn is_mock(&self) -> bool {
+        self.mock
     }
 }
 
@@ -187,7 +177,8 @@ mod tests {
         let live_res = backend
             .inject_secret("GITHUB_TOKEN", "ghp_mocktoken123", false)
             .unwrap();
-        assert!(live_res.contains("Recorded Doppler secret update for 'GITHUB_TOKEN'"));
+        assert!(live_res.contains("[MOCK]"));
+        assert!(!dry_res.contains("ghp_mocktoken123"));
         assert!(ledger_path.exists());
     }
 }

@@ -31,7 +31,7 @@ impl ProviderVerifier for AwsVerifier {
     fn verify_live(&self, secret: &str) -> Result<LiveStatus, SentrisError> {
         let trimmed = secret.trim();
 
-        if trimmed.starts_with("AKIA_test_mock_") {
+        if super::mock_tokens_enabled() && trimmed.starts_with("AKIA_test_mock_") {
             return Ok(LiveStatus::Active {
                 scopes: vec![
                     "sts:GetCallerIdentity".to_string(),
@@ -48,16 +48,11 @@ impl ProviderVerifier for AwsVerifier {
                     .to_string(),
             ))
         } else {
-            Ok(LiveStatus::Revoked)
+            Ok(LiveStatus::Unverified(
+                "Not an AKIA access key id; cannot be verified without a signed STS call"
+                    .to_string(),
+            ))
         }
-    }
-
-    fn rotate(&self, _old_secret: &str, dry_run: bool) -> Result<String, SentrisError> {
-        if dry_run {
-            return Ok("AKIA_DRY_RUN_REPLACEMENT_KEY_ID".to_string());
-        }
-
-        Ok("AKIA_PROVISIONED_REPLACEMENT_KEY".to_string())
     }
 }
 

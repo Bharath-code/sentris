@@ -100,21 +100,66 @@ impl Remediator {
         }
     }
 
+    /// Env var name to store `secret` under: the rule's canonical name, made unique with a fingerprint
+    /// suffix when the rule is generic or `.env` already holds a different value under that name.
+    pub fn resolve_env_var_name(finding: &Finding, secret: &str, backend: &str) -> String {
+        Self::resolve_env_var_name_in(std::path::Path::new("."), finding, secret, backend)
+    }
+
+    pub fn resolve_env_var_name_in(
+        base_dir: &std::path::Path,
+        finding: &Finding,
+        secret: &str,
+        backend: &str,
+    ) -> String {
+        let base = Self::env_var_name_for_rule(&finding.rule_id);
+        let suffixed = || {
+            format!(
+                "{base}_{}",
+                crate::model::short(&finding.fingerprint, 8).to_ascii_uppercase()
+            )
+        };
+        if matches!(base, "API_SECRET_KEY" | "APP_SECRET_KEY") {
+            return suffixed();
+        }
+        let is_env = matches!(
+            backend.trim().to_ascii_lowercase().as_str(),
+            "env" | "envfile"
+        );
+        if is_env {
+            if let Some(existing) = env_patcher::EnvPatcher::existing_value_in(base_dir, base) {
+                if existing != secret {
+                    return suffixed();
+                }
+            }
+        }
+        base.to_string()
+    }
+
     /// Creates an atomic git backup branch prior to any file mutations
     fn create_backup_branch() -> Result<String, SentrisError> {
         let timestamp = chrono_compact_timestamp();
         let branch_name = format!("sentris/backup-{timestamp}");
 
-        let output = Command::new("git").args(["branch", &branch_name]).output();
+        let git_ok = |args: &[&str]| {
+            Command::new("git")
+                .args(args)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
 
-        if let Ok(out) = output {
-            if out.status.success() {
-                return Ok(branch_name);
-            }
+        // No repo, or a repo without commits, has nothing to branch from: the rollback ledger is the only undo
+        if !git_ok(&["rev-parse", "--verify", "--quiet", "HEAD"]) {
+            return Ok("local-working-tree".to_string());
         }
-
-        // If not in a git repo or branch fails, continue safely with local session tracking
-        Ok("local-working-tree".to_string())
+        if git_ok(&["branch", &branch_name]) {
+            Ok(branch_name)
+        } else {
+            Err(SentrisError::Scan(format!(
+                "Could not create git backup branch '{branch_name}'; refusing to modify files without a backup"
+            )))
+        }
     }
 
     /// Executes the 7-step safe dual-key autonomous remediation workflow (defaulting to Safe Local Extraction)
@@ -165,7 +210,13 @@ impl Remediator {
         rotate: bool,
         quiet: bool,
     ) -> Result<String, SentrisError> {
-        let session_id = format!("rm_{}", &finding.fingerprint[..8]);
+        if rotate {
+            return Err(SentrisError::NotImplemented(
+                "--rotate: provider-side key rotation is not available yet; the leaked key stays valid until you revoke it at the provider"
+                    .to_string(),
+            ));
+        }
+        let session_id = format!("rm_{}", crate::model::short(&finding.fingerprint, 8));
         let matched_verifier = self.registry.find_verifier(&finding.rule_id);
         let provider_name = match matched_verifier {
             Some(v) => v.provider_name(),
@@ -242,36 +293,27 @@ impl Remediator {
             // Step 2: Atomic Git Backup Branch
             print!("  [2/7] 🛡️  Creating atomic git backup branch... ");
         }
-        let backup_branch = Self::create_backup_branch()?;
+        let backup_branch = if dry_run {
+            "dry-run (no branch created)".to_string()
+        } else {
+            Self::create_backup_branch()?
+        };
         if !quiet {
             println!("{} ({})", "SAVED".green(), backup_branch.dimmed());
 
             // Step 3: Provision Replacement Key or Extract Working Credential
             print!("  [3/7] 🔑 Provisioning replacement API credential... ");
         }
-        let mut new_key = if !rotate && !dry_run {
-            // Safe Local Extraction default: preserve the working credential when moving to .env/vault
-            // so the developer's local application never breaks.
-            raw_secret.to_string()
-        } else if offline {
-            format!("sec_replacement_{}", &finding.fingerprint[..16])
-        } else if let Some(verifier) = matched_verifier {
-            verifier.rotate(raw_secret, dry_run)?
-        } else {
-            format!("sec_replacement_{}", &finding.fingerprint[..16])
-        };
+        // Extraction only: the same working credential moves to the backend, so the app keeps running
+        let mut new_key = raw_secret.to_string();
         let masked_new_key = Finding::mask_secret(&new_key);
 
         if !quiet {
-            if !rotate && !dry_run {
-                println!(
-                    "{} ({} • extracted working key; pass --rotate to roll via API)",
-                    "PROVISIONED".green(),
-                    masked_new_key.cyan()
-                );
-            } else {
-                println!("{} ({})", "PROVISIONED".green(), masked_new_key.cyan());
-            }
+            println!(
+                "{} ({} • extracted working key, not rotated)",
+                "EXTRACTED".green(),
+                masked_new_key.cyan()
+            );
         }
 
         // Step 4: Inject into selected secret backend and verify gitignore
@@ -283,16 +325,16 @@ impl Remediator {
                 backend_driver.backend_name().cyan()
             );
         }
-        let env_var_name = Self::env_var_name_for_rule(&finding.rule_id);
+        let env_var_name = Self::resolve_env_var_name(finding, raw_secret, backend_choice);
+        let env_var_name = env_var_name.as_str();
 
-        backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
+        let inject_note = backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
+        if backend_driver.is_mock() && !dry_run && !quiet {
+            eprintln!("{}", inject_note.yellow().bold());
+        }
         Self::zeroize_secret_string(&mut new_key);
         if !quiet {
-            println!(
-                "{} ({}=*** • RAM buffer zeroized)",
-                "INJECTED".green(),
-                env_var_name
-            );
+            println!("{} ({}=***)", "INJECTED".green(), env_var_name);
 
             // Step 5: Replace hardcoded secret in target source file
             print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");
@@ -331,9 +373,12 @@ impl Remediator {
                 replacement_line.trim().green()
             );
 
-            // Step 6: Dual-Key Graceful Deprecation (Zero Prod Downtime)
-            print!("  [6/7] ⏳ Queuing old credential for safe deprecation... ");
-            println!("{}", "24H GRACE WINDOW ACTIVE (0s downtime)".green().bold());
+            println!(
+                "  [6/7] ⚠️  Leaked key NOT revoked: {}",
+                "still valid until you rotate it at the provider"
+                    .yellow()
+                    .bold()
+            );
 
             // Step 7: Record transaction in Rollback Ledger
             print!("  [7/7] 📋 Logging transaction to rollback ledger... ");
@@ -358,7 +403,7 @@ impl Remediator {
             println!();
             println!(
                 "{}",
-                "🎉 Remediation completed successfully in 12s with zero production downtime!"
+                "Remediation complete: secret moved out of source. Revoke the old key at your provider and purge it from git history."
                     .bold()
                     .green()
             );
@@ -382,4 +427,94 @@ fn chrono_compact_timestamp() -> String {
         .duration_since(SystemTime::UNIX_EPOCH)
         .unwrap_or_default();
     format!("{}", duration.as_secs())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::Severity;
+
+    #[test]
+    fn rotate_is_rejected_before_any_side_effect() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("app.py");
+        let src = "key = \"sk_live_abcdefghijklmnopqrstuvwx\"\n";
+        std::fs::write(&file, src).unwrap();
+        let finding = Finding {
+            rule_id: "stripe-secret-key".into(),
+            description: "d".into(),
+            severity: Severity::Critical,
+            file_path: file.to_string_lossy().into_owned(),
+            line_number: 1,
+            column: 1,
+            redacted_match: "sk_liv...".into(),
+            entropy: 4.0,
+            fingerprint: "0123456789abcdef0123456789abcdef".into(),
+            commit_hash: None,
+            commit_author: None,
+            commit_date: None,
+        };
+        for dry_run in [true, false] {
+            let err = Remediator::new()
+                .remediate_finding_with_options(
+                    &finding,
+                    "sk_live_abcdefghijklmnopqrstuvwx",
+                    dry_run,
+                    Some("env"),
+                    true,
+                    true,
+                    true,
+                )
+                .unwrap_err();
+            assert!(matches!(err, SentrisError::NotImplemented(_)));
+            assert_eq!(std::fs::read_to_string(&file).unwrap(), src);
+        }
+    }
+
+    fn finding_for(rule: &str, fp: &str) -> Finding {
+        Finding {
+            rule_id: rule.into(),
+            description: "d".into(),
+            severity: Severity::Critical,
+            file_path: "f".into(),
+            line_number: 1,
+            column: 1,
+            redacted_match: "x".into(),
+            entropy: 4.0,
+            fingerprint: fp.into(),
+            commit_hash: None,
+            commit_author: None,
+            commit_date: None,
+        }
+    }
+
+    #[test]
+    fn env_var_names_never_collide_or_clobber() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join(".env"), "STRIPE_SECRET_KEY=sk_live_prod\n").unwrap();
+        let fp = "abcdef0123456789abcdef0123456789";
+        let stripe = finding_for("stripe-secret-key", fp);
+
+        // A different key must not reuse (and overwrite) the existing variable
+        let other =
+            Remediator::resolve_env_var_name_in(dir.path(), &stripe, "sk_live_leaked", "env");
+        assert_eq!(other, "STRIPE_SECRET_KEY_ABCDEF01");
+        // The same value reuses the canonical name
+        let same = Remediator::resolve_env_var_name_in(dir.path(), &stripe, "sk_live_prod", "env");
+        assert_eq!(same, "STRIPE_SECRET_KEY");
+        // Generic rules are always unique per finding
+        let a = Remediator::resolve_env_var_name_in(
+            dir.path(),
+            &finding_for("unknown-rule", fp),
+            "s",
+            "env",
+        );
+        let b = Remediator::resolve_env_var_name_in(
+            dir.path(),
+            &finding_for("unknown-rule", "99999999999999999999999999999999"),
+            "s",
+            "env",
+        );
+        assert_ne!(a, b);
+    }
 }

@@ -4,6 +4,7 @@ mod accessor_tests;
 mod replacement_tests;
 
 use crate::error::SentrisError;
+use crate::fsutil::{split_eol, write_atomic};
 use std::fs;
 use std::path::Path;
 
@@ -145,74 +146,63 @@ impl CodeReplacer {
         }
 
         let content = fs::read_to_string(path)?;
-        let mut lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
+        // Keep each line's own terminator so CRLF files stay CRLF
+        let segs: Vec<&str> = content.split_inclusive('\n').collect();
 
-        if line_number == 0 || line_number > lines.len() {
+        if line_number == 0 || line_number > segs.len() {
             return Err(SentrisError::Scan(format!(
                 "Invalid line number {line_number} for file {file_path}"
             )));
         }
 
-        let target_line = &lines[line_number - 1];
-        let original_line = target_line.clone();
+        let idx = line_number - 1;
+        let (target_line, eol) = split_eol(segs[idx]);
 
-        // Check if this line begins a multi-line PEM private key block (`-----BEGIN ... KEY-----`)
+        // Multi-line PEM private key block (`-----BEGIN ... KEY-----`) collapses to a single accessor line
         if let Some((start_ln, end_ln, _)) =
             crate::detector::DetectorEngine::extract_multiline_pem_block(&content, line_number)
         {
             let accessor = Self::get_env_accessor(file_path, var_name);
-            let start_idx = start_ln - 1;
-            let end_idx = end_ln - 1;
-            let first = &lines[start_idx];
-            let last = &lines[end_idx];
+            let (start, end) = (start_ln - 1, end_ln - 1);
+            let (first, _) = split_eol(segs[start]);
+            let (last, last_eol) = split_eol(segs[end]);
 
-            let prefix = if let Some(begin_pos) = first.find("-----BEGIN ") {
-                first[..begin_pos]
-                    .trim_end_matches(['"', '\'', '`'])
-                    .to_string()
-            } else {
-                String::new()
+            let prefix = match first.find("-----BEGIN ") {
+                Some(p) => first[..p].trim_end_matches(['"', '\'', '`']),
+                None => "",
             };
-
-            let suffix = if let Some(end_pos) = last.rfind("-----") {
-                last[end_pos + 5..]
-                    .trim_start_matches(['"', '\'', '`'])
-                    .to_string()
-            } else {
-                String::new()
+            let suffix = match last.rfind("-----") {
+                Some(p) => last[p + 5..].trim_start_matches(['"', '\'', '`']),
+                None => "",
             };
-
             let replacement_line = format!("{prefix}{accessor}{suffix}");
-            lines.splice(
-                start_idx..=end_idx,
-                std::iter::once(replacement_line.clone()),
-            );
+            let original_block = split_eol(&segs[start..=end].concat()).0.to_string();
 
-            let trailing_newline = if content.ends_with("\r\n") {
-                "\r\n"
-            } else if content.ends_with('\n') {
-                "\n"
-            } else {
-                ""
-            };
-            fs::write(path, format!("{}{}", lines.join("\n"), trailing_newline))?;
-            return Ok((original_line, replacement_line));
+            let updated = format!(
+                "{}{replacement_line}{last_eol}{}",
+                segs[..start].concat(),
+                segs[end + 1..].concat()
+            );
+            write_atomic(path, &updated)?;
+            return Ok((original_block, replacement_line));
         }
 
         let replacement_line =
             Self::replace_secret_in_line(file_path, target_line, secret, var_name);
+        if replacement_line == target_line {
+            return Err(SentrisError::Scan(format!(
+                "Secret not found on line {line_number} of {file_path}; file left unchanged"
+            )));
+        }
 
-        lines[line_number - 1] = replacement_line.clone();
-        let trailing_newline = if content.ends_with("\r\n") {
-            "\r\n"
-        } else if content.ends_with('\n') {
-            "\n"
-        } else {
-            ""
-        };
-        fs::write(path, format!("{}{}", lines.join("\n"), trailing_newline))?;
+        let updated = format!(
+            "{}{replacement_line}{eol}{}",
+            segs[..idx].concat(),
+            segs[idx + 1..].concat()
+        );
+        write_atomic(path, &updated)?;
 
-        Ok((original_line, replacement_line))
+        Ok((target_line.to_string(), replacement_line))
     }
 }
 

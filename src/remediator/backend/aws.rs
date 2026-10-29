@@ -1,9 +1,9 @@
 use crate::error::SentrisError;
-use crate::remediator::backend::SecretStoreBackend;
+use crate::remediator::backend::{
+    mock_notice, mock_requested, record_mock, SecretStoreBackend, SecretTempFile,
+};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Operation mode for AWS Secrets Manager.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -36,14 +36,11 @@ impl AwsSecretsManagerBackend {
         let region = std::env::var("AWS_REGION")
             .or_else(|_| std::env::var("AWS_DEFAULT_REGION"))
             .unwrap_or_else(|_| "us-east-1".to_string());
-        let live_mode = std::env::var("SENTRIS_LIVE_BACKEND")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
         Self {
             region,
             action: AwsActionMode::PutSecretValue,
             kms_key_id: None,
-            mock: !live_mode,
+            mock: mock_requested(),
             mock_ledger_path: None,
         }
     }
@@ -146,10 +143,10 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
         secret: &str,
         dry_run: bool,
     ) -> Result<String, SentrisError> {
-        let payload = self.format_payload(key, secret);
         let action_name = self.action.as_str();
 
         if dry_run {
+            let payload = self.format_payload(key, "<redacted>");
             return Ok(format!(
                 "[dry-run] Formatted AWS Secrets Manager {action_name} payload for '{key}' (region: {}): {}",
                 self.region,
@@ -158,25 +155,17 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
         }
 
         if self.mock {
-            let ledger_path = self
-                .mock_ledger_path
-                .clone()
-                .unwrap_or_else(|| Path::new(".sentris").join("aws_secrets_manager_mock.json"));
-            if let Some(parent) = ledger_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let mut existing: HashMap<String, serde_json::Value> = if ledger_path.exists() {
-                let content = fs::read_to_string(&ledger_path)?;
-                serde_json::from_str(&content).unwrap_or_default()
-            } else {
-                HashMap::new()
-            };
-            existing.insert(key.to_string(), payload.clone());
-            fs::write(&ledger_path, serde_json::to_string_pretty(&existing)?)?;
-
+            let payload = self.format_payload(key, secret);
+            let path = record_mock(
+                self.mock_ledger_path.as_deref(),
+                "aws_secrets_manager_mock.json",
+                key,
+                payload,
+            )?;
             return Ok(format!(
-                "Recorded AWS Secrets Manager {action_name} payload for '{key}' to mock ledger at {}",
-                ledger_path.display()
+                "{} (ledger: {})",
+                mock_notice("Aws"),
+                path.display()
             ));
         }
 
@@ -189,6 +178,11 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
             AwsActionMode::CreateSecret => "--name",
         };
 
+        // file:// keeps the secret out of argv; the temp file is 0600 and removed on drop
+        let secret_file = SecretTempFile::create(secret)
+            .map_err(|e| SentrisError::Scan(format!("Cannot stage secret for aws CLI: {e}")))?;
+        let secret_arg = format!("file://{}", secret_file.path().display());
+
         let mut cmd = std::process::Command::new("aws");
         cmd.args([
             "secretsmanager",
@@ -196,7 +190,7 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
             id_flag,
             key,
             "--secret-string",
-            secret,
+            &secret_arg,
             "--region",
             &self.region,
         ]);
@@ -217,9 +211,13 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
                 )))
             }
             Err(e) => Err(SentrisError::Scan(format!(
-                "Failed to spawn 'aws' CLI for '{key}' (ensure AWS CLI v2 is installed or set mock mode): {e}"
+                "Failed to spawn 'aws' CLI for '{key}' (install AWS CLI v2): {e}"
             ))),
         }
+    }
+
+    fn is_mock(&self) -> bool {
+        self.mock
     }
 }
 

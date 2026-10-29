@@ -20,6 +20,8 @@ fn create_test_finding(
         entropy,
         fingerprint: "test-fingerprint-123".to_string(),
         commit_hash: None,
+        commit_author: None,
+        commit_date: None,
     }
 }
 
@@ -85,9 +87,9 @@ fn test_format_slack_card_critical() {
     assert!(finding_block_text.contains("AKIA...7EXA"));
 
     let action_block_text = blocks.last().unwrap()["text"]["text"].as_str().unwrap();
-    assert!(
-        action_block_text.contains("Run 'sentris remediate' to rotate safely with zero downtime")
-    );
+    assert!(action_block_text.contains(
+        "Run 'sentris remediate' to move the secret out of source (then revoke the old key)"
+    ));
 }
 
 #[test]
@@ -147,7 +149,9 @@ fn test_format_discord_card_critical() {
     assert_eq!(embed["color"].as_u64().unwrap(), 15158332);
 
     let desc = embed["description"].as_str().unwrap();
-    assert!(desc.contains("Run 'sentris remediate' to rotate safely with zero downtime"));
+    assert!(desc.contains(
+        "Run 'sentris remediate' to move the secret out of source (then revoke the old key)"
+    ));
 
     let fields = embed["fields"].as_array().unwrap();
     assert_eq!(fields[0]["name"].as_str().unwrap(), "📊 Scan Summary");
@@ -173,7 +177,7 @@ fn test_format_discord_card_critical() {
     );
     assert_eq!(
         action_field["value"].as_str().unwrap(),
-        "Run 'sentris remediate' to rotate safely with zero downtime"
+        "Run 'sentris remediate' to move the secret out of source (then revoke the old key)"
     );
 }
 
@@ -277,7 +281,7 @@ fn test_post_incident_card_offline_transport_error() {
     )];
     let report = create_test_report(findings, 50);
 
-    let res = WebhookReporter::post_incident_card("http://127.0.0.1:9/webhook", &report, false);
+    let res = WebhookReporter::post_incident_card("https://127.0.0.1:9/webhook", &report, false);
     assert!(res.is_err());
     match res.unwrap_err() {
         SentrisError::Webhook(msg) => {
@@ -285,4 +289,28 @@ fn test_post_incident_card_offline_transport_error() {
         }
         _ => panic!("Expected SentrisError::Webhook"),
     }
+}
+
+#[test]
+fn webhook_requires_https_and_never_echoes_the_secret_path() {
+    let report = create_test_report(vec![], 1);
+    let err = WebhookReporter::post_incident_card(
+        "http://hooks.slack.com/services/T/B/X",
+        &report,
+        false,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(err.contains("https://"));
+
+    let secret_url = "https://hooks.slack.com/services/T000/B000/SUPERSECRETTOKEN";
+    let dry = WebhookReporter::post_incident_card(secret_url, &report, true).unwrap();
+    assert!(!dry.contains("SUPERSECRETTOKEN"));
+    assert!(dry.contains("hooks.slack.com"));
+
+    // "discord.com" in the path must not flip the provider
+    let tricky =
+        WebhookReporter::post_incident_card("https://evil.test/discord.com/x", &report, true)
+            .unwrap();
+    assert!(tricky.contains("Slack"));
 }

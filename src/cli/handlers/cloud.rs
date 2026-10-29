@@ -3,16 +3,66 @@ use std::path::PathBuf;
 use std::process;
 
 use crate::cli::{AuthSubcommand, Cli};
+use crate::cloud::auth::{generate_team_secret, validate_team_secret};
 use crate::cloud::{build_cloud_payload, upload_scan, Credentials, TeamInfo};
 use crate::git::GitManager;
 use crate::scanner::Scanner;
 
+/// Read the team secret from stdin so it never appears in argv or shell history.
+fn read_team_secret_from_stdin() -> String {
+    use std::io::{BufRead, IsTerminal, Write};
+    if std::io::stdin().is_terminal() {
+        eprint!("Paste team secret: ");
+        let _ = std::io::stderr().flush();
+    }
+    let mut line = String::new();
+    let _ = std::io::stdin().lock().read_line(&mut line);
+    line.trim().to_string()
+}
+
 pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
     let no_color = cli.no_color || std::env::var_os("NO_COLOR").is_some();
     match subcommand {
-        AuthSubcommand::Login { token, server } => match Credentials::from_token(&token, server) {
-            Ok(creds) => {
+        AuthSubcommand::Login {
+            token,
+            server,
+            team_secret,
+        } => match Credentials::from_token(&token, server) {
+            Ok(mut creds) => {
+                if let Err(err) = creds.refresh_from_server() {
+                    eprintln!("{} Authentication failed: {}", "ERROR:".red().bold(), err);
+                    process::exit(1);
+                }
                 let path = Credentials::default_credentials_path();
+                // Precedence: explicit flag > secret already on this machine > new secret
+                let provided = match team_secret.as_deref() {
+                    Some("-") => Some(read_team_secret_from_stdin()),
+                    Some(v) => Some(v.to_string()),
+                    None => std::env::var("SENTRIS_TEAM_SECRET")
+                        .ok()
+                        .filter(|v| !v.is_empty()),
+                };
+                let (secret, generated) = match provided.as_deref().map(validate_team_secret) {
+                    Some(Ok(s)) => (s, false),
+                    Some(Err(err)) => {
+                        eprintln!("{} {}", "ERROR:".red().bold(), err);
+                        process::exit(1);
+                    }
+                    None => match Credentials::load_from_path(&path)
+                        .ok()
+                        .and_then(|c| c.team_secret)
+                    {
+                        Some(existing) => (existing, false),
+                        None => match generate_team_secret() {
+                            Ok(s) => (s, true),
+                            Err(err) => {
+                                eprintln!("{} {}", "ERROR:".red().bold(), err);
+                                process::exit(1);
+                            }
+                        },
+                    },
+                };
+                creds.team_secret = Some(secret.clone());
                 if let Err(err) = creds.save_to_path(&path) {
                     eprintln!(
                         "{} Failed to save credentials: {}",
@@ -31,6 +81,11 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
                             creds.seats_used, creds.seat_limit
                         );
                         println!("   Credentials stored: {}", path.display());
+                        if generated {
+                            println!("   New team secret (store in your password manager; Sentris never sees it):");
+                            println!("     {secret}");
+                            println!("   Teammates join with `sentris auth login --token <THEIR_KEY> --team-secret -` and paste it.");
+                        }
                     } else {
                         println!(
                             "{}",
@@ -49,6 +104,17 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
                             "   Credentials stored: {}",
                             path.display().to_string().dimmed()
                         );
+                        if generated {
+                            println!(
+                                "   {} store in your password manager; Sentris never sees it:",
+                                "New team secret —".yellow().bold()
+                            );
+                            println!("     {}", secret.bold());
+                            println!(
+                                "   Teammates join with {} and paste it.",
+                                "sentris auth login --token <THEIR_KEY> --team-secret -".cyan()
+                            );
+                        }
                     }
                 }
             }
@@ -154,13 +220,19 @@ pub fn handle_sync(cli: &Cli, path: PathBuf, repo: Option<String>, branch: Optio
     });
     let effective_branch = branch.or_else(|| GitManager::get_head_branch().ok().flatten());
     let commit = GitManager::get_head_commit().ok().flatten();
-    let payload = build_cloud_payload(
+    let payload = match build_cloud_payload(
         &report,
         &creds,
         effective_repo.as_deref(),
         effective_branch.as_deref(),
         commit,
-    );
+    ) {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!("{} {}", "ERROR:".red().bold(), err);
+            process::exit(1);
+        }
+    };
     match upload_scan(&payload, &creds, false) {
         Ok(res) => {
             if !cli.quiet {
@@ -186,7 +258,7 @@ pub fn handle_sync(cli: &Cli, path: PathBuf, repo: Option<String>, branch: Optio
                     );
                     for insight in multi_repo {
                         let short_fp = if insight.zk_fingerprint.len() > 15 {
-                            &insight.zk_fingerprint[..15]
+                            crate::model::short(&insight.zk_fingerprint, 15)
                         } else {
                             &insight.zk_fingerprint
                         };
@@ -225,6 +297,7 @@ pub fn handle_team(cli: &Cli) {
         seats_used: 14,
         user_email: "dev@sentris.dev".to_string(),
         expires_at: None,
+        team_secret: None,
     });
     let team = TeamInfo::from_credentials(&creds);
     if is_agent_mode {

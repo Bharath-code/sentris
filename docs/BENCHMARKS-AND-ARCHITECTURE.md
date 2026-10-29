@@ -1,5 +1,7 @@
 # ⚡ Sentris — Production Benchmark, Systems Architecture & Verification Dossier
 
+> **Status:** the head-to-head competitor figures and several latency/throughput numbers below were hand-typed on an earlier build and were never reproduced. The authoritative, regenerable results are in `bench/results/latest.md` (`bench/run.sh`). Treat the tables below as historical until they are regenerated.
+
 > **Binary Target:** `target/release/sentris` (`Mach-O 64-bit arm64` / `ELF x86_64`, `opt-level = 3`, `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`)  
 > **Binary Size:** `4,213,280 bytes` (`4.02 MB`) — zero C/C++/OpenSSL/Python/Node runtime dependencies  
 > **Test Suite:** **155 / 155 Passing (`100%`)** in **`0.28s`** (unit) + **`1.05s`** (CLI integration) + **`0.04s`** (throughput SLA benchmark)  

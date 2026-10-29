@@ -34,6 +34,11 @@ impl QuarantineManager {
         };
         let session_id = format!("qz_{short_id}");
 
+        if custom_branch.is_some_and(|b| b.starts_with('-')) {
+            return Err(SentrisError::Scan(
+                "Invalid branch name: must not start with '-'".to_string(),
+            ));
+        }
         let branch_name = match custom_branch {
             Some(b) => b.to_string(),
             None => format!("sentris/quarantine-{short_id}"),
@@ -178,6 +183,8 @@ mod tests {
             fingerprint: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
                 .to_string(),
             commit_hash: Some("abcdef1234567890".to_string()),
+            commit_author: None,
+            commit_date: None,
         };
 
         let report =

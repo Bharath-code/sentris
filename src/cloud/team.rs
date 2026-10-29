@@ -259,7 +259,7 @@ impl TeamInfo {
 
             for insight in &self.blast_radius_insights {
                 let short_fp = if insight.zk_fingerprint.len() > 15 {
-                    format!("{}...", &insight.zk_fingerprint[..15])
+                    format!("{}...", crate::model::short(&insight.zk_fingerprint, 15))
                 } else {
                     insight.zk_fingerprint.clone()
                 };
@@ -319,6 +319,7 @@ mod tests {
             seats_used: 12,
             user_email: "lead@acme.com".to_string(),
             expires_at: None,
+            team_secret: None,
         };
 
         let team = TeamInfo::from_credentials(&creds);

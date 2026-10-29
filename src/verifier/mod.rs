@@ -25,6 +25,14 @@ pub enum LiveStatus {
     Unverified(String),
 }
 
+/// Canned "Active" answers for fake tokens exist for tests only; in a real build a planted token must not read as verified.
+pub(crate) fn mock_tokens_enabled() -> bool {
+    cfg!(test)
+        || std::env::var("SENTRIS_VERIFIER_MOCK")
+            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+            .unwrap_or(false)
+}
+
 pub trait ProviderVerifier: Send + Sync {
     /// Returns the provider name (e.g. "Stripe", "AWS", "GitHub", "Slack", "OpenAI", "Anthropic")
     fn provider_name(&self) -> &'static str;
@@ -42,8 +50,13 @@ pub trait ProviderVerifier: Send + Sync {
     /// Checks live status via provider API
     fn verify_live(&self, secret: &str) -> Result<LiveStatus, SentrisError>;
 
-    /// Rotates the credential, provisioning a new replacement key
-    fn rotate(&self, old_secret: &str, dry_run: bool) -> Result<String, SentrisError>;
+    /// Provider-side rotation is not implemented for any provider yet; callers must treat the leaked key as still valid
+    fn rotate(&self, _old_secret: &str, _dry_run: bool) -> Result<String, SentrisError> {
+        Err(SentrisError::NotImplemented(format!(
+            "{} key rotation",
+            self.provider_name()
+        )))
+    }
 }
 
 pub struct VerifierRegistry {

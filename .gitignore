@@ -3,3 +3,5 @@
 .env.*
 *.log
 .sentris/
+bench/.tools/
+bench/work/
