@@ -29,6 +29,10 @@ const GIT_SAFE: &[&str] = &[
     "reset",
     "clean",
 ];
+/// Commands that only read their arguments, so naming the scanner config is harmless.
+const READ_ONLY: &[&str] = &[
+    "cat", "head", "tail", "grep", "egrep", "ls", "stat", "wc", "diff",
+];
 const SECRET_DIRS: &[&str] = &[".ssh", ".gnupg", ".aws"];
 const SCANNER_CONFIG: &str = ".sentris.toml";
 
@@ -44,7 +48,11 @@ pub fn is_sensitive_path(path: &str) -> bool {
     if base.starts_with("id_") && !base.ends_with(".pub") {
         return true;
     }
-    if norm.split('/').any(|seg| SECRET_DIRS.contains(&seg)) {
+    if norm
+        .to_ascii_lowercase()
+        .split('/')
+        .any(|seg| SECRET_DIRS.contains(&seg))
+    {
         return true;
     }
     base.rsplit_once('.')
@@ -171,6 +179,31 @@ fn bash_secret_file(command: &str) -> Option<String> {
     None
 }
 
+/// A command that names the scanner config and is not read-only (or redirects into it) would let an agent weaken the guard.
+fn bash_edits_scanner_config(command: &str) -> bool {
+    command.split(['|', ';', '&', '\n']).any(|segment| {
+        let mut tokens = segment
+            .split_whitespace()
+            .skip_while(|t| t.contains('=') && !t.starts_with('-') || WRAPPERS.contains(t));
+        let head = tokens
+            .next()
+            .map_or("", |h| h.rsplit('/').next().unwrap_or(h));
+        let names_config = segment
+            .replace(['\'', '"', '\\'], "")
+            .split(|c: char| {
+                !(c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-' | '/' | '*' | '?'))
+            })
+            .any(|piece| {
+                let base = piece.rsplit('/').next().unwrap_or(piece);
+                !piece.is_empty()
+                    && (is_scanner_config(piece)
+                        || (base.contains(['*', '?'])
+                            && wildcard_match(base.as_bytes(), SCANNER_CONFIG.as_bytes())))
+            });
+        names_config && (segment.contains('>') || !READ_ONLY.contains(&head))
+    })
+}
+
 fn written_text(tool_input: &Value) -> String {
     let mut parts: Vec<&str> = ["content", "new_string", "new_source"]
         .iter()
@@ -216,6 +249,11 @@ fn pre_tool(scanner: &Scanner, tool: &str, input: &Value) -> Verdict {
         }
         "Bash" => {
             let command = path("command").unwrap_or("");
+            if bash_edits_scanner_config(command) {
+                return Verdict::Deny(format!(
+                    "Sentris blocked a command that changes {SCANNER_CONFIG}: the secret-scanner configuration is not for agents to change."
+                ));
+            }
             if let Some(p) = bash_secret_file(command) {
                 return deny_file(&p);
             }
@@ -553,5 +591,56 @@ mod tests {
             "Grep",
             json!({"pattern": "K", "path": format!("{d}/.e*")}),
         ));
+    }
+
+    #[test]
+    fn secret_directories_match_case_insensitively() {
+        denied(tool(
+            "Read",
+            json!({"file_path": "/Users/me/.SSH/id_ed25519.bak"}),
+        ));
+        denied(tool("Read", json!({"file_path": "/home/me/.AWS/config"})));
+    }
+
+    #[test]
+    fn bash_cannot_rewrite_the_scanner_config_but_may_read_it() {
+        for cmd in [
+            "echo 'rules = []' > .sentris.toml",
+            "sed -i s/a/b/ .sentris.toml",
+            "rm .sentris.toml",
+            "tee .SENTRIS.TOML",
+            "cp /tmp/x .sentris.toml",
+            "echo hi >> ./.sentris.toml",
+        ] {
+            denied(tool("Bash", json!({"command": cmd})));
+        }
+        for cmd in [
+            "cat .sentris.toml",
+            "grep rules .sentris.toml",
+            "ls -la .sentris.toml",
+        ] {
+            assert_eq!(
+                tool("Bash", json!({"command": cmd})),
+                Verdict::Allow,
+                "{cmd}"
+            );
+        }
+    }
+
+    #[test]
+    fn config_guard_covers_wildcards_and_exec_capable_readers() {
+        for cmd in [
+            "rm .sentris.*",
+            "sed -i s/a/b/ .s*ris.toml",
+            "mv ./.sentris.t?ml /tmp/x",
+            "rg --pre ./evil.sh x .sentris.toml",
+            "less .sentris.toml",
+        ] {
+            denied(tool("Bash", json!({"command": cmd})));
+        }
+        assert_eq!(
+            tool("Bash", json!({"command": "cat .sentris.t*"})),
+            Verdict::Allow
+        );
     }
 }
