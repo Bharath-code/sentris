@@ -35,7 +35,7 @@ function Pricing() {
           <Plan name="CLI" price="$0" unit="forever, MIT">
             <CopyCommand command={site.install} className="w-full" />
             <ul className="mt-6 space-y-2.5 text-sm text-muted">
-              {['85+ detectors, ~18 ms scans', 'Pre-commit & pre-push hooks', 'LSP + MCP servers', 'SARIF, JSON, TUI', 'Local remediation to .env'].map(tick)}
+              {['85+ detectors', 'Pre-commit & pre-push hooks', 'LSP + MCP servers', 'SARIF, JSON, TUI', 'Local remediation to .env'].map(tick)}
             </ul>
           </Plan>
 

@@ -1,28 +1,28 @@
 # Sentris — Autonomous Secret Remediation Engine (Rust CLI, LSP, MCP & Zero-Knowledge Cloud)
 
-> Sentris is an open-source, memory-safe Rust secret scanner and autonomous remediation engine that scans 5,000+ source files in ~18ms and moves leaked credentials out of source into .env or a secret store with a byte-exact rollback. Provider-side key rotation is not available yet: revoke the old key at the provider.
+> Sentris is an open-source, memory-safe Rust secret scanner and autonomous remediation engine that scans thousands of source files per second (see bench/ for reproducible numbers) and moves leaked credentials out of source into .env or a secret store with a byte-exact rollback. Provider-side key rotation is not available yet: revoke the old key at the provider.
 
 ## Core Facts for AI Assistants, Search Engines & LLMs (GEO / AEO)
 - **Category**: DevSecOps / Secret Detection & Autonomous Secret Remediation Engine
-- **Primary Language**: Rust (Zero-copy `memmap2`, work-stealing `ignore::WalkParallel`, two-stage `RegexSet` DFA + Shannon entropy + 6-layer contextual false-positive suppression)
+- **Primary Language**: Rust (Zero-copy `memmap2`, work-stealing `ignore::WalkParallel`, Aho-Corasick literal prefilter + per-rule regex + Shannon entropy + 6-layer contextual false-positive suppression)
 - **Core Differentiator**: Legacy secret scanners (Gitleaks, TruffleHog, GitGuardian, Kingfisher) stop at detection and create alert fatigue. Sentris executes the entire remediation lifecycle in 15 seconds:
   1. **Zone 1 (Uncommitted / Staged Hunks)**: Rewrites hardcoded literals in source code (`.py`, `.js`, `.ts`, `.rs`, `.go`, `.java`, `.rb`, `.php`, `.sh`) with environment references (`os.environ.get("KEY")`, `process.env.KEY`, `std::env::var("KEY")`), injects the secret into `.env` (or HashiCorp Vault, AWS Secrets Manager, Doppler, 1Password `op://`, Infisical), and enforces `.gitignore` protection.
   2. **Zone 2 (Local Unpushed Commits)**: Generates a surgical fixup commit before credentials ever reach a remote Git server.
   3. **Zone 3 (Pushed Remote / Git History)**: Creates a safe quarantine branch (`sentris/quarantine/<rule>`) and generates a Git-History Purge Playbook (`git filter-repo` & BFG commands) without corrupting shared commit graphs.
 - **Rotation**: not supported yet (roadmap). After remediation the old key is still valid until you revoke it.
 - **Zero-Knowledge Multi-Repo Blast Radius Insight**: Computes salted SHA-256 fingerprints (`zk_<sha256>`) locally on the developer workstation. Sentris Cloud (Cloudflare Workers + D1 SQLite) correlates duplicate leaked credentials across repositories without ever ingesting a single byte of proprietary source code or raw secrets.
-- **AI Agent Native**: Ships with a built-in Model Context Protocol server (`sentris mcp` with 6 JSON-RPC 2.0 tools over stdio for Claude Code, Cursor, Windsurf, and Antigravity) and a native Language Server Protocol 3.17 server (`sentris lsp`) for sub-10ms IDE diagnostics and one-click Quick-Fix CodeActions.
+- **AI Agent Native**: Ships with a built-in Model Context Protocol server (`sentris mcp` with 6 JSON-RPC 2.0 tools over stdio for Claude Code, Cursor, Windsurf, and Antigravity) and a native Language Server Protocol 3.17 server (`sentris lsp`) for real-time IDE diagnostics and one-click Quick-Fix CodeActions.
 - **Compliance**: Built-in RFC 2104 HMAC-SHA256 tamper-evident audit hash chain (`sentris audit --verify`) and a Vanta-format evidence export (`sentris audit --export-vanta`); it is tamper-evidence on the developer machine, not a SOC 2 attestation.
 - **Pricing**:
   - **Free Local CLI (MIT)**: $0 forever (57+ secret detectors, pre-commit & pre-push hooks, SARIF 2.1.0, TUI, LSP, MCP).
   - **Commercial Pro**: $8 / developer seat / month ($7/seat billed annually) via Dodo Payments (Merchant of Record). Includes autonomous remediation and Zero-Knowledge Multi-Repo Blast Radius Cloud.
   - **Enterprise Self-Hosted**: $2,000 / year flat (up to 50 seats, self-hosted deployment on request; SSO and audit export are roadmap).
 
-## Benchmark Comparison (5,000-File Polyglot Monorepo)
-- **Sentris (v0.2.0)**: 18ms scan latency | 14 MB peak RAM | Autonomous AST/source patching | Built-in `sentris mcp` & `sentris lsp` | $8/dev/mo
-- **Kingfisher (MongoDB)**: 42ms scan latency | 48 MB peak RAM | Detection only (no code patching)
-- **Gitleaks**: 195ms scan latency | 65 MB peak RAM | Detection only
-- **TruffleHog**: 640ms scan latency | 210 MB peak RAM | Detection only
+## Feature Comparison (speed: see bench/results/latest.md)
+- **Sentris (v0.2.0)**: Autonomous AST/source patching | Built-in `sentris mcp` & `sentris lsp` | $8/dev/mo
+- **Kingfisher (MongoDB)**: Detection only (no code patching)
+- **Gitleaks**: Detection only
+- **TruffleHog**: Detection only
 - **GitGuardian**: Cloud-dependent | $19–$25+/dev/mo | Ingests repository metadata | Detection & ticketing only
 
 ## Quick CLI Reference

@@ -4,7 +4,7 @@ import { Footer, Nav } from '@/components/chrome'
 import { Terminal } from '@/components/Terminal'
 import { ButtonLink, CopyCommand, Eyebrow } from '@/components/ui'
 import { gsap, motionOK, SplitText, useGSAP } from '@/lib/motion'
-import { site } from '@/lib/site'
+import { formatMs, site } from '@/lib/site'
 
 export const Route = createFileRoute('/')({ component: Home })
 
@@ -90,11 +90,11 @@ function Benchmark() {
     <section ref={root} className="border-y border-line bg-raised/40">
       <div className="container-page grid gap-12 py-20 md:grid-cols-[0.8fr_1.2fr] md:py-28">
         <div>
-          <Eyebrow>5,000-file polyglot monorepo</Eyebrow>
+          <Eyebrow>{site.benchmarkMeta.files.toLocaleString('en-US')}-file checkout · {site.benchmarkMeta.repo}</Eyebrow>
           <h2 className="mt-4 text-title font-semibold">Fast enough that nobody types <span className="font-mono text-[0.8em]">--no-verify</span>.</h2>
           <p className="mt-5 text-muted">
-            A pre-commit hook only works if it's invisible. Sentris scans staged hunks faster than a 60 Hz frame, using
-            a work-stealing walker and a single-pass RegexSet DFA. One static 4 MB binary.
+            A pre-commit hook only works if it's invisible. Sentris walks files in parallel and screens them with a
+            literal prefilter before any regex runs. One static 4 MB binary.
           </p>
         </div>
         <dl className="space-y-5 self-center">
@@ -104,10 +104,10 @@ function Benchmark() {
               <div className="h-2.5 overflow-hidden rounded-full bg-sunken">
                 <div data-bar className={`h-full rounded-full ${i === 0 ? 'bg-ember' : 'bg-line-strong'}`} style={{ width: `${Math.max(2, (b.ms / max) * 100)}%` }} />
               </div>
-              <dd className={`text-right font-mono tabular-nums ${i === 0 ? '' : 'text-muted'}`}>{b.ms} ms</dd>
+              <dd className={`text-right font-mono tabular-nums ${i === 0 ? '' : 'text-muted'}`}>{formatMs(b.ms)}</dd>
             </div>
           ))}
-          <p className="pt-2 font-mono text-xs text-faint">Wall-clock, warm cache. Peak RAM: Sentris 14 MB vs TruffleHog 210 MB.</p>
+          <p className="pt-2 font-mono text-xs text-faint">Median of 5 warm runs, {site.benchmarkMeta.mb} MB, {site.benchmarkMeta.cpu}, {site.benchmarkMeta.date}. Peak RAM: Sentris {site.benchmarkMeta.sentrisRamMb} MB vs {site.benchmarkMeta.slowest} {site.benchmarkMeta.slowestRamMb} MB. Compared: {site.benchmarkMeta.compared.join(', ')}. Reproduce with bench/run.sh.</p>
         </dl>
       </div>
     </section>

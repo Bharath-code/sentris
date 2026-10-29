@@ -7,7 +7,7 @@
 [![CI](https://github.com/Bharath-code/sentris/actions/workflows/ci.yml/badge.svg)](https://github.com/Bharath-code/sentris/actions)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![Binary Size](https://img.shields.io/badge/binary-4.02MB%20static%20Rust-success.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
-[![Pre-Commit SLA](https://img.shields.io/badge/pre--commit-11ms%20--%2025ms-brightgreen.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Benchmark](https://img.shields.io/badge/benchmark-reproducible-brightgreen.svg)](bench/results/latest.md)
 [![Throughput](https://img.shields.io/badge/throughput-83%2C333%20files%2Fsec-blueviolet.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![Tests](https://img.shields.io/badge/tests-155%2F155%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![MCP & LSP Ready](https://img.shields.io/badge/AI%20%26%20IDE-Native%20MCP%20%2B%20LSP-orange.svg)](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp)
@@ -52,8 +52,8 @@ Legacy secret scanners (`Gitleaks`, `TruffleHog`, `GitGuardian`, `MongoDB Kingfi
 
 ```mermaid
 flowchart LR
-    subgraph Detect["1. Sub-25ms Detection"]
-        A["Work-Stealing Parallel Walker + Whole-File RegexSet DFA"]
+    subgraph Detect["1. Fast Detection"]
+        A["Work-Stealing Parallel Walker + Literal Prefilter"]
         B["6-Layer FP Suppression + Syntactic ContextKind"]
         A --> B
     end
@@ -78,8 +78,8 @@ flowchart LR
 
 ## 🔥 The 5 "Holy Sh\*t" Moments
 
-### 1. The Pre-Commit Ghost (`12ms` Diff-Hunk Scan)
-Developers never bypass Sentris with `--no-verify` because it parses staged diff hunks (`git diff --cached -U0`) and finishes in **`12ms`**—faster than a 60Hz monitor refreshes (`16.6ms`). And if someone ever forces `--no-verify`, Sentris's automatic `pre-push` hook (`sentris scan --since HEAD~1`) catches it before `git push`.
+### 1. The Pre-Commit Ghost (Diff-Hunk Scan)
+Developers never bypass Sentris with `--no-verify` because it parses staged diff hunks (`git diff --cached -U0`) so the cost scales with the size of the change, not the size of the repo (staged-scan latency is not part of `bench/` yet). And if someone ever forces `--no-verify`, Sentris's automatic `pre-push` hook (`sentris scan --since HEAD~1`) catches it before `git push`.
 
 ### 2. The Friday 4:55 PM Save (`sentris remediate`)
 Instead of manually editing files, creating `.env`, updating `.gitignore`, and hoping teammates don't break their build:
@@ -103,7 +103,7 @@ In **under 1 second**, `.env` is populated, `.gitignore` is hardened, `.env.exam
 
 ### 3. The Autonomous AI Agent & IDE Self-Heal (`sentris mcp` + `sentris lsp`)
 - **AI Coding Agents (`sentris mcp`):** Cursor, Claude Code, Windsurf, and Antigravity call Sentris's local zero-egress MCP server over `stdio` (`sentris_scan_path`, `sentris_remediate_finding`, `sentris_rollback_session`, `sentris_team_blast_radius`) to fix leaked keys before finishing their turn.
-- **Real-Time IDE Diagnostics (`sentris lsp`):** Native LSP 3.17 server highlights pasted secrets in `<2ms` and offers a 1-click Quick Fix (`Sentris: Extract stripe-secret-key to STRIPE_SECRET_KEY`) directly in VS Code, Cursor, Zed, and Neovim.
+- **Real-Time IDE Diagnostics (`sentris lsp`):** Native LSP 3.17 server highlights pasted secrets as you type and offers a 1-click Quick Fix (`Sentris: Extract stripe-secret-key to STRIPE_SECRET_KEY`) directly in VS Code, Cursor, Zed, and Neovim.
 
 ### 4. The Zero-Knowledge Multi-Repo Blast Radius Insight (`sentris team`)
 Security directors see duplicate leaked credentials across 50 microservice repositories via organization-salted `zk_<sha256>` HMAC correlation—**with `0 bytes` of proprietary source code or raw secrets ever leaving a developer's laptop:**
@@ -142,8 +142,8 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
 
 | Dimension | Sentris (Ours) | MongoDB Kingfisher (Rust OSS) | GitGuardian (SaaS + ggshield) | TruffleHog v3 (Go OSS + Ent) | GitHub Secret Protection | Semgrep Secrets | Gitleaks v8 (Go OSS) |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + `RegexSet` DFA)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) |
-| **Pre-Commit Latency** | **`12ms – 25ms` (Diff-Hunk DFA)** | `80ms – 350ms` | `350ms – 1,200ms` | `800ms – 4,000ms` | Push-time only | `1,000ms – 3,500ms` | `25ms – 60ms` |
+| **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) |
+| **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` |
 | **Detection Engine** | **85+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules |
 | **Live API Verification** | **Yes (`--verify` w/ zero-egress `--offline` default)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No |
 | **Post-Detection Action** | **Extracts to `.env`/Vault/1Password/Infisical + Patches Code** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table |
@@ -186,7 +186,7 @@ cargo install sentris
 # Scan working directory recursively (Work-Stealing Parallel Walker + Whole-File RegexSet DFA)
 sentris scan .
 
-# Scan only staged git index diff hunks (12ms pre-commit mode)
+# Scan only staged git index diff hunks (pre-commit mode)
 sentris scan --staged
 
 # Scan commits in a branch or push range (e.g. origin/main..HEAD)
@@ -241,7 +241,7 @@ backup_branch = true
 
 ---
 
-### 4. Install Sub-25ms Pre-Commit & Pre-Push Hooks
+### 4. Install Pre-Commit & Pre-Push Hooks
 
 ```bash
 # Installs both .git/hooks/pre-commit (--staged) and .git/hooks/pre-push (--since HEAD~1)
@@ -353,10 +353,11 @@ sentris sync
 
 > 📄 **Full Benchmark & Systems Architecture Report:** See [**`docs/BENCHMARKS-AND-ARCHITECTURE.md`**](docs/BENCHMARKS-AND-ARCHITECTURE.md) for complete binary footprint, RSS memory hygiene, throughput across 1,000–5,000 files, and subsystem latency breakdowns.
 
-Measured on Apple Silicon M-series (`target/release/sentris`, `4.02 MB` stripped binary, zero C/C++/VM dependencies):
+Numbers are generated, never hand-typed: `bench/run.sh` builds Sentris, runs every installed scanner (gitleaks, TruffleHog, Kingfisher via `bench/fetch-tools.sh`, pinned versions) on the same pinned public checkout (django 5.1.4, about 6,800 files) and on the labeled detection corpus (`tests/corpus_test.rs`), then writes [`bench/results/latest.md`](bench/results/latest.md) with wall-clock median, peak RSS, hardware, versions and exact commands.
 
-| Workload | Sentris (Rust) | Gitleaks v8 (Go) | MongoDB Kingfisher | TruffleHog v3 |
-| :--- | :---: | :---: | :---: | :---: |
+The corpus is authored by this project, so its recall column is a regression gauge, not a neutral ranking. The latest committed run covers only the tools listed in that file.
+
+--- | :---: | :---: | :---: | :---: |
 | **Staged Git Index Diff (`--staged`)** | **`11ms`** | `45ms` | `180ms` | `850ms` |
 | **1,000-File Repository (`1.34 MB`)** | **`16ms` (`62,500 files/sec`)** | `95ms` | `260ms` | `1,250ms` |
 | **5,000-File Monorepo (`7.98 MB`)** | **`60ms` (`83,333 files/sec`)** | `420ms` | `1,150ms` | `4,800ms` |
@@ -381,6 +382,8 @@ The following results were measured against the compiled release binary (`target
 2. **`monorepo_5000_files`**: A 5,000-file TypeScript monorepo (`50` packages × `100` modules) where every file contains UUIDv4 strings and placeholder env lookups, plus 2 injected live secrets.
 
 ### 1. Performance & Efficiency Metrics (`/usr/bin/time -l`)
+
+> Historical figures from an earlier build and workload; not regenerated. The reproducible numbers live in `bench/results/latest.md`.
 
 | Benchmark Scenario | Files Evaluated | Internal Engine Latency | Full CLI Wall-Clock | Throughput | Peak RSS Memory | False Positives |
 | :--- | :---: | :---: | :---: | :---: | :---: | :---: |

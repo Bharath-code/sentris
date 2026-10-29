@@ -5,7 +5,9 @@ pub mod patterns;
 
 use crate::error::SentrisError;
 use crate::model::{Finding, Severity};
-use regex::{Regex, RegexSet, RegexSetBuilder};
+use aho_corasick::{AhoCorasick, AhoCorasickBuilder};
+use regex::Regex;
+use regex_syntax::hir::literal::{ExtractKind, Extractor};
 use sha2::{Digest, Sha256};
 
 /// 0 = vendor-specific, 1 = keyed generic, 2 = broad generic
@@ -26,9 +28,33 @@ pub struct CompiledRule {
     pub min_entropy: f64,
 }
 
+/// Rules are screened by one Aho-Corasick pass over their required literal prefixes; rules without a
+/// usable prefix (`always`) are checked with their own regex, whole-file first.
 pub struct DetectorEngine {
     rules: Vec<CompiledRule>,
-    regex_set: RegexSet,
+    prefilter: Option<AhoCorasick>,
+    literal_owner: Vec<usize>,
+    always: Vec<usize>,
+}
+
+const MIN_LITERAL_LEN: usize = 3;
+
+/// Case-folded literal prefixes every match of `pattern` must start with, or None if unbounded/too short.
+fn required_prefixes(pattern: &str) -> Option<Vec<String>> {
+    let hir = regex_syntax::ParserBuilder::new()
+        .build()
+        .parse(pattern)
+        .ok()?;
+    let mut extractor = Extractor::new();
+    extractor.kind(ExtractKind::Prefix).limit_total(128);
+    let seq = extractor.extract(&hir);
+    let lits = seq.literals()?;
+    let prefixes: Vec<String> = lits
+        .iter()
+        .map(|l| String::from_utf8_lossy(l.as_bytes()).to_ascii_lowercase())
+        .collect();
+    (!prefixes.is_empty() && prefixes.iter().all(|p| p.len() >= MIN_LITERAL_LEN))
+        .then_some(prefixes)
 }
 
 impl DetectorEngine {
@@ -66,15 +92,56 @@ impl DetectorEngine {
             }
         }
 
-        let regex_set = RegexSetBuilder::new(&pattern_strings)
-            .multi_line(true)
-            .dfa_size_limit(256 << 20)
-            .build()?;
+        let mut literals: Vec<String> = Vec::new();
+        let mut literal_owner = Vec::new();
+        let mut always = Vec::new();
+        for (idx, pattern) in pattern_strings.iter().enumerate() {
+            match required_prefixes(pattern) {
+                Some(prefixes) => {
+                    literal_owner.extend(std::iter::repeat_n(idx, prefixes.len()));
+                    literals.extend(prefixes);
+                }
+                None => always.push(idx),
+            }
+        }
+        let prefilter = if literals.is_empty() {
+            None
+        } else {
+            Some(
+                AhoCorasickBuilder::new()
+                    .ascii_case_insensitive(true)
+                    .build(&literals)
+                    .map_err(|e| SentrisError::Scan(format!("prefilter build failed: {e}")))?,
+            )
+        };
 
         Ok(Self {
             rules: compiled,
-            regex_set,
+            prefilter,
+            literal_owner,
+            always,
         })
+    }
+
+    /// Indices of rules that could match somewhere in `text`: prefix hits plus unanchored rules that really match.
+    fn candidate_rules(&self, text: &str, among: Option<&[usize]>) -> Vec<usize> {
+        let mut hits: Vec<usize> = Vec::new();
+        if let Some(ac) = &self.prefilter {
+            hits.extend(
+                ac.find_overlapping_iter(text)
+                    .map(|m| self.literal_owner[m.pattern().as_usize()]),
+            );
+        }
+        let always = among.unwrap_or(&self.always);
+        hits.extend(
+            always
+                .iter()
+                .copied()
+                .filter(|&i| self.rules[i].regex.is_match(text)),
+        );
+        hits.sort_unstable();
+        hits.dedup();
+        hits
     }
 
     pub fn new() -> Result<Self, SentrisError> {
@@ -159,11 +226,22 @@ impl DetectorEngine {
         line_number: usize,
         commit_hash: Option<String>,
     ) -> Vec<Finding> {
+        self.scan_line_among(line, file_path, line_number, commit_hash, None)
+    }
+
+    fn scan_line_among(
+        &self,
+        line: &str,
+        file_path: &str,
+        line_number: usize,
+        commit_hash: Option<String>,
+        always_in_file: Option<&[usize]>,
+    ) -> Vec<Finding> {
         let mut findings = Vec::new();
 
-        // Fast-path DFA check: skip lines that don't match any rule pattern
-        let matched_indices = self.regex_set.matches(line);
-        if !matched_indices.matched_any() {
+        // Skip lines that no rule could match
+        let matched_indices = self.candidate_rules(line, always_in_file);
+        if matched_indices.is_empty() {
             return findings;
         }
 
@@ -183,7 +261,7 @@ impl DetectorEngine {
 
         let mut raw_hits: Vec<(usize, usize, Finding)> = Vec::new();
 
-        for rule_idx in matched_indices.into_iter() {
+        for rule_idx in matched_indices {
             let rule = &self.rules[rule_idx];
             for caps in rule.regex.captures_iter(line) {
                 let mat = match caps.get(1).or_else(|| caps.get(0)) {
@@ -252,15 +330,21 @@ impl DetectorEngine {
 
     /// Scans a text file's contents line-by-line, returning all detected findings.
     pub fn scan_text(&self, content: &str, file_path: &str) -> Vec<Finding> {
-        // Whole-file DFA prefilter: skip clean files in a single pass before line splitting
-        if !self.regex_set.is_match(content) {
+        // Whole-file prefilter: skip clean files in a single pass before line splitting
+        let candidates = self.candidate_rules(content, None);
+        if candidates.is_empty() {
             return Vec::new();
         }
+        let always_in_file: Vec<usize> = candidates
+            .into_iter()
+            .filter(|i| self.always.contains(i))
+            .collect();
 
         let mut findings = Vec::new();
 
         for (line_idx, line) in content.lines().enumerate() {
-            let line_findings = self.scan_single_line(line, file_path, line_idx + 1, None);
+            let line_findings =
+                self.scan_line_among(line, file_path, line_idx + 1, None, Some(&always_in_file));
             findings.extend(line_findings);
         }
 

@@ -1,0 +1,57 @@
+{
+  "date": "2026-10-29",
+  "hardware": {
+    "os": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "machine": "arm64",
+    "cpu": "Apple M1",
+    "cores": 8,
+    "ram_gb": 8
+  },
+  "workload": {
+    "repo": "https://github.com/django/django",
+    "tag": "5.1.4",
+    "files": 6827,
+    "mb": 42.0
+  },
+  "corpus": {
+    "positives": 408,
+    "negatives": 262,
+    "note": "Authored by the Sentris project; recall favours Sentris' own rule list. Treat as a regression gauge, not a neutral ranking."
+  },
+  "sentris_commit": "7a55f53",
+  "sentris_dirty": true,
+  "skipped_tools": [
+    "TruffleHog",
+    "Kingfisher"
+  ],
+  "results": [
+    {
+      "name": "Sentris",
+      "version": "0.1.0",
+      "pinned_version_match": true,
+      "ms_median": 470,
+      "ms_min": 420,
+      "runs": 5,
+      "peak_rss_mb": 39.1,
+      "recall": 1.0,
+      "false_positive_rate": 0.0,
+      "corpus_true_positives": 408,
+      "corpus_false_positives": 0,
+      "command": "sentris scan <dir> -f json"
+    },
+    {
+      "name": "Gitleaks",
+      "version": "8.30.1",
+      "pinned_version_match": true,
+      "ms_median": 12025,
+      "ms_min": 11433,
+      "runs": 5,
+      "peak_rss_mb": 80.9,
+      "recall": 0.647,
+      "false_positive_rate": 0.126,
+      "corpus_true_positives": 264,
+      "corpus_false_positives": 33,
+      "command": "gitleaks dir <dir> --no-banner -l error -r <report>"
+    }
+  ]
+}

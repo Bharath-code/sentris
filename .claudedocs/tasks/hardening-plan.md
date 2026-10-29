@@ -182,10 +182,13 @@ Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 afte
 - **AC:** secret in a deleted commit is found with commit/author/date; documented in README.
 - **Done:** both tools find a key added then deleted (gitleaks: stripe-access-token; Sentris: stripe-secret-key). Sentris now reports `commit_hash`, `commit_author`, `commit_date` (ISO-8601) in JSON; covered by `test_git_history_finds_deleted_secret_with_commit_author_date`. Gaps vs gitleaks: no reflog/unreachable-object scan (README previously claimed reflog), no email-only author field, SARIF/text output show hash only.
 
-### T3.4 ⬜ Reproducible benchmark (M)
+### T3.4 🟨 Reproducible benchmark (M)
 - `bench/run.sh`: pinned versions of gitleaks/trufflehog/kingfisher, same corpus + a public repo (e.g. 5k-file checkout), reports time, RSS, precision, recall; output committed with date and hardware.
 - Replace `site.benchmark` numbers with generated JSON.
 - **AC:** a stranger can run one command and reproduce within ±20 %; site numbers come from the JSON, not hand-typed.
+- **Done:** `bench/run.sh` (build, corpus dump, pinned django 5.1.4 checkout, median of 5 warm runs + peak RSS + corpus recall/FP per tool) → `bench/results/{date}-{host}.json`, `latest.json`, `latest.md`, `web/src/lib/benchmark.json` (site renders from it). `bench/fetch-tools.sh` downloads pinned gitleaks 8.30.1 / trufflehog 3.99.7 / kingfisher 2.15.0 (checksum-verified; kingfisher TOFU-pinned in `bench/tools.lock`). README/docs hand-typed speed claims removed or marked historical.
+- **Not done:** TruffleHog and Kingfisher are not in the committed results; running downloaded binaries was blocked in-session, so the user must run `bench/fetch-tools.sh && bench/run.sh` and commit the result. Staged-scan latency is not benchmarked. ±20 % reproduction by a third party untested (run-to-run variance here was 313–470 ms for Sentris).
+- **Found by benchmarking:** the 88-rule `RegexSet` ran at ~3 MB/s (django 26 MB: 8.7 s; `node_modules` 99 MB: 24.8 s). Replaced with an Aho-Corasick literal prefilter plus per-rule regexes (django 0.3–0.5 s, `node_modules` 1.1 s), identical findings, corpus unchanged.
 
 ---
 
