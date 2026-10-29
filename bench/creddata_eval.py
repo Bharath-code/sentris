@@ -88,14 +88,11 @@ def tools(report):
 
 def main():
     if not DATA.exists():
-        sys.exit("CredData not prepared: see bench/creddata_eval.py docstring")
+        sys.exit("CredData not prepared: see bench/README.md")
     rows = load_rows()
-    labeled = defaultdict(list)
-    for path, a, b, truth, cat in rows:
-        labeled[path].append((a, b, truth, cat))
-    n_true = sum(1 for r in rows if r[3])
     report = tempfile.mktemp(suffix=".json")
-    results = []
+    splits = {"all": lambda repo: True, "dev": lambda repo: int(repo, 16) % 2 == 0, "heldout": lambda repo: int(repo, 16) % 2 == 1}
+    results = {k: [] for k in splits}
     for name, cmd in tools(report).items():
         Path(report).unlink(missing_ok=True)
         wall, rss, out = timed(cmd)
@@ -103,38 +100,56 @@ def main():
         by_file = defaultdict(set)
         for f, l in hits:
             by_file[f].add(l)
-        tp = fp = 0
-        cat_tp, cat_all = defaultdict(int), defaultdict(int)
-        covered = set()
-        for path, spans in labeled.items():
-            for a, b, truth, cat in spans:
+        for split, keep in splits.items():
+            tp = fp = n_true = 0
+            per_repo = defaultdict(lambda: [0, 0, 0])
+            cat_tp, cat_all, covered = defaultdict(int), defaultdict(int), set()
+            for path, a, b, truth, cat in rows:
+                if not keep(path.split("/")[1]):
+                    continue
                 flagged = any(a <= l <= b for l in by_file.get(path, ()))
                 if flagged:
                     covered.update((path, l) for l in by_file[path] if a <= l <= b)
+                repo_stats = per_repo[path.split("/")[1]]
+                repo_stats[0] += bool(truth and flagged)
+                repo_stats[1] += bool(flagged and not truth)
+                repo_stats[2] += bool(truth)
                 if truth:
+                    n_true += 1
                     cat_all[cat] += 1
                     cat_tp[cat] += flagged
                     tp += flagged
                 elif flagged:
                     fp += 1
-        unlabeled = len(hits - covered)
-        prec = tp / (tp + fp) if tp + fp else 0
-        rec = tp / n_true
-        results.append({"name": name, "seconds": round(wall, 1), "peak_rss_mb": round(rss, 1), "true_positives": tp, "false_positives_on_labeled": fp,
-                        "recall": round(rec, 3), "precision": round(prec, 3), "f1": round(2 * prec * rec / (prec + rec), 3) if prec + rec else 0,
-                        "flagged_on_unlabeled_lines": unlabeled,
-                        "recall_by_category": {c: round(cat_tp[c] / cat_all[c], 3) for c in sorted(cat_all)}})
-        r = results[-1]
-        print(f"{name:<11} {r['seconds']:>6}s {r['peak_rss_mb']:>6} MB  P {r['precision']:.3f} R {r['recall']:.3f} F1 {r['f1']:.3f}  (TP {tp}, labeled FP {fp}, unlabeled hits {unlabeled})", flush=True)
-    summary = {"dataset": "Samsung/CredData", "labeled_rows": len(rows), "true_rows": n_true, "false_rows": len(rows) - n_true,
-               "lines_total": sum(1 for _ in [0]), "results": sorted(results, key=lambda r: -r["f1"]),
-               "note": "Line-level match on labeled rows only; CredData's own obfuscation replaced real credentials with same-shape fakes. Findings on unlabeled lines are reported but not scored."}
-    del summary["lines_total"]
+            unlabeled = len([h for h in hits if keep(h[0].split("/")[1]) and h not in covered]) if split != "all" else len(hits - covered)
+            prec = tp / (tp + fp) if tp + fp else 0
+            rec = tp / n_true if n_true else 0
+            repo_f1 = []
+            for rtp, rfp, rtrue in per_repo.values():
+                if rtrue:
+                    rp = rtp / (rtp + rfp) if rtp + rfp else 0
+                    rr = rtp / rtrue
+                    repo_f1.append(2 * rp * rr / (rp + rr) if rp + rr else 0)
+            macro_f1 = sum(repo_f1) / len(repo_f1) if repo_f1 else 0
+            results[split].append({"name": name, "seconds": round(wall, 1), "peak_rss_mb": round(rss, 1), "true_positives": tp, "false_positives_on_labeled": fp,
+                                   "true_rows": n_true, "repos_with_true_rows": len(repo_f1), "macro_f1_per_repo": round(macro_f1, 3), "recall": round(rec, 3), "precision": round(prec, 3),
+                                   "f1": round(2 * prec * rec / (prec + rec), 3) if prec + rec else 0, "flagged_on_unlabeled_lines": unlabeled,
+                                   "recall_by_category": {c: round(cat_tp[c] / cat_all[c], 3) for c in sorted(cat_all)}})
+        for split in ("dev", "heldout"):
+            r = results[split][-1]
+            print(f"{name:<11} {split:<8} P {r['precision']:.3f} R {r['recall']:.3f} F1 {r['f1']:.3f} macroF1 {r['macro_f1_per_repo']:.3f}  (TP {r['true_positives']}, labeled FP {r['false_positives_on_labeled']})", flush=True)
+        print(f"{name:<11} {wall:>6.1f}s {rss:>6.1f} MB", flush=True)
+    summary = {"dataset": "Samsung/CredData", "labeled_rows": len(rows),
+               "split": "repo id (CRC hex) even = dev (inspect and tune on this), odd = heldout (score only)",
+               "results": {k: sorted(v, key=lambda r: -r["f1"]) for k, v in results.items()},
+               "note": "Line-level match on labeled rows only; CredData's obfuscation replaced real credentials with same-shape fakes. Findings on unlabeled lines are reported but not scored."}
     (ROOT / "bench" / "results" / "creddata.json").write_text(json.dumps(summary, indent=2) + "\n")
-    md = ["# CredData benchmark", "", f"{len(rows)} labeled rows ({n_true} true, {len(rows) - n_true} false). Line-level; precision uses labeled false rows only.", "",
-          "| Tool | Precision | Recall | F1 | TP | Labeled FP | Hits on unlabeled lines | Time s | Peak MB |", "|---|---:|---:|---:|---:|---:|---:|---:|---:|"]
-    for r in summary["results"]:
-        md.append(f"| {r['name']} | {r['precision']:.3f} | {r['recall']:.3f} | {r['f1']:.3f} | {r['true_positives']} | {r['false_positives_on_labeled']} | {r['flagged_on_unlabeled_lines']} | {r['seconds']} | {r['peak_rss_mb']} |")
+    md = ["# CredData benchmark", "", f"{len(rows)} labeled rows. Line-level; precision uses labeled false rows only. `heldout` = odd repo ids, not used for tuning after the split was introduced.", ""]
+    for split in ("all", "dev", "heldout"):
+        md += [f"## {split}", "", "| Tool | Precision | Recall | F1 | Macro F1 (per repo) | TP | Labeled FP | Hits on unlabeled lines |", "|---|---:|---:|---:|---:|---:|---:|---:|"]
+        for r in summary["results"][split]:
+            md.append(f"| {r['name']} | {r['precision']:.3f} | {r['recall']:.3f} | {r['f1']:.3f} | {r['macro_f1_per_repo']:.3f} | {r['true_positives']} | {r['false_positives_on_labeled']} | {r['flagged_on_unlabeled_lines']} |")
+        md.append("")
     (ROOT / "bench" / "results" / "creddata.md").write_text("\n".join(md) + "\n")
 
 

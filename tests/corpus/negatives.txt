@@ -298,3 +298,10 @@ credata	'key': 'V1001_TODAY_SINGER'
 credata	curl -H "Authorization: Basic dXNlcjpwYXNzd29yZA==" https://api.internal.net
 credata	// Basic Authentication is described in RFC 7617 section two
 credata	Basic authentication should be enabled for the management endpoint
+credata	        "PASSWORD": "postgres",
+credata	                "password2": "mismatch",
+credata	        self.assertIs(User(password="some-gibbberish").has_usable_password(), True)
+credata	assert admin.update(password: 'newpass', password_confirmation: 'newpass')
+credata	opts.Password = c.Password
+credata	password_label = "Repita a senha"
+credata	password = "hunter2hunter"

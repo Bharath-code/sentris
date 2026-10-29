@@ -29,7 +29,7 @@ fn rule_tier(rule_id: &str) -> u8 {
     match rule_id {
         "generic-api-key" | "url-basic-auth" => 1,
         "credential-assignment" | "credential-assignment-unquoted" => 2,
-        "keyed-secret-value" => 3,
+        "keyed-secret-value" | "password-literal" => 3,
         _ => 0,
     }
 }

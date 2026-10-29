@@ -11,6 +11,7 @@ fn is_generic_rule(rule_id: &str) -> bool {
             | "credential-assignment"
             | "credential-assignment-unquoted"
             | "keyed-secret-value"
+            | "password-literal"
     )
 }
 
@@ -331,6 +332,10 @@ impl FalsePositiveFilter {
             }
         }
 
+        if rule_id == "password-literal" && !Self::looks_like_random_password(token) {
+            return true;
+        }
+
         if rule_id == "basic-auth-header" && !Self::is_plausible_basic_credential(token) {
             return true;
         }
@@ -464,6 +469,30 @@ impl FalsePositiveFilter {
             .is_some_and(|body| {
                 body.len() >= 16 && body.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
             })
+    }
+
+    /// Short password literals are only worth flagging when they look generated: no dictionary-style word shape,
+    /// no placeholder wording, and a consonant-heavy or mixed-class body.
+    fn looks_like_random_password(token: &str) -> bool {
+        const COMMON: [&str; 24] = [
+            "password", "passwd", "changeme", "secret", "admin", "test", "example", "newpass",
+            "letmein", "qwerty", "123456", "welcome", "default", "guest", "root", "user", "pass",
+            "foo", "bar", "hunter", "dummy", "sample", "fake", "demo",
+        ];
+        let lower = token.to_ascii_lowercase();
+        if COMMON.iter().any(|w| lower.contains(w)) || token.bytes().all(|b| b.is_ascii_digit()) {
+            return false;
+        }
+        let letters: Vec<u8> = lower.bytes().filter(u8::is_ascii_alphabetic).collect();
+        let vowels = letters.iter().filter(|b| b"aeiou".contains(b)).count();
+        let has_digit = token.bytes().any(|b| b.is_ascii_digit());
+        let has_symbol = token
+            .bytes()
+            .any(|b| !b.is_ascii_alphanumeric() && !matches!(b, b'-' | b'_'));
+        let consonant_heavy = !letters.is_empty() && vowels * 100 < letters.len() * 22;
+        (has_digit && !letters.is_empty() && (consonant_heavy || has_symbol))
+            || has_symbol
+            || consonant_heavy && letters.len() >= 5
     }
 
     /// `Basic <base64>` only counts when it decodes to printable `user:password` with a non-placeholder password.

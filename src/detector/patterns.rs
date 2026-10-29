@@ -503,6 +503,7 @@ pub fn get_rules() -> Vec<Rule> {
         Rule { rule_id: "url-basic-auth", name: "Credentials in URL", description: "Identifies user:password credentials embedded in http(s) URLs", severity: Severity::High, pattern: r#"\b(?:https?|ftps?|sftp|nats|amqps?|rediss?|mongodb(?:\+srv)?|postgres(?:ql)?|mysql|mariadb|smtps?|imaps?|ldaps?|ssh|tcp|wss?)://([A-Za-z0-9._%+-]{1,64}:[^\s:@/'"<>{}$\[\]()*]{4,64})@[A-Za-z0-9.-]+"#, min_entropy: 1.5 },
         Rule { rule_id: "keyed-secret-value", name: "Keyed Secret Value", description: "Identifies key, secret, token or password names assigned a long hex/base64-style literal (quoted or not)", severity: Severity::Medium, pattern: r#"(?i)(?:key|secret|token|passw(?:or)?d|pwd|credential)[a-z0-9_]*['"]?\s*(?:=>|[:?+.]{0,3}=|:)\s*['"]?([A-Za-z0-9+/=_-]{16,128})(?:['"\s,;\\]|$)"#, min_entropy: 3.2 },
         Rule { rule_id: "basic-auth-header", name: "HTTP Basic Authorization Header", description: "Identifies base64 user:password credentials in HTTP Basic authorization values", severity: Severity::High, pattern: r#"(?i)\bbasic\s+([A-Za-z0-9+/]{12,}={0,2})"#, min_entropy: 3.0 },
+        Rule { rule_id: "password-literal", name: "Hardcoded Password Literal", description: "Identifies quoted password values that look randomly generated rather than words or placeholders", severity: Severity::Medium, pattern: r#"(?i)(?:passw(?:or)?d|pwd)[a-z0-9_]*['"]?\s*(?:=>|[:?+.]{0,3}=|:)\s*['"]([A-Za-z0-9!@#$%^&*_+=-]{5,32})['"]"#, min_entropy: 1.5 },
     ]
 }
 
