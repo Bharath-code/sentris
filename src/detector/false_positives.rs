@@ -5,7 +5,10 @@
 pub struct FalsePositiveFilter;
 
 fn is_generic_rule(rule_id: &str) -> bool {
-    matches!(rule_id, "generic-api-key" | "credential-assignment")
+    matches!(
+        rule_id,
+        "generic-api-key" | "credential-assignment" | "credential-assignment-unquoted"
+    )
 }
 
 impl FalsePositiveFilter {
@@ -257,7 +260,7 @@ impl FalsePositiveFilter {
     fn is_rule_specific_fp(token: &str, rule_id: &str, line_context: &str) -> bool {
         let line_lower = line_context.to_ascii_lowercase();
 
-        if rule_id == "credential-assignment"
+        if rule_id.starts_with("credential-assignment")
             && !Self::looks_like_literal_credential(token, line_context)
         {
             return true;

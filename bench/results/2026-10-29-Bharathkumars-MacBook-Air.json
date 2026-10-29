@@ -14,44 +14,69 @@
     "mb": 42.0
   },
   "corpus": {
-    "positives": 408,
-    "negatives": 262,
+    "positives": 432,
+    "negatives": 278,
     "note": "Authored by the Sentris project; recall favours Sentris' own rule list. Treat as a regression gauge, not a neutral ranking."
   },
-  "sentris_commit": "2292df8",
-  "sentris_dirty": false,
-  "skipped_tools": [
-    "TruffleHog",
-    "Kingfisher"
-  ],
+  "sentris_commit": "9cadf20",
+  "sentris_dirty": true,
+  "skipped_tools": [],
   "results": [
     {
       "name": "Sentris",
       "version": "0.1.0",
       "pinned_version_match": true,
-      "ms_median": 324,
-      "ms_min": 306,
+      "ms_median": 181,
+      "ms_min": 176,
       "runs": 5,
-      "peak_rss_mb": 39.0,
+      "peak_rss_mb": 41.4,
       "recall": 1.0,
       "false_positive_rate": 0.0,
-      "corpus_true_positives": 408,
+      "corpus_true_positives": 432,
       "corpus_false_positives": 0,
       "command": "sentris scan <dir> -f json"
+    },
+    {
+      "name": "Kingfisher",
+      "version": "2.15.0",
+      "pinned_version_match": true,
+      "ms_median": 1051,
+      "ms_min": 1022,
+      "runs": 5,
+      "peak_rss_mb": 127.9,
+      "recall": 0.507,
+      "false_positive_rate": 0.022,
+      "corpus_true_positives": 219,
+      "corpus_false_positives": 6,
+      "command": "kingfisher scan <dir> --no-validate --format json"
     },
     {
       "name": "Gitleaks",
       "version": "8.30.1",
       "pinned_version_match": true,
-      "ms_median": 12013,
-      "ms_min": 11671,
+      "ms_median": 1574,
+      "ms_min": 1533,
       "runs": 5,
-      "peak_rss_mb": 80.6,
-      "recall": 0.647,
-      "false_positive_rate": 0.126,
-      "corpus_true_positives": 264,
+      "peak_rss_mb": 108.0,
+      "recall": 0.667,
+      "false_positive_rate": 0.119,
+      "corpus_true_positives": 288,
       "corpus_false_positives": 33,
       "command": "gitleaks dir <dir> --no-banner -l error -r <report>"
+    },
+    {
+      "name": "TruffleHog",
+      "version": "3.99.7",
+      "pinned_version_match": true,
+      "ms_median": 1640,
+      "ms_min": 1624,
+      "runs": 5,
+      "peak_rss_mb": 261.0,
+      "recall": 0.329,
+      "false_positive_rate": 0.018,
+      "corpus_true_positives": 142,
+      "corpus_false_positives": 5,
+      "command": "trufflehog filesystem <dir> --no-update --no-verification --json"
     }
   ]
 }

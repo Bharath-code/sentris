@@ -14,7 +14,7 @@ use sha2::{Digest, Sha256};
 fn rule_tier(rule_id: &str) -> u8 {
     match rule_id {
         "generic-api-key" => 1,
-        "credential-assignment" => 2,
+        "credential-assignment" | "credential-assignment-unquoted" => 2,
         _ => 0,
     }
 }
@@ -38,6 +38,20 @@ pub struct DetectorEngine {
 }
 
 const MIN_LITERAL_LEN: usize = 3;
+
+/// Unquoted `name = value` is ordinary syntax in source code, so that rule only runs on config-style files.
+const SOURCE_AND_DOC_EXTENSIONS: [&str; 41] = [
+    "js", "mjs", "cjs", "jsx", "ts", "tsx", "py", "pyi", "rb", "go", "rs", "java", "kt", "kts",
+    "cs", "php", "c", "h", "cc", "cpp", "hpp", "m", "swift", "scala", "dart", "lua", "r", "pl",
+    "ex", "exs", "clj", "html", "htm", "md", "mdx", "rst", "map", "svg", "css", "scss", "vue",
+];
+
+fn allows_unquoted_assignments(file_path: &str) -> bool {
+    let ext = file_path
+        .rsplit_once('.')
+        .map(|(_, e)| e.to_ascii_lowercase());
+    !ext.is_some_and(|e| SOURCE_AND_DOC_EXTENSIONS.contains(&e.as_str()))
+}
 
 /// Case-folded literal prefixes every match of `pattern` must start with, or None if unbounded/too short.
 fn required_prefixes(pattern: &str) -> Option<Vec<String>> {
@@ -263,6 +277,11 @@ impl DetectorEngine {
 
         for rule_idx in matched_indices {
             let rule = &self.rules[rule_idx];
+            if rule.rule_id == "credential-assignment-unquoted"
+                && !allows_unquoted_assignments(file_path)
+            {
+                continue;
+            }
             for caps in rule.regex.captures_iter(line) {
                 let mat = match caps.get(1).or_else(|| caps.get(0)) {
                     Some(m) => m,

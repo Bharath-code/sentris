@@ -118,6 +118,12 @@ const CASES: &[(&str, &str, bool)] = &[
     ("credential-assignment", "mysql --password=\"{a:16}9!\"", false),
     ("credential-assignment", "--password=\"{a:16}9!\"", false),
     ("credential-assignment", "hash_secret: '{h:40}'", false),
+    ("keyed-uuid-credential", "HUBSPOT_API_KEY={U:0}", false),
+    ("keyed-uuid-credential", "snykToken: \"{U:0}\"", false),
+    ("credential-assignment-unquoted", "DB_PASSWORD={a:20}", false),
+    ("credential-assignment-unquoted", "auth_token: {a:32}", false),
+    ("credential-assignment-unquoted", "client_secret = {a:30}", false),
+    ("credential-assignment-unquoted", "SERVICE_TOKEN={s:40}", false),
 ];
 
 const CONTEXTS: [&str; 4] = ["{}", "KEY=\"{}\"", "\"value\": \"{}\"", "export CRED='{}'"];

@@ -261,3 +261,19 @@ identifier	            lastSignificantToken = "?InterpolationInJSX";
 identifier	              if (lastSignificantToken === "?NonExpressionParenKeyword") {
 identifier	        if (tokenType == "IdentifierWithLongerName") return;
 identifier	const authTokenKindLabel = "AuthenticationTokenKind";
+code-ref	token = self.config.api_token_value
+code-ref	secret: ${SECRET_VALUE_FROM_VAULT_STORE}
+code-ref	password: ${{ secrets.DB_PASSWORD_PRODUCTION }}
+code-ref	access_token = request.headers.authorization.value
+code-ref	TOKEN_URL=https://auth.internal.net/oauth/token
+code-ref	secret_key_base: <%= ENV["SECRET_KEY_BASE_VALUE"] %>
+code-ref	token = tokenizer.convert_tokens_to_ids_list
+code-ref	api_key = config.services.payments.api_key_name
+code-ref	PASSWORD_RESET_TEMPLATE_PATH=emails/password_reset_v2
+code-ref	token_expiry = timedelta(hours=24) + extra_slack_time
+code-ref	secret = load_secret_from_keyring_backend_default
+code-ref	auth_token = get_auth_token_for_current_user_session
+code-ref	TOKEN_LIST=1234567890,1234567891,1234567892
+code-ref	password = hash_password_with_salt_and_pepper_value
+code-ref	private_key = rsa.generate_private_key_with_defaults
+code-ref	access_key: aws_access_key_id_from_profile_default

@@ -1,0 +1,712 @@
+{
+  "per_template": {
+    "ini - quoted1": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "ini - quoted2": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "ini - unquoted1": {
+      "fixtures": 219,
+      "Sentris": 193,
+      "Gitleaks": 219
+    },
+    "ini - unquoted2": {
+      "fixtures": 219,
+      "Sentris": 193,
+      "Gitleaks": 219
+    },
+    "json - string": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "json - escaped newline in string": {
+      "fixtures": 219,
+      "Sentris": 193,
+      "Gitleaks": 219
+    },
+    "xml - element multiline": {
+      "fixtures": 219,
+      "Sentris": 50,
+      "Gitleaks": 219
+    },
+    "yaml - singleline - unquoted": {
+      "fixtures": 219,
+      "Sentris": 193,
+      "Gitleaks": 219
+    },
+    "yaml - singleline - single quote": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "yaml - singleline - double quote": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "C#": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "go - normal": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "go - short": {
+      "fixtures": 219,
+      "Sentris": 197,
+      "Gitleaks": 219
+    },
+    "go - backticks": {
+      "fixtures": 219,
+      "Sentris": 194,
+      "Gitleaks": 219
+    },
+    "java": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "kotlin - notype": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "php - string concat": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "python - single quote": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "python - double quote": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "misc - comma operator": {
+      "fixtures": 219,
+      "Sentris": 50,
+      "Gitleaks": 219
+    },
+    "logstash": {
+      "fixtures": 219,
+      "Sentris": 194,
+      "Gitleaks": 219
+    },
+    "make - recursive assignment": {
+      "fixtures": 219,
+      "Sentris": 198,
+      "Gitleaks": 219
+    },
+    "make - simple assignment": {
+      "fixtures": 219,
+      "Sentris": 197,
+      "Gitleaks": 219
+    },
+    "make - shell assignment": {
+      "fixtures": 219,
+      "Sentris": 197,
+      "Gitleaks": 219
+    },
+    "make - evaluated shell assignment": {
+      "fixtures": 219,
+      "Sentris": 197,
+      "Gitleaks": 219
+    },
+    "make - conditional assignment": {
+      "fixtures": 219,
+      "Sentris": 197,
+      "Gitleaks": 219
+    }
+  },
+  "rules_covered": 113,
+  "rules_skipped": {
+    "authress-service-client-access-key": "fmt.Sprintf(`%s\\.%s\\.%s\\.%s`, ",
+    "telegram-bot-api-token": "validToken"
+  },
+  "fixtures": 5694,
+  "recall": {
+    "Sentris": 0.846,
+    "Gitleaks": 1.0
+  },
+  "per_rule": {
+    "1password-service-account-token": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "adafruit-api-key": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "adobe-client-id": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "age-secret-key": {
+      "fixtures": 26,
+      "Sentris": 0,
+      "Gitleaks": 26
+    },
+    "airtable-api-key": {
+      "fixtures": 52,
+      "Sentris": 50,
+      "Gitleaks": 52
+    },
+    "algolia-api-key": {
+      "fixtures": 26,
+      "Sentris": 20,
+      "Gitleaks": 26
+    },
+    "alibaba-access-key-id": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "asana-client-id": {
+      "fixtures": 52,
+      "Sentris": 24,
+      "Gitleaks": 52
+    },
+    "atlassian-api-token": {
+      "fixtures": 104,
+      "Sentris": 98,
+      "Gitleaks": 104
+    },
+    "aws-access-token": {
+      "fixtures": 156,
+      "Sentris": 154,
+      "Gitleaks": 156
+    },
+    "beamer-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "bitbucket-client-id": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "bittrex-access-key": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "clickhouse-cloud-api-secret-key": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "clojars-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "cloudflare-global-api-key": {
+      "fixtures": 78,
+      "Sentris": 74,
+      "Gitleaks": 78
+    },
+    "codecov-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "coinbase-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "confluent-secret-key": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "contentful-delivery-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "databricks-api-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "datadog-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "defined-networking-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "digitalocean-pat": {
+      "fixtures": 78,
+      "Sentris": 78,
+      "Gitleaks": 78
+    },
+    "discord-api-token": {
+      "fixtures": 78,
+      "Sentris": 24,
+      "Gitleaks": 78
+    },
+    "doppler-api-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "droneci-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "dropbox-api-token": {
+      "fixtures": 26,
+      "Sentris": 20,
+      "Gitleaks": 26
+    },
+    "duffel-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "dynatrace-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "easypost-api-token": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "etsy-access-token": {
+      "fixtures": 78,
+      "Sentris": 72,
+      "Gitleaks": 78
+    },
+    "facebook-secret": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "fastly-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "finicity-client-secret": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "finnhub-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "flickr-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "flutterwave-public-key": {
+      "fixtures": 78,
+      "Sentris": 72,
+      "Gitleaks": 78
+    },
+    "flyio-access-token": {
+      "fixtures": 78,
+      "Sentris": 26,
+      "Gitleaks": 78
+    },
+    "frameio-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "freshbooks-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "gcp-service-account": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "generic-api-key": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "github-pat": {
+      "fixtures": 156,
+      "Sentris": 154,
+      "Gitleaks": 156
+    },
+    "gitlab-cicd-job-token": {
+      "fixtures": 364,
+      "Sentris": 344,
+      "Gitleaks": 364
+    },
+    "gitter-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "gocardless-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "grafana-api-key": {
+      "fixtures": 78,
+      "Sentris": 76,
+      "Gitleaks": 78
+    },
+    "harness-api-key": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "hashicorp-tf-api-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "vault-service-token": {
+      "fixtures": 26,
+      "Sentris": 0,
+      "Gitleaks": 26
+    },
+    "heroku-api-key": {
+      "fixtures": 52,
+      "Sentris": 43,
+      "Gitleaks": 52
+    },
+    "hubspot-api-key": {
+      "fixtures": 26,
+      "Sentris": 22,
+      "Gitleaks": 26
+    },
+    "huggingface-access-token": {
+      "fixtures": 52,
+      "Sentris": 50,
+      "Gitleaks": 52
+    },
+    "infracost-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "intercom-api-key": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "jfrog-api-key": {
+      "fixtures": 104,
+      "Sentris": 96,
+      "Gitleaks": 104
+    },
+    "jwt": {
+      "fixtures": 26,
+      "Sentris": 4,
+      "Gitleaks": 26
+    },
+    "kraken-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "kucoin-access-token": {
+      "fixtures": 52,
+      "Sentris": 0,
+      "Gitleaks": 52
+    },
+    "launchdarkly-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "linear-api-key": {
+      "fixtures": 52,
+      "Sentris": 50,
+      "Gitleaks": 52
+    },
+    "linkedin-client-id": {
+      "fixtures": 52,
+      "Sentris": 40,
+      "Gitleaks": 52
+    },
+    "lob-pub-api-key": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "looker-client-id": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "mailchimp-api-key": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "mailgun-private-api-token": {
+      "fixtures": 78,
+      "Sentris": 72,
+      "Gitleaks": 78
+    },
+    "mapbox-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "mattermost-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "maxmind-license-key": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "cisco-meraki-api-key": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "messagebird-api-token": {
+      "fixtures": 104,
+      "Sentris": 72,
+      "Gitleaks": 104
+    },
+    "netlify-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "new-relic-user-api-key": {
+      "fixtures": 104,
+      "Sentris": 96,
+      "Gitleaks": 104
+    },
+    "npm-access-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "nytimes-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "okta-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "openai-api-key": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "openshift-user-token": {
+      "fixtures": 26,
+      "Sentris": 0,
+      "Gitleaks": 26
+    },
+    "perplexity-api-key": {
+      "fixtures": 26,
+      "Sentris": 20,
+      "Gitleaks": 26
+    },
+    "plaid-client-id": {
+      "fixtures": 78,
+      "Sentris": 72,
+      "Gitleaks": 78
+    },
+    "planetscale-password": {
+      "fixtures": 234,
+      "Sentris": 218,
+      "Gitleaks": 234
+    },
+    "postman-api-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "prefect-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "pulumi-api-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "pypi-upload-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "rapidapi-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "readme-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "rubygems-api-token": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "scalingo-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "sendbird-access-token": {
+      "fixtures": 52,
+      "Sentris": 24,
+      "Gitleaks": 52
+    },
+    "sendgrid-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "sendinblue-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "sentry-access-token": {
+      "fixtures": 104,
+      "Sentris": 102,
+      "Gitleaks": 104
+    },
+    "settlemint-personal-access-token": {
+      "fixtures": 78,
+      "Sentris": 72,
+      "Gitleaks": 78
+    },
+    "shippo-api-token": {
+      "fixtures": 52,
+      "Sentris": 48,
+      "Gitleaks": 52
+    },
+    "shopify-shared-secret": {
+      "fixtures": 104,
+      "Sentris": 104,
+      "Gitleaks": 104
+    },
+    "sidekiq-secret": {
+      "fixtures": 52,
+      "Sentris": 0,
+      "Gitleaks": 52
+    },
+    "slack-bot-token": {
+      "fixtures": 208,
+      "Sentris": 126,
+      "Gitleaks": 208
+    },
+    "snyk-api-token": {
+      "fixtures": 26,
+      "Sentris": 22,
+      "Gitleaks": 26
+    },
+    "sonar-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "square-access-token": {
+      "fixtures": 52,
+      "Sentris": 50,
+      "Gitleaks": 52
+    },
+    "squarespace-access-token": {
+      "fixtures": 26,
+      "Sentris": 22,
+      "Gitleaks": 26
+    },
+    "stripe-access-token": {
+      "fixtures": 52,
+      "Sentris": 0,
+      "Gitleaks": 52
+    },
+    "sumologic-access-id": {
+      "fixtures": 52,
+      "Sentris": 44,
+      "Gitleaks": 52
+    },
+    "travisci-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "trello-access-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "twilio-api-key": {
+      "fixtures": 26,
+      "Sentris": 26,
+      "Gitleaks": 26
+    },
+    "twitch-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "twitter-api-key": {
+      "fixtures": 130,
+      "Sentris": 96,
+      "Gitleaks": 130
+    },
+    "typeform-api-token": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    },
+    "yandex-aws-access-token": {
+      "fixtures": 78,
+      "Sentris": 72,
+      "Gitleaks": 78
+    },
+    "zendesk-secret-key": {
+      "fixtures": 26,
+      "Sentris": 24,
+      "Gitleaks": 26
+    }
+  },
+  "caveat": "Fixtures are generated from gitleaks' own regexes and keyed contexts (GenerateSampleSecrets), so they favour gitleaks by construction."
+}
