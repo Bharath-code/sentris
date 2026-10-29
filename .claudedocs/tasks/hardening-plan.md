@@ -208,8 +208,9 @@ Dependencies: 0 → 1 → 3. 2 is independent of 1. 4 needs 0, 1, 2 done. 5 afte
 - `SECURITY.md` (disclosure address), issue templates, `CHANGELOG.md`.
 - **AC:** `github.com/Bharath-code/sentris` loads while logged out; `Cargo.toml` `repository` URL matches the real repo (currently `sentris-security/sentris`).
 
-### T4.2 ⬜ Release pipeline (M)
+### T4.2 ◐ Release pipeline (M)
 - Tag → `release.yml` builds macOS/Linux/Windows binaries, SHA-256 sums, SBOM, cosign/GitHub attestations; `cargo audit` + `cargo deny` in CI.
+- **Done locally (2026-10-29):** `release.yml`, `audit.yml`, `deny.toml`, `scripts/package.sh`, checksum-verifying `install.sh`/`action.yml`; audit found and fixed 6 real TLS advisories; installer tamper/missing-sum cases verified against a local server; SBOM command verified. **Not verified:** the workflow itself (Actions quota exhausted), musl/linux-arm/windows builds, install on a clean VM. Tag `v0.1.0` only after quota is back or a runner is available.
 - **AC:** `v0.1.0` release has 3+ binaries + checksums · installing from the release on a clean VM and running `sentris scan` works · CI fails on a known-vulnerable dep.
 
 ### T4.3 👤 Install channels (M)
