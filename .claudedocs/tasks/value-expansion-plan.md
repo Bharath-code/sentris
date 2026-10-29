@@ -132,21 +132,23 @@ Sequence for `remediate --rotate` (old key stays **active**): `plan` → persist
 
 ## Phase F: Forensics, "was it used?"
 
-### F1 ⬜ Exposure window (S)
+### F1 ✅ Exposure window (S)
 **Files:** Create `src/investigate/window.rs`; uses `src/git`.
 **Produces:** `pub fn first_exposure(repo: &Path, fingerprint: &str) -> Result<Option<ExposureStart>, SentrisError>` where `ExposureStart { commit: String, author_time: u64 }`.
 - **AC:** temp-repo test with the secret introduced in commit 2 of 4 returns commit 2 · secret never in history → `None` · output labels the time "author date of first commit containing the value; not the push time" · works on shallow clones (returns `None` with a stated reason, not a panic).
 
-### F2 ⬜ AWS usage report (M)
+### F2 ✅ AWS usage report (M)
 **Files:** Create `src/investigate/aws.rs`; Test with recorded CloudTrail JSON fixtures under `tests/fixtures/cloudtrail/`.
 **Produces:** `pub fn usage_since(access_key_id: &str, since: u64) -> Result<UsageReport, SentrisError>`; `UsageReport { last_used: Option<…>, events: Vec<UsageEvent>, window_note: String }`; group by source IP + user agent + event name; `--known-ip` allowlist marks unknown IPs.
 - R0 findings: `LookupEvents` takes one attribute (`AccessKeyId`), 50 events/page with `NextToken`, 2 requests/s/account/Region, 90 days, management events only; source IP and user agent are inside the `CloudTrailEvent` JSON string, so parse it.
 - **AC:** pagination test (>50 events across pages) and throttling-retry test · fixture with 3 IPs (1 allowlisted) → 2 flagged · events before `since` excluded · empty result prints "no recorded use in CloudTrail event history (management events only, last 90 days)" and never "safe" (**Focus 5**) · CloudTrail throttling/permission error → distinct message pointing at the missing `cloudtrail:LookupEvents` permission · uses ambient credentials only, never the leaked key.
 
-### F3 ⬜ `sentris investigate <finding-id>` + MCP tool + audit entry (S)
+### F3 ✅ `sentris investigate <finding-id>` + MCP tool + audit entry (S)
 - **AC:** human and `--json` outputs match golden files · MCP `sentris_investigate` is read-only and returns the same JSON · audit ledger gets an `InvestigationRun` record (finding id, provider, no secret) · unsupported provider → exit 0 with "no forensics for <provider> yet", not an error.
 
 ---
+
+**F as built (deviations):** `first_exposure(repo, fingerprint)` returns `Exposure { start, note }` (the note carries the time semantics or the shallow/not-found reason) and finds the value by re-running the detector over added lines of `git log --all --reverse -p`, because a fingerprint is a hash and cannot be fed to `git log -S`. `usage_since` refuses when `AWS_ACCESS_KEY_ID` is the key under investigation; `--known-ip` with an empty allowlist flags nothing. `sentris investigate` and `sentris_investigate` share `investigate_target`; the audit record (`InvestigationRun`) is written only for supported providers. MCP and CLI JSON are identical except `finding.file_path` (scan root spelling). Tested against a CLI stub and recorded CloudTrail JSON, **not yet against a real account** (fold into R5). `AwsCli::json` is now `pub(crate)`.
 
 ## Phase D: Exposure triage, "what can this key do"
 

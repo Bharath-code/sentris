@@ -73,7 +73,7 @@ Measured across 5–10 runs per workload on `./target/release/sentris`:
 | **7-Step Live Remediation (`sentris fix --yes --json`)** | **`90.88 ms`** | Full scan + atomic git backup branch + `.env` extraction + `.env.example` contract sync + `.gitignore` hardening + polyglot AST-like code rewrite + rollback & SOC 2 ledger commit + volatile RAM zeroization |
 | **Atomic Byte-for-Byte Rollback (`sentris rollback --json`)** | **`7.59 ms`** | Restores original source file line byte-for-byte from `.sentris/rollback_ledger.json` |
 | **SOC 2 HMAC-SHA256 Chain Verify + Vanta Export** | **`22.86 ms`** | Verifies RFC 2104 `HMAC-SHA256` hash chain (`0` broken links) and exports `SOC 2 CC6.1/CC6.7/CC6.8` & `ISO 27001 A.8.24` compliance bundle |
-| **MCP Server (`sentris mcp`) — 3 JSON-RPC Roundtrips** | **`43.92 ms`** | `initialize` + `tools/list` (9 tools) + `tools/call (sentris_scan_path)` over `stdio` |
+| **MCP Server (`sentris mcp`) — 3 JSON-RPC Roundtrips** | **`43.92 ms`** | `initialize` + `tools/list` (10 tools) + `tools/call (sentris_scan_path)` over `stdio` |
 | **LSP 3.17 Server (`sentris lsp`) — Diagnostics + QuickFix** | **`41.27 ms`** | `initialize` + `textDocument/didOpen` (`publishDiagnostics`) + `textDocument/codeAction` (`WorkspaceEdit`) |
 
 ---

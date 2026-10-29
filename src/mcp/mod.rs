@@ -1,3 +1,4 @@
+mod investigate_tool;
 pub mod manifest;
 mod rotate_tools;
 pub mod tools;
@@ -205,7 +206,7 @@ mod tests {
             .as_array()
             .unwrap()
             .clone();
-        assert_eq!(tools.len(), 9);
+        assert_eq!(tools.len(), 10);
 
         // Without credentials the tool reports an error instead of inventing sample data
         let _guard = crate::keystore::TEST_ENV_LOCK

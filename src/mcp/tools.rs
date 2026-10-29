@@ -20,7 +20,7 @@ pub(super) fn workspace() -> Result<PathBuf, ToolErr> {
 }
 
 /// Resolves `p` (symlinks included) and rejects anything outside the workspace.
-fn confine(p: &str) -> Result<PathBuf, ToolErr> {
+pub(super) fn confine(p: &str) -> Result<PathBuf, ToolErr> {
     confine_in(&workspace()?, p)
 }
 
@@ -204,6 +204,28 @@ impl McpServer {
                             }
                         },
                         "required": ["text"]
+                    }
+                },
+                {
+                    "name": "sentris_investigate",
+                    "description": "Forensics for a leaked AWS access key: the first commit containing it and the CloudTrail events recorded for it since (management events only, last 90 days). Read-only; uses the caller's ambient AWS credentials and needs cloudtrail:LookupEvents. Other providers return 'no forensics yet'. Never concludes a key is safe.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "File or directory to scan for the finding (defaults to '.')"
+                            },
+                            "finding_id": {
+                                "type": "string",
+                                "description": "Fingerprint prefix, rule id or file path of the finding (defaults to the first finding)"
+                            },
+                            "known_ips": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Source IPs you recognise; other IPs in the log are flagged"
+                            }
+                        }
                     }
                 },
                 {
@@ -519,6 +541,7 @@ impl McpServer {
                 }))
             }
             "sentris_redact_text" => redact_text_tool(&args),
+            "sentris_investigate" => super::investigate_tool::investigate(&args),
             "sentris_rotate_status" => super::rotate_tools::status(),
             "sentris_rotate_finish" => super::rotate_tools::finish(&args),
             other => Err((-32601, format!("Unknown tool: {other}"))),

@@ -151,6 +151,16 @@ pub enum Commands {
         fail_closed: bool,
     },
 
+    /// Forensics for a leaked key: when it was first committed and what the provider logged since (AWS only; read-only)
+    Investigate {
+        /// The finding ID, file path, or fingerprint prefix to investigate
+        finding_id: Option<String>,
+
+        /// Source IP you recognise (repeatable); other IPs in the provider log are flagged
+        #[arg(long = "known-ip")]
+        known_ips: Vec<String>,
+    },
+
     /// Finish, inspect or undo key rotations started with `remediate --rotate`
     Rotate {
         #[command(subcommand)]

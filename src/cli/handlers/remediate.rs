@@ -89,7 +89,7 @@ pub fn handle_remediate(
 }
 
 /// A finding id that is a real file or directory narrows the scan to it; anything else scans the cwd.
-fn scan_target_for(finding_id: Option<&str>) -> PathBuf {
+pub(super) fn scan_target_for(finding_id: Option<&str>) -> PathBuf {
     match finding_id.map(Path::new) {
         Some(p) if p.is_file() || p.is_dir() => p.to_path_buf(),
         _ => PathBuf::from("."),

@@ -270,6 +270,7 @@ sentris fix <file_path> --yes --json
 sentris fix . --all --yes --backend 1password --json
 
 # Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key at the provider
+# Forensics for a leaked AWS key (read-only): sentris investigate <file> --json [--known-ip <ip>]
 ```
 
 ### Atomic Byte-for-Byte Rollback
