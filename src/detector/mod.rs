@@ -27,9 +27,9 @@ fn effective_min_entropy(min_entropy: f64, candidate: &str) -> f64 {
 /// 0 = vendor-specific, 1 = keyed generic, 2 = broad generic
 fn rule_tier(rule_id: &str) -> u8 {
     match rule_id {
-        "generic-api-key" | "url-basic-auth" => 1,
+        "generic-api-key" | "url-basic-auth" | "bearer-token" => 1,
         "credential-assignment" | "credential-assignment-unquoted" => 2,
-        "keyed-secret-value" | "password-literal" => 3,
+        "keyed-secret-value" | "password-literal" | "password-unquoted" => 3,
         _ => 0,
     }
 }
@@ -297,7 +297,10 @@ impl DetectorEngine {
         for rule_idx in matched_indices {
             let rule = &self.rules[rule_idx];
             if !redaction
-                && rule.rule_id == "credential-assignment-unquoted"
+                && matches!(
+                    rule.rule_id.as_str(),
+                    "credential-assignment-unquoted" | "password-unquoted"
+                )
                 && !allows_unquoted_assignments(file_path)
             {
                 continue;

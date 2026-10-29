@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Downloads pinned gitleaks / trufflehog / kingfisher into bench/.tools.
-# gitleaks + trufflehog archives are verified against the checksums file of the same release;
+# Downloads pinned gitleaks / betterleaks / trufflehog / kingfisher into bench/.tools.
+# gitleaks + betterleaks + trufflehog archives are verified against the checksums file of the same release;
 # kingfisher publishes none, so its sha256 is pinned in bench/tools.lock on first fetch (trust on first use).
 set -euo pipefail
 cd "$(dirname "$0")"
 source tools.env
 case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64) GL=darwin_arm64; TH=darwin_arm64; KF=darwin-arm64 ;;
-  Darwin-x86_64) GL=darwin_x64; TH=darwin_amd64; KF=darwin-x64 ;;
-  Linux-x86_64) GL=linux_x64; TH=linux_amd64; KF=linux-x64 ;;
-  Linux-aarch64) GL=linux_arm64; TH=linux_arm64; KF=linux-arm64 ;;
+  Darwin-arm64) GL=darwin_arm64; BL=darwin_arm64; TH=darwin_arm64; KF=darwin-arm64 ;;
+  Darwin-x86_64) GL=darwin_x64; BL=darwin_x64; TH=darwin_amd64; KF=darwin-x64 ;;
+  Linux-x86_64) GL=linux_x64; BL=linux_x64; TH=linux_amd64; KF=linux-x64 ;;
+  Linux-aarch64) GL=linux_arm64; BL=linux_arm64; TH=linux_arm64; KF=linux-arm64 ;;
   *) echo "unsupported platform" >&2; exit 1 ;;
 esac
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
@@ -26,6 +26,11 @@ fetch_checked gitleaks "https://github.com/gitleaks/gitleaks/releases/download/v
   "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_checksums.txt" "$gl"
 tar -xzf "$gl" -C .. gitleaks
 
+bl="betterleaks_${BETTERLEAKS_VERSION}_${BL}.tar.gz"
+fetch_checked betterleaks "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/$bl" \
+  "https://github.com/betterleaks/betterleaks/releases/download/v${BETTERLEAKS_VERSION}/checksums.txt" "$bl"
+tar -xzf "$bl" -C .. betterleaks
+
 th="trufflehog_${TRUFFLEHOG_VERSION}_${TH}.tar.gz"
 fetch_checked trufflehog "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/$th" \
   "https://github.com/trufflesecurity/trufflehog/releases/download/v${TRUFFLEHOG_VERSION}/trufflehog_${TRUFFLEHOG_VERSION}_checksums.txt" "$th"
@@ -40,5 +45,5 @@ else
   echo "$kf $got" >> "$lock"; echo "pinned $kf in bench/tools.lock (commit it)"
 fi
 tar -xzf "$kf" -C .. kingfisher
-chmod +x ../gitleaks ../trufflehog ../kingfisher
+chmod +x ../gitleaks ../betterleaks ../trufflehog ../kingfisher
 echo "tools ready in bench/.tools"

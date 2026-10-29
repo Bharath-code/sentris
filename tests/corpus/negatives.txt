@@ -298,3 +298,20 @@ credata	assert admin.update(password: 'newpass', password_confirmation: 'newpass
 credata	opts.Password = c.Password
 credata	password_label = "Repita a senha"
 credata	password = "hunter2hunter"
+placeholder	password: admin
+placeholder	password: 123456
+placeholder	password: changeme
+placeholder	password: ${DB_PASSWORD}
+placeholder	password: <your-password>
+placeholder	password: required
+placeholder	DB_PASSWORD=
+placeholder	password: String
+placeholder	password: ********
+placeholder	password: secret123
+placeholder	Authorization: Bearer ${API_TOKEN}
+placeholder	Authorization: Bearer <token>
+placeholder	Authorization: Bearer YOUR_TOKEN_HERE_REPLACE_ME
+placeholder	Authorization: Bearer token
+placeholder	"Authorization": "Bearer " + accessToken
+placeholder	POSTGRES_PASSWORD: postgres
+placeholder	MYSQL_ROOT_PASSWORD=mysql_root

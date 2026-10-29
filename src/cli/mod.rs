@@ -51,6 +51,10 @@ pub enum Commands {
         #[arg(default_value = ".")]
         path: PathBuf,
 
+        /// Use findings from a Betterleaks/Gitleaks JSON report (`betterleaks dir . -f json -r report.json`) instead of scanning; each entry is re-checked against the file
+        #[arg(long, conflicts_with_all = ["staged", "git_history", "since"])]
+        from_report: Option<PathBuf>,
+
         /// Scan only git staged files/diffs (sub-35ms pre-commit mode)
         #[arg(long, default_value_t = false)]
         staged: bool,
@@ -139,6 +143,10 @@ pub enum Commands {
         /// Batch-remediate all detected secrets in the target file or directory
         #[arg(short, long, default_value_t = false)]
         all: bool,
+
+        /// Remediate findings from a Betterleaks/Gitleaks JSON report instead of scanning; each entry is re-checked against the file
+        #[arg(long)]
+        from_report: Option<PathBuf>,
     },
 
     /// Revert a previous remediation session and restore original files

@@ -12,6 +12,7 @@ fn is_generic_rule(rule_id: &str) -> bool {
             | "credential-assignment-unquoted"
             | "keyed-secret-value"
             | "password-literal"
+            | "password-unquoted"
     )
 }
 
@@ -265,7 +266,8 @@ impl FalsePositiveFilter {
     fn is_rule_specific_fp(token: &str, rule_id: &str, line_context: &str) -> bool {
         let line_lower = line_context.to_ascii_lowercase();
 
-        if (rule_id.starts_with("credential-assignment") || rule_id == "keyed-secret-value")
+        if (rule_id.starts_with("credential-assignment")
+            || matches!(rule_id, "keyed-secret-value" | "bearer-token"))
             && !Self::looks_like_literal_credential(token, line_context, rule_id)
         {
             return true;
@@ -337,6 +339,13 @@ impl FalsePositiveFilter {
         }
 
         if rule_id == "password-literal" && !Self::looks_like_random_password(token) {
+            return true;
+        }
+
+        if rule_id == "password-unquoted"
+            && (!Self::looks_like_set_password(token)
+                || Self::value_repeats_key_name(token, line_context))
+        {
             return true;
         }
 
@@ -477,6 +486,67 @@ impl FalsePositiveFilter {
 
     /// Short password literals are only worth flagging when they look generated: no dictionary-style word shape,
     /// no placeholder wording, and a consonant-heavy or mixed-class body.
+    /// `POSTGRES_PASSWORD: postgres`: a value already spelled in its own key name is a service default, not a secret.
+    fn value_repeats_key_name(token: &str, line: &str) -> bool {
+        let (line, token) = (line.to_ascii_lowercase(), token.to_ascii_lowercase());
+        line.rfind(&token)
+            .is_some_and(|at| line[..at].contains(&token))
+    }
+
+    fn looks_like_set_password(token: &str) -> bool {
+        const COMMON: &[&str] = &[
+            "password",
+            "passwd",
+            "changeme",
+            "secret",
+            "admin",
+            "test",
+            "example",
+            "newpass",
+            "letmein",
+            "qwerty",
+            "123456",
+            "welcome",
+            "default",
+            "guest",
+            "root",
+            "user",
+            "pass",
+            "foo",
+            "bar",
+            "hunter",
+            "dummy",
+            "sample",
+            "fake",
+            "demo",
+            "none",
+            "true",
+            "false",
+            "null",
+            "redacted",
+            "placeholder",
+            "your",
+            "insert",
+            "undefined",
+            "required",
+            "xxxx",
+            "string",
+            "number",
+            "boolean",
+            "integer",
+            "object",
+            "array",
+        ];
+        let lower = token.to_ascii_lowercase();
+        token.len() >= 6
+            && !token.starts_with('$')
+            && !COMMON.iter().any(|w| lower.contains(w))
+            && !token.bytes().all(|b| b.is_ascii_digit())
+            && !token
+                .bytes()
+                .all(|b| matches!(b, b'*' | b'x' | b'X' | b'.' | b'-' | b'_'))
+    }
+
     fn looks_like_random_password(token: &str) -> bool {
         const COMMON: [&str; 24] = [
             "password", "passwd", "changeme", "secret", "admin", "test", "example", "newpass",

@@ -35,6 +35,8 @@ fn path_matches_ignore(path: &str, pattern: &str) -> bool {
 pub struct Scanner {
     detector: DetectorEngine,
     config: Option<Config>,
+    /// Secrets of findings imported from another scanner's report, by fingerprint (see `crate::import`).
+    imported: std::collections::HashMap<String, String>,
 }
 
 impl Scanner {
@@ -54,7 +56,11 @@ impl Scanner {
             }
         }
         let detector = DetectorEngine::with_config(config.as_ref())?;
-        Ok(Self { detector, config })
+        Ok(Self {
+            detector,
+            config,
+            imported: Default::default(),
+        })
     }
 
     /// Scanner for guardrails (hooks): built-in rules plus only a config the user names in `SENTRIS_CONFIG_FILE`.
@@ -67,7 +73,16 @@ impl Scanner {
             None => None,
         };
         let detector = DetectorEngine::with_config(config.as_ref())?;
-        Ok(Self { detector, config })
+        Ok(Self {
+            detector,
+            config,
+            imported: Default::default(),
+        })
+    }
+
+    /// Registers the secrets of findings imported from a Betterleaks/Gitleaks report so they can be probed and remediated.
+    pub fn use_imported_secrets(&mut self, secrets: std::collections::HashMap<String, String>) {
+        self.imported = secrets;
     }
 
     /// Extracts the raw secret token from a line using the compiled rule's regex capture
@@ -78,6 +93,16 @@ impl Scanner {
         content: &str,
         finding: &Finding,
     ) -> Result<String, SentrisError> {
+        if let Some(secret) = self.imported.get(&finding.fingerprint) {
+            return if crate::import::secret_at_line(content, finding.line_number, secret) {
+                Ok(secret.clone())
+            } else {
+                Err(SentrisError::Scan(format!(
+                    "Imported secret is no longer on line {} of {} (file changed since the scan?); refusing to guess",
+                    finding.line_number, finding.file_path
+                )))
+            };
+        }
         if let Some((_, _, pem)) = crate::detector::DetectorEngine::extract_multiline_pem_block(
             content,
             finding.line_number,
@@ -263,7 +288,7 @@ impl Scanner {
         };
 
         Ok(ScanReport {
-            timestamp: chrono_now_string(),
+            timestamp: now_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
@@ -288,7 +313,7 @@ impl Scanner {
         };
 
         Ok(ScanReport {
-            timestamp: chrono_now_string(),
+            timestamp: now_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
@@ -313,7 +338,7 @@ impl Scanner {
         };
 
         Ok(ScanReport {
-            timestamp: chrono_now_string(),
+            timestamp: now_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
@@ -338,7 +363,7 @@ impl Scanner {
         };
 
         Ok(ScanReport {
-            timestamp: chrono_now_string(),
+            timestamp: now_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
             stats,
             findings,
@@ -347,7 +372,7 @@ impl Scanner {
     }
 }
 
-fn chrono_now_string() -> String {
+pub(crate) fn now_string() -> String {
     // Standard ISO-8601 UTC timestamp approximation without heavy chrono dependency
     use std::time::SystemTime;
     let now = SystemTime::now();

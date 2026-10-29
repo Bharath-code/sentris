@@ -28,6 +28,7 @@ def timed(cmd):
 def tools(report):
     t = {"Sentris": [str(ROOT / "target/release/sentris"), "scan", str(CASES), "-f", "json"]}
     for name, exe, args in (("Gitleaks", "gitleaks", ["dir", str(CASES), "--no-banner", "-l", "error", "-r", report]),
+                            ("Betterleaks", "betterleaks", ["dir", str(CASES), "--no-banner", "-l", "error", "-r", report]),
                             ("TruffleHog", "trufflehog", ["filesystem", str(CASES), "--no-update", "--no-verification", "--json"]),
                             ("Kingfisher", "kingfisher", ["scan", str(CASES), "--no-validate", "--format", "json"])):
         path = ROOT / "bench" / ".tools" / exe
