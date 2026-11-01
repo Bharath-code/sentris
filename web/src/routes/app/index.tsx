@@ -8,7 +8,7 @@ import { loginCommand, site } from '@/lib/site'
 import { RECENT_SCANS, RETENTION_DAYS } from '@/server/guards'
 
 export const Route = createFileRoute('/app/')({
-  validateSearch: z.object({ seats: z.number().int().min(1).max(500).optional(), checkout: z.string().optional() }),
+  validateSearch: z.object({ seats: z.number().int().min(1).max(500).optional(), checkout: z.string().optional(), status: z.string().optional() }),
   loader: () => getOverview(),
   component: Dashboard,
 })
@@ -38,9 +38,10 @@ function usePollUntilPro(awaiting: boolean) {
 
 function Dashboard() {
   const d = Route.useLoaderData()
-  const { checkout } = Route.useSearch()
+  const { checkout, status } = Route.useSearch()
   const empty = d.scans.length === 0
-  const awaitingPlan = !!checkout && d.org.plan !== 'pro'
+  const checkoutFailed = !!checkout && (status === 'failed' || status === 'cancelled')
+  const awaitingPlan = !!checkout && !checkoutFailed && d.org.plan !== 'pro'
   usePollUntilPro(awaitingPlan)
 
   return (
@@ -55,6 +56,10 @@ function Dashboard() {
 
       {awaitingPlan && (
         <p role="status" className="rounded-xl bg-sunken px-4 py-3 text-sm text-muted ring-1 ring-line">Payment received. Waiting for Dodo to confirm; this page updates on its own, usually within a few seconds.</p>
+      )}
+
+      {checkoutFailed && d.org.plan !== 'pro' && (
+        <p role="alert" className="rounded-xl bg-sunken px-4 py-3 text-sm text-muted ring-1 ring-line">Payment did not go through, so nothing was charged. Try again with another card.</p>
       )}
 
       {d.org.plan !== 'pro' && <Upgrade />}
@@ -88,7 +93,7 @@ function Dashboard() {
                 <td className="tabular-nums text-muted">{s.filesScanned.toLocaleString()}</td>
                 <td className="tabular-nums text-muted">{s.durationMs} ms</td>
                 <td className={cx('tabular-nums', s.findingsCount ? 'text-crit' : 'text-ok')}>{s.findingsCount || 'clean'}</td>
-                <td className="text-right text-xs text-faint">{ago(s.createdAt)}</td>
+                <td className="text-right text-xs text-faint"><time dateTime={new Date(s.createdAt).toISOString()} suppressHydrationWarning>{ago(s.createdAt)}</time></td>
               </tr>
             ))}
           </Table>
@@ -249,7 +254,7 @@ function Keys({ d }: { d: Data }) {
             <tr key={k.id}>
               <td className="font-medium">{k.name}</td>
               <td className="font-mono text-xs text-muted">{k.preview}</td>
-              <td className="text-muted">{k.lastUsedAt ? ago(k.lastUsedAt) : 'never'}</td>
+              <td className="text-muted">{k.lastUsedAt ? <time dateTime={new Date(k.lastUsedAt).toISOString()} suppressHydrationWarning>{ago(k.lastUsedAt)}</time> : 'never'}</td>
               <td className="text-right"><button onClick={() => revoke(k.id)} className="text-sm text-muted hover:text-crit">Revoke</button></td>
             </tr>
           ))}

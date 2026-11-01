@@ -36,7 +36,7 @@ function ScanDetail() {
         <h1 className="mt-4 text-2xl font-semibold tracking-tight">{scan.repo}</h1>
         <p className="mt-1 font-mono text-xs text-muted">
           {scan.branch}{scan.commitHash && ` @ ${scan.commitHash.slice(0, 8)}`} · {scan.filesScanned.toLocaleString()} files · {scan.durationMs} ms ·{' '}
-          {new Date(scan.createdAt).toLocaleString()}
+          <time dateTime={new Date(scan.createdAt).toISOString()} suppressHydrationWarning>{new Date(scan.createdAt).toLocaleString()}</time>
         </p>
       </div>
       <Panel title={`${total.toLocaleString()} finding${total === 1 ? '' : 's'}`} hint="No key characters are ever uploaded. Run sentris scan locally to see the match.">

@@ -6,3 +6,4 @@
 bench/.tools/
 bench/work/
 /dist
+.playwright-mcp/
