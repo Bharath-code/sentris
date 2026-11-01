@@ -145,7 +145,7 @@ function Upgrade() {
     <section className="flex flex-col gap-5 rounded-2xl bg-raised p-6 ring-1 ring-line md:flex-row md:items-center">
       <div className="flex-1">
         <h2 className="font-semibold">Let Sentris fix leaks, not just find them</h2>
-        <p className="mt-1 text-sm text-muted">Pro unlocks vault backends, API key rotation and cross-repo blast radius. 14 days free, then ${site.priceMonthly}/developer.</p>
+        <p className="mt-1 text-sm text-muted">Pro unlocks vault backends and cross-repo blast radius. 14 days free, then ${site.priceMonthly}/developer.</p>
         {error && <p role="alert" className="mt-2 text-sm text-crit">{error}</p>}
       </div>
       <div className="flex items-center gap-3">
