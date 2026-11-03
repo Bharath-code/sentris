@@ -1,5 +1,5 @@
-use std::collections::HashMap;
-use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use crate::model::{Finding, Severity};
@@ -14,7 +14,6 @@ pub enum TuiAction {
 pub struct App {
     pub findings: Vec<Finding>,
     pub selected_index: usize,
-    pub file_cache: HashMap<String, Vec<String>>,
     pub status_message: Option<String>,
     pub should_quit: bool,
     pub pending_action: Option<TuiAction>,
@@ -22,30 +21,12 @@ pub struct App {
 
 impl App {
     pub fn new(findings: Vec<Finding>) -> Self {
-        let mut app = Self {
+        Self {
             findings,
             selected_index: 0,
-            file_cache: HashMap::new(),
             status_message: None,
             should_quit: false,
             pending_action: None,
-        };
-        app.preload_file_cache();
-        app
-    }
-
-    /// Pre-caches file lines for selected finding code previews
-    fn preload_file_cache(&mut self) {
-        for finding in &self.findings {
-            if !self.file_cache.contains_key(&finding.file_path) {
-                let path = Path::new(&finding.file_path);
-                if path.is_file() {
-                    if let Ok(content) = fs::read_to_string(path) {
-                        let lines: Vec<String> = content.lines().map(|s| s.to_string()).collect();
-                        self.file_cache.insert(finding.file_path.clone(), lines);
-                    }
-                }
-            }
         }
     }
 
@@ -120,23 +101,36 @@ impl App {
         target_line: usize,
         context_radius: usize,
     ) -> (usize, Vec<String>, usize) {
-        let empty_vec = Vec::new();
-        let lines = self.file_cache.get(file_path).unwrap_or(&empty_vec);
-
-        if lines.is_empty() || target_line == 0 || target_line > lines.len() {
-            return (
+        let unavailable = || {
+            (
                 1,
                 vec!["[Source file unavailable for preview]".to_string()],
                 0,
-            );
+            )
+        };
+        if target_line == 0 {
+            return unavailable();
         }
+        let path = Path::new(file_path);
+        let Ok(file) = File::open(path) else {
+            return unavailable();
+        };
 
         let target_idx = target_line - 1;
         let start_idx = target_idx.saturating_sub(context_radius);
-        let end_idx = (target_idx + context_radius + 1).min(lines.len());
-
-        let slice = lines[start_idx..end_idx].to_vec();
+        let window_len = (target_idx - start_idx) + context_radius + 1;
         let target_offset = target_idx - start_idx;
+
+        let slice: Vec<String> = BufReader::new(file)
+            .lines()
+            .skip(start_idx)
+            .take(window_len)
+            .map_while(Result::ok)
+            .collect();
+
+        if slice.len() <= target_offset {
+            return unavailable();
+        }
 
         (start_idx + 1, slice, target_offset)
     }

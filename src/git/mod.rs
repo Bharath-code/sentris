@@ -361,20 +361,27 @@ fi
         }
 
         let file_list = String::from_utf8_lossy(&output.stdout);
-        let mut staged_files = Vec::new();
+        let paths: Vec<&str> = file_list
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
 
-        for file_path in file_list.lines().map(str::trim).filter(|s| !s.is_empty()) {
-            // Retrieve staged content from git index: git show :<file_path>
-            let show_arg = format!(":{file_path}");
-            let show_output = Command::new("git").args(["show", &show_arg]).output();
-
-            if let Ok(out) = show_output {
+        use rayon::prelude::*;
+        let staged_files: Vec<(String, String)> = paths
+            .par_iter()
+            .filter_map(|&file_path| {
+                // Retrieve staged content from git index: git show :<file_path>
+                let show_arg = format!(":{file_path}");
+                let out = Command::new("git").args(["show", &show_arg]).output().ok()?;
                 if out.status.success() {
-                    let content = String::from_utf8_lossy(&out.stdout).to_string();
-                    staged_files.push((file_path.to_string(), content));
+                    let content = String::from_utf8_lossy(&out.stdout).into_owned();
+                    Some((file_path.to_string(), content))
+                } else {
+                    None
                 }
-            }
-        }
+            })
+            .collect();
 
         Ok(staged_files)
     }
