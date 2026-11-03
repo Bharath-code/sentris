@@ -34,7 +34,8 @@ pub struct TeamInfo {
 }
 
 impl TeamInfo {
-    /// Load any locally recorded multi-repo blast radius correlations for this org, or return representative org insights
+    /// Load locally recorded multi-repo blast radius correlations for this org.
+    /// Demo `acme/*` insights are returned only when `SENTRIS_CLOUD_MOCK=1` is set.
     fn load_or_default_blast_radius(org_id: &str) -> Vec<MultiRepoBlastRadiusInsight> {
         let index_path = Path::new(".sentris/multi_repo_blast_radius.json");
         if index_path.exists() {
@@ -42,7 +43,7 @@ impl TeamInfo {
                 if let Ok(payloads) = serde_json::from_str::<Vec<CloudScanPayload>>(&raw) {
                     let org_payloads: Vec<CloudScanPayload> = payloads
                         .into_iter()
-                        .filter(|p| p.org_id == org_id)
+                        .filter(|p| p.org_id == org_id || org_id == "org_sample_team")
                         .collect();
                     let insights: Vec<MultiRepoBlastRadiusInsight> =
                         correlate_multi_repo_blast_radius(&org_payloads)
@@ -54,6 +55,10 @@ impl TeamInfo {
                     }
                 }
             }
+        }
+
+        if !crate::cloud::client::mock_mode() {
+            return Vec::new();
         }
 
         vec![
@@ -88,50 +93,116 @@ impl TeamInfo {
         ]
     }
 
-    /// Generate a representative Pro team status matching the active user credentials
+    /// Build team status from stored credentials. Fictional demo roster is included only when `SENTRIS_CLOUD_MOCK=1`.
     pub fn from_credentials(creds: &Credentials) -> Self {
-        let members = vec![
-            TeamMember {
-                name: "Alex Vance".to_string(),
+        let cli_ver = format!("v{}", env!("CARGO_PKG_VERSION"));
+        let members = if crate::cloud::client::mock_mode() {
+            vec![
+                TeamMember {
+                    name: "Alex Vance".to_string(),
+                    email: creds.user_email.clone(),
+                    role: "Admin (Owner)".to_string(),
+                    cli_version: cli_ver.clone(),
+                    last_active: "Active now (localhost)".to_string(),
+                },
+                TeamMember {
+                    name: "Elena Rostova".to_string(),
+                    email: "elena.r@sentris.dev".to_string(),
+                    role: "AppSec Lead".to_string(),
+                    cli_version: cli_ver.clone(),
+                    last_active: "14m ago (pre-commit)".to_string(),
+                },
+                TeamMember {
+                    name: "Marcus Brody".to_string(),
+                    email: "marcus.b@sentris.dev".to_string(),
+                    role: "Senior Backend Eng".to_string(),
+                    cli_version: cli_ver.clone(),
+                    last_active: "2h ago (CI/CD push)".to_string(),
+                },
+                TeamMember {
+                    name: "Devon Clark".to_string(),
+                    email: "devon.c@sentris.dev".to_string(),
+                    role: "Frontend Architect".to_string(),
+                    cli_version: cli_ver,
+                    last_active: "Yesterday".to_string(),
+                },
+            ]
+        } else {
+            let display_name = creds
+                .user_email
+                .split('@')
+                .next()
+                .filter(|s| !s.is_empty())
+                .unwrap_or("Workstation Owner")
+                .to_string();
+            vec![TeamMember {
+                name: display_name,
                 email: creds.user_email.clone(),
                 role: "Admin (Owner)".to_string(),
-                cli_version: "v0.1.0".to_string(),
-                last_active: "Active now (localhost)".to_string(),
-            },
-            TeamMember {
-                name: "Elena Rostova".to_string(),
-                email: "elena.r@sentris.dev".to_string(),
-                role: "AppSec Lead".to_string(),
-                cli_version: "v0.1.0".to_string(),
-                last_active: "14m ago (pre-commit)".to_string(),
-            },
-            TeamMember {
-                name: "Marcus Brody".to_string(),
-                email: "marcus.b@sentris.dev".to_string(),
-                role: "Senior Backend Eng".to_string(),
-                cli_version: "v0.1.0".to_string(),
-                last_active: "2h ago (CI/CD push)".to_string(),
-            },
-            TeamMember {
-                name: "Devon Clark".to_string(),
-                email: "devon.c@sentris.dev".to_string(),
-                role: "Frontend Architect".to_string(),
-                cli_version: "v0.1.0".to_string(),
-                last_active: "Yesterday".to_string(),
-            },
-        ];
+                cli_version: cli_ver,
+                last_active: "Active now (local workstation)".to_string(),
+            }]
+        };
+
+        let seats_used = if crate::cloud::client::mock_mode() {
+            creds.seats_used.max(members.len() as u32)
+        } else {
+            creds.seats_used.max(1)
+        };
 
         TeamInfo {
             org_id: creds.org_id.clone(),
             org_name: creds.org_name.clone(),
             tier: creds.tier.clone(),
-            seat_limit: creds.seat_limit,
-            seats_used: creds.seats_used.max(members.len() as u32),
+            seat_limit: creds.seat_limit.max(1),
+            seats_used,
             unit_price_usd: 8,
             members,
             blast_radius_insights: Self::load_or_default_blast_radius(&creds.org_id),
             invite_link: format!("{}/invite/{}", creds.server_url, creds.org_id),
         }
+    }
+
+    /// Build team status and, when online with a real token, refresh organization metadata from `GET /api/v1/me`.
+    pub fn from_credentials_live(creds: &Credentials, offline: bool) -> Self {
+        let mut effective = creds.clone();
+        if !offline
+            && !crate::cloud::client::mock_mode()
+            && creds.api_key != "sp_preview_token"
+            && crate::cloud::client::validate_server_url(&creds.server_url).is_ok()
+        {
+            let url = format!("{}/api/v1/me", creds.server_url.trim_end_matches('/'));
+            let agent = ureq::AgentBuilder::new()
+                .timeout_connect(std::time::Duration::from_secs(2))
+                .timeout_read(std::time::Duration::from_secs(2))
+                .build();
+            if let Ok(resp) = agent
+                .get(&url)
+                .set("Authorization", &format!("Bearer {}", creds.api_key))
+                .call()
+            {
+                if let Ok(body) = resp.into_string() {
+                    if let Ok(json) = serde_json::from_str::<serde_json::Value>(&body) {
+                        if let Some(id) = json.get("org_id").and_then(|v| v.as_str()) {
+                            effective.org_id = id.to_string();
+                        }
+                        if let Some(name) = json.get("org_name").and_then(|v| v.as_str()) {
+                            effective.org_name = name.to_string();
+                        }
+                        if let Some(plan) = json.get("plan").and_then(|v| v.as_str()) {
+                            effective.tier = plan.to_string();
+                        }
+                        if let Some(seats) = json.get("seats").and_then(|v| v.as_u64()) {
+                            effective.seat_limit = seats as u32;
+                        }
+                        if let Some(email) = json.get("owner_email").and_then(|v| v.as_str()) {
+                            effective.user_email = email.to_string();
+                        }
+                    }
+                }
+            }
+        }
+        Self::from_credentials(&effective)
     }
 
     /// Format and render the team seat overview and member roster
@@ -282,6 +353,13 @@ impl TeamInfo {
 
             out.push_str(&br_table.to_string());
             out.push_str("\n\n");
+        } else {
+            let clean_msg = "Zero-Knowledge Multi-Repo Blast Radius Insight (0 Bytes Source Code Ingested):\n  ✔ 0 cross-repository duplicate secrets detected across synced repositories.\n\n";
+            if no_color {
+                out.push_str(clean_msg);
+            } else {
+                out.push_str(&clean_msg.green().to_string());
+            }
         }
 
         let invite_msg = format!(
@@ -310,6 +388,11 @@ mod tests {
 
     #[test]
     fn test_team_info_from_credentials_and_render() {
+        let _g = crate::keystore::TEST_ENV_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        std::env::remove_var("SENTRIS_CLOUD_MOCK");
+
         let creds = Credentials {
             api_key: "sp_live_test123".to_string(),
             server_url: "https://api.sentris.dev".to_string(),
@@ -317,29 +400,33 @@ mod tests {
             org_name: "Acme Corporation".to_string(),
             tier: "Pro ($8/seat)".to_string(),
             seat_limit: 20,
-            seats_used: 12,
+            seats_used: 1,
             user_email: "lead@acme.com".to_string(),
             expires_at: None,
             team_secret: None,
         };
 
+        // Real mode: no fictional members ("Elena Rostova") and no fake acme/* blast radius
         let team = TeamInfo::from_credentials(&creds);
         assert_eq!(team.org_name, "Acme Corporation");
         assert_eq!(team.seat_limit, 20);
         assert_eq!(team.unit_price_usd, 8);
-        assert!(!team.members.is_empty());
-        assert!(!team.blast_radius_insights.is_empty());
-        assert_eq!(
-            team.blast_radius_insights[0].rule_id,
-            "postgres-connection-uri"
-        );
-        assert_eq!(team.blast_radius_insights[0].affected_repos.len(), 4);
+        assert_eq!(team.members.len(), 1);
+        assert_eq!(team.members[0].email, "lead@acme.com");
+        assert!(team.blast_radius_insights.is_empty());
 
         let rendered = team.render_terminal(true);
         assert!(rendered.contains("Acme Corporation"));
         assert!(rendered.contains("Pro ($8/seat)"));
         assert!(rendered.contains("Seat Utilization"));
-        assert!(rendered.contains("Monthly Run-Rate"));
-        assert!(rendered.contains("Zero-Knowledge Multi-Repo Blast Radius Insight"));
+        assert!(rendered.contains("0 cross-repository duplicate secrets detected"));
+        assert!(!rendered.contains("Elena Rostova"));
+
+        // Mock mode: includes demo roster and sample blast radius
+        std::env::set_var("SENTRIS_CLOUD_MOCK", "1");
+        let mock_team = TeamInfo::from_credentials(&creds);
+        std::env::remove_var("SENTRIS_CLOUD_MOCK");
+        assert_eq!(mock_team.members.len(), 4);
+        assert!(!mock_team.blast_radius_insights.is_empty());
     }
 }

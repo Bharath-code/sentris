@@ -134,7 +134,7 @@ impl McpServer {
                 },
                 {
                     "name": "sentris_remediate_finding",
-                    "description": "Safely remediate a hardcoded secret by extracting it into .env / Vault / AWS Secrets Manager / Doppler and replacing the code literal with the idiomatic environment variable accessor.",
+                    "description": "Safely remediate a hardcoded secret by extracting it into .env / Vault / AWS Secrets Manager / Doppler / 1Password / Infisical and replacing the code literal with the idiomatic environment variable accessor.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -144,7 +144,7 @@ impl McpServer {
                             },
                             "backend": {
                                 "type": "string",
-                                "description": "Secret backend: env, vault, aws, or doppler (default: env)"
+                                "description": "Secret backend: env, vault, aws, doppler, 1password, or infisical (default: env)"
                             },
                             "fingerprint": {
                                 "type": "string",
@@ -264,6 +264,44 @@ impl McpServer {
                     "inputSchema": {
                         "type": "object",
                         "properties": {}
+                    }
+                },
+                {
+                    "name": "sentris_scan_workstation",
+                    "description": "Audit local workstation AI coding agent & MCP configuration files (.mcp.json, Cursor, Claude Code/Desktop, Windsurf, ~/.npmrc, ~/.pypirc, ~/.netrc, ~/.git-credentials) for plaintext credentials.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
+                },
+                {
+                    "name": "sentris_probe_exposure",
+                    "description": "Read-only capability exposure probe for detected credentials (Stripe, GitHub, AWS, Hugging Face, GitLab). Ranks findings by risk tier (critical, high, medium, low) and reports live permissions without mutating state.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "File or directory path inside the workspace to scan and probe (defaults to '.')"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "sentris_revoke_credential",
+                    "description": "Look up the exact provider revocation console URL, instructions, and live verification status (Active / Revoked / Unverified) for a detected secret finding.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "File or directory path inside the workspace to scan (defaults to '.')"
+                            },
+                            "finding_id": {
+                                "type": "string",
+                                "description": "Optional fingerprint prefix, rule ID, or file path to select a specific finding"
+                            }
+                        }
                     }
                 }
             ]
@@ -544,6 +582,131 @@ impl McpServer {
             "sentris_investigate" => super::investigate_tool::investigate(&args),
             "sentris_rotate_status" => super::rotate_tools::status(),
             "sentris_rotate_finish" => super::rotate_tools::finish(&args),
+            "sentris_scan_workstation" => {
+                let root = workspace()?;
+                let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+                let report = scanner
+                    .scan_workstation_in(&root)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                Ok(text_result(
+                    json!({
+                        "status": if report.findings.is_empty() { "clean" } else { "secrets_detected" },
+                        "files_scanned": report.stats.files_scanned,
+                        "duration_ms": report.stats.duration_ms,
+                        "findings_count": report.findings.len(),
+                        "findings": report.findings,
+                    }),
+                    false,
+                ))
+            }
+            "sentris_probe_exposure" => {
+                if offline {
+                    return Err((
+                        -32001,
+                        "Cannot probe live provider APIs in zero-egress offline mode".to_string(),
+                    ));
+                }
+                let target_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let target = confine(target_path)?;
+                let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+                let mut report = scanner
+                    .scan_path(&target)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                crate::exposure::probe_report(
+                    &mut report,
+                    |f| {
+                        let content = std::fs::read_to_string(&f.file_path).ok()?;
+                        scanner.resolve_finding_secret(&content, f).ok()
+                    },
+                    crate::exposure::probe_for_rule,
+                    |_, _| {},
+                );
+                crate::exposure::rank_findings(&mut report);
+                let items: Vec<Value> = report
+                    .findings
+                    .iter()
+                    .map(|f| {
+                        json!({
+                            "rule_id": f.rule_id,
+                            "severity": f.severity,
+                            "file_path": f.file_path,
+                            "line_number": f.line_number,
+                            "fingerprint": f.fingerprint,
+                            "exposure": report.exposures.get(&f.fingerprint),
+                        })
+                    })
+                    .collect();
+                Ok(text_result(
+                    json!({
+                        "findings_count": items.len(),
+                        "probed_findings": items,
+                    }),
+                    false,
+                ))
+            }
+            "sentris_revoke_credential" => {
+                let target_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let target = confine(target_path)?;
+                let wanted = args.get("finding_id").and_then(|v| v.as_str());
+                let scanner = Scanner::new().map_err(|e| (-32603, e.to_string()))?;
+                let report = scanner
+                    .scan_path(&target)
+                    .map_err(|e| (-32603, e.to_string()))?;
+                let Some(finding) = crate::investigate::select_finding(&report, wanted) else {
+                    return Ok(text_result(
+                        json!({
+                            "status": "no_finding",
+                            "message": "No matching secret finding found in target path."
+                        }),
+                        false,
+                    ));
+                };
+                let console_url =
+                    crate::cli::handlers::revoke::revocation_url_for_rule(&finding.rule_id);
+                let registry = crate::verifier::VerifierRegistry::new();
+                let provider = registry
+                    .find_verifier(&finding.rule_id)
+                    .map(|v| v.provider_name())
+                    .unwrap_or("Provider");
+                let live_status = if offline {
+                    "UNVERIFIED (offline)".to_string()
+                } else if let Ok(content) = std::fs::read_to_string(&finding.file_path) {
+                    if let Ok(mut secret) = scanner.resolve_finding_secret(&content, finding) {
+                        let st = match registry
+                            .find_verifier(&finding.rule_id)
+                            .and_then(|v| v.verify_live(&secret).ok())
+                        {
+                            Some(crate::verifier::LiveStatus::Active { scopes }) => {
+                                format!("ACTIVE ({})", scopes.join(", "))
+                            }
+                            Some(crate::verifier::LiveStatus::Revoked) => "REVOKED".to_string(),
+                            Some(crate::verifier::LiveStatus::Unverified(r)) => {
+                                format!("UNVERIFIED ({r})")
+                            }
+                            None => "UNSUPPORTED_VERIFIER".to_string(),
+                        };
+                        Remediator::zeroize_secret_string(&mut secret);
+                        st
+                    } else {
+                        "UNVERIFIED".to_string()
+                    }
+                } else {
+                    "UNVERIFIED".to_string()
+                };
+                Ok(text_result(
+                    json!({
+                        "finding_id": crate::model::short(&finding.fingerprint, 12),
+                        "rule_id": finding.rule_id,
+                        "file_path": finding.file_path,
+                        "line_number": finding.line_number,
+                        "provider": provider,
+                        "revocation_console_url": console_url,
+                        "live_status": live_status,
+                        "cli_revoke_command": format!("sentris revoke {} --wait --json", finding.file_path),
+                    }),
+                    false,
+                ))
+            }
             other => Err((-32601, format!("Unknown tool: {other}"))),
         }
     }

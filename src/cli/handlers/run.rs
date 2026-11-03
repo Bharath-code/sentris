@@ -58,13 +58,48 @@ pub fn run_with_injected_env(
     Ok(status.code().unwrap_or(130))
 }
 
+/// Auto-discovers required secret variable names from `.env.example` and `.env` in `dir`
+/// when the caller omits explicit `--key` flags on `sentris run`.
+pub fn discover_keys_in_dir(dir: &std::path::Path) -> Vec<String> {
+    let mut keys = Vec::new();
+    for file_name in [".env.example", ".env"] {
+        let path = dir.join(file_name);
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for raw_line in content.lines() {
+            let trimmed = raw_line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                continue;
+            }
+            let without_export = trimmed.strip_prefix("export ").unwrap_or(trimmed).trim();
+            let Some((name, _)) = without_export.split_once('=') else {
+                continue;
+            };
+            let key = name.trim();
+            if !key.is_empty()
+                && key.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                && !keys.iter().any(|existing| existing == key)
+            {
+                keys.push(key.to_string());
+            }
+        }
+    }
+    keys
+}
+
 pub fn handle_run(backend_name: String, keys: Vec<String>, command_args: Vec<String>) {
     let backend = SecretBackendFactory::from_name(&backend_name)
         .unwrap_or_else(|e| die("Invalid secret backend", e));
-    if keys.is_empty() {
-        fail("Pass at least one `--key <ENV_VAR_NAME>` to inject into the child environment (e.g. `sentris run --backend vault --key STRIPE_SECRET_KEY -- npm start`).");
+    let effective_keys = if keys.is_empty() {
+        discover_keys_in_dir(std::path::Path::new("."))
+    } else {
+        keys
+    };
+    if effective_keys.is_empty() {
+        fail("No `--key <ENV_VAR_NAME>` specified and no keys found in `.env.example` or `.env` (e.g. `sentris run --backend 1password -- npm start` or `sentris run --key STRIPE_SECRET_KEY -- npm start`).");
     }
-    match run_with_injected_env(backend.as_ref(), &keys, &command_args) {
+    match run_with_injected_env(backend.as_ref(), &effective_keys, &command_args) {
         Ok(code) => process::exit(code),
         Err(SentrisError::Refused(msg)) => {
             eprintln!("REFUSED: {msg}");
@@ -116,5 +151,30 @@ mod tests {
         assert_eq!(code, 42);
         let written = std::fs::read_to_string(&out_file).unwrap();
         assert_eq!(written, "super_secret_runtime_val");
+    }
+
+    #[test]
+    fn auto_discovers_keys_from_dotenv_example_and_dotenv() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(".env.example"),
+            "# Required secrets\nSTRIPE_SECRET_KEY=\nexport DATABASE_URL=\n",
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join(".env"),
+            "STRIPE_SECRET_KEY=sk_test\nOPENAI_API_KEY=sk_proj\n",
+        )
+        .unwrap();
+
+        let keys = discover_keys_in_dir(dir.path());
+        assert_eq!(
+            keys,
+            vec![
+                "STRIPE_SECRET_KEY".to_string(),
+                "DATABASE_URL".to_string(),
+                "OPENAI_API_KEY".to_string(),
+            ]
+        );
     }
 }

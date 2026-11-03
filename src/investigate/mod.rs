@@ -66,6 +66,14 @@ where
         known_ips: known_ips.to_vec(),
     };
     if !inv.supported {
+        if let Ok(exposure) = window::first_exposure(repo, &finding.fingerprint) {
+            inv.exposure_at = exposure
+                .start
+                .as_ref()
+                .map(|s| s.author_time)
+                .filter(|t| *t <= now);
+            inv.exposure = Some(exposure);
+        }
         return Ok(inv);
     }
     // Commit dates are attacker-controlled metadata: never let them narrow the query. They only label events as before/after exposure.
@@ -104,7 +112,8 @@ pub fn investigate_target(
         return Ok(None);
     };
     if finding.rule_id != AWS_RULE {
-        return investigate(finding, "", repo, known_ips, 0, |_, _| {
+        let now = crate::rotator::unix_now();
+        return investigate(finding, "", repo, known_ips, now, |_, _| {
             Err(SentrisError::Scan("unsupported provider".to_string()))
         })
         .map(Some);
@@ -153,6 +162,13 @@ impl Investigation {
             "supported": self.supported,
         });
         let (Some(exposure), Some(usage)) = (&self.exposure, &self.usage) else {
+            if let Some(exposure) = &self.exposure {
+                out["exposure"] = json!({
+                    "commit": exposure.start.as_ref().map(|s| &s.commit),
+                    "author_time": exposure.start.as_ref().map(|s| s.author_time),
+                    "note": exposure.note,
+                });
+            }
             out["message"] = json!(self.unsupported_message());
             return out;
         };
@@ -184,6 +200,16 @@ impl Investigation {
             self.finding_id, self.rule_id, self.file_path, self.line_number
         );
         let (Some(exposure), Some(usage)) = (&self.exposure, &self.usage) else {
+            if let Some(exposure) = &self.exposure {
+                if let Some(st) = &exposure.start {
+                    s.push_str(&format!(
+                        "First exposure: commit {} at {} ({})\n",
+                        short(&st.commit, 12),
+                        format_utc(st.author_time),
+                        exposure.note
+                    ));
+                }
+            }
             s.push_str(&format!("{}\n", self.unsupported_message()));
             return s;
         };

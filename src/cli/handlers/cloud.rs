@@ -68,7 +68,7 @@ pub fn handle_team(cli: &Cli) {
         expires_at: None,
         team_secret: None,
     });
-    let team = TeamInfo::from_credentials(&creds);
+    let team = TeamInfo::from_credentials_live(&creds, cli.offline);
     if cli.is_agent_mode() {
         print_json(serde_json::json!({
             "ok": true,

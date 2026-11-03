@@ -229,15 +229,41 @@ impl McpServer {
         })
     }
 
-    /// Writes `.mcp.json` and `.agents/skills/sentris-security/SKILL.md` into `workspace_dir`
-    /// so AI coding agents (Claude Code, Cursor, Antigravity, Windsurf) auto-discover Sentris.
+    /// Writes `.mcp.json`, `.agents/skills/sentris-security/SKILL.md`, and `.claude/settings.local.json`
+    /// into `workspace_dir` so AI coding agents (Claude Code, Cursor, Antigravity, Windsurf) auto-discover
+    /// Sentris and enforce the Pre/PostToolUse secret firewall.
     pub fn setup_workspace_for_agents(workspace_dir: &Path) -> Result<Vec<String>, SentrisError> {
         let mut written_files = Vec::new();
 
-        // 1. Write .mcp.json if not present (or update sentris entry)
+        // 1. Write or merge .mcp.json without clobbering existing mcpServers entries
         let mcp_json_path = workspace_dir.join(".mcp.json");
-        let mcp_content = Self::generate_config_snippet();
-        std::fs::write(&mcp_json_path, mcp_content)?;
+        let snippet: Value =
+            serde_json::from_str(&Self::generate_config_snippet()).unwrap_or_else(|_| json!({}));
+        let merged_mcp = if let Ok(existing_raw) = std::fs::read_to_string(&mcp_json_path) {
+            if let Ok(mut existing_val) = serde_json::from_str::<Value>(&existing_raw) {
+                if let (Some(existing_servers), Some(new_servers)) = (
+                    existing_val
+                        .get_mut("mcpServers")
+                        .and_then(|v| v.as_object_mut()),
+                    snippet.get("mcpServers").and_then(|v| v.as_object()),
+                ) {
+                    for (k, v) in new_servers {
+                        existing_servers.insert(k.clone(), v.clone());
+                    }
+                    existing_val
+                } else {
+                    snippet
+                }
+            } else {
+                snippet
+            }
+        } else {
+            snippet
+        };
+        std::fs::write(
+            &mcp_json_path,
+            serde_json::to_string_pretty(&merged_mcp).unwrap_or_default(),
+        )?;
         written_files.push(mcp_json_path.display().to_string());
 
         // 2. Write .agents/skills/sentris-security/SKILL.md
@@ -284,12 +310,12 @@ sentris fix <file_path> --yes --json
 sentris fix . --all --yes --backend 1password --json
 
 # Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key with `sentris revoke <target> --wait --json`
-# Forensics for a leaked AWS key (read-only): sentris investigate <file> --json [--known-ip <ip>]
+# Forensics for a leaked key (read-only): sentris investigate <file> --json [--known-ip <ip>]
 ```
 
 ### Run Commands Without `.env` on Disk (`sentris run`)
 ```bash
-sentris run --backend 1password --key STRIPE_SECRET_KEY --key DATABASE_URL -- npm start
+sentris run --backend 1password -- npm start
 ```
 
 ### Atomic Byte-for-Byte Rollback
@@ -314,6 +340,35 @@ sentris team --json
 "#;
         std::fs::write(&skill_path, skill_md)?;
         written_files.push(skill_path.display().to_string());
+
+        // 3. Write or merge .claude/settings.local.json with UserPromptSubmit, PreToolUse, and PostToolUse hooks
+        let claude_dir = workspace_dir.join(".claude");
+        std::fs::create_dir_all(&claude_dir)?;
+        let claude_settings_path = claude_dir.join("settings.local.json");
+        let hook_cfg: Value =
+            serde_json::from_str(&crate::hook::config_snippet()).unwrap_or_else(|_| json!({}));
+        let merged_claude =
+            if let Ok(existing_raw) = std::fs::read_to_string(&claude_settings_path) {
+                if let Ok(mut existing_val) = serde_json::from_str::<Value>(&existing_raw) {
+                    if let (Some(obj), Some(hooks)) =
+                        (existing_val.as_object_mut(), hook_cfg.get("hooks"))
+                    {
+                        obj.insert("hooks".to_string(), hooks.clone());
+                        existing_val
+                    } else {
+                        hook_cfg
+                    }
+                } else {
+                    hook_cfg
+                }
+            } else {
+                hook_cfg
+            };
+        std::fs::write(
+            &claude_settings_path,
+            serde_json::to_string_pretty(&merged_claude).unwrap_or_default(),
+        )?;
+        written_files.push(claude_settings_path.display().to_string());
 
         Ok(written_files)
     }

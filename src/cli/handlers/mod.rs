@@ -80,7 +80,7 @@ pub fn execute(cli: Cli) {
             fail_on,
             workstation,
         ),
-        Commands::Install { force } => audit::handle_install(force),
+        Commands::Install { force, with_ai } => audit::handle_install(force, with_ai),
         Commands::Uninstall => audit::handle_uninstall(),
         Commands::Remediate {
             finding_id,
