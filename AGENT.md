@@ -3,7 +3,7 @@
 > **Target Audience:** AI Coding Agents (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex/Agents, LangGraph, CrewAI, Aider) & Systems Engineers.  
 > **Project:** Sentris (`sentris`)  
 > **Binary Footprint:** `3.8 MB` stripped static Rust binary (`rustls`, zero C/C++/Python/Node runtime dependencies)  
-> **Test Suite Status:** **155 / 155 Passing** (`130` unit + `24` CLI integration + `1` throughput SLA benchmark, `0` Clippy warnings)
+> **Test Suite Status:** **319 / 319 Unit Tests Passing** (+ CLI integration, corpus recall/FP & throughput SLA benchmarks, `0` Clippy warnings)
 
 ---
 
@@ -47,10 +47,13 @@ sentris/
 ├── Formula/sentris.rb              # Homebrew tap formula
 ├── install.sh                      # POSIX curl | sh installer
 ├── src/
-│   ├── lib.rs                      # Library root exporting all 15 core modules
+│   ├── lib.rs                      # Library root exporting all core modules
 │   ├── main.rs                     # Minimal 7-line binary entry point delegating to sentris::cli::handlers
 │   ├── model.rs                    # Finding, Severity, ContextKind (Production vs TestFixture), ScanReport
 │   ├── error.rs                    # Centralized SentrisError (thiserror)
+│   ├── hook.rs                     # Claude Code / AI Agent hook (UserPromptSubmit, PreToolUse, PostToolUse)
+│   ├── import.rs                   # Betterleaks/Gitleaks JSON importer with flat arena & bit-packed u32 handles
+│   ├── redact.rs                   # Inline text & stream redaction engine
 │   ├── audit/
 │   │   ├── mod.rs                  # AuditAction, AuditRecord, and append-only AuditLedger hash chain
 │   │   ├── crypto.rs               # RFC 2104 HMAC-SHA256 & repository/workstation audit salt derivation
@@ -61,10 +64,14 @@ sentris/
 │   │   ├── completions.rs          # Shell completions (bash, zsh, fish, powershell, elvish)
 │   │   └── handlers/               # Modular CLI subcommand execution handlers
 │   │       ├── mod.rs              # Top-level subcommand router
-│   │       ├── scan.rs             # Scan, baseline filter, live verification, webhook & cloud sync
+│   │       ├── scan.rs             # Scan (--workstation, --probe, --verify), baseline filter, webhook & cloud sync
 │   │       ├── remediate.rs        # Remediate, rollback, and Zone 3 quarantine handlers
+│   │       ├── revoke.rs           # Guided & API credential revocation (--api, --wait) + KeyDeactivated audit log
+│   │       ├── run.rs              # Zero-disk .env runtime runner across all 6 secret backends
 │   │       ├── review.rs           # Interactive Ratatui review & baseline snapshot handlers
 │   │       ├── audit.rs            # Audit ledger, gitleaks migration, git hook & init handlers
+│   │       ├── rotate_cmd.rs       # AWS IAM dual-key rotation status/finish/undo handlers
+│   │       ├── investigate_cmd.rs  # AWS CloudTrail forensic investigation handler
 │   │       └── cloud.rs            # Auth, sync, team blast-radius, MCP, LSP & AI agent handlers
 │   ├── cloud/
 │   │   ├── mod.rs                  # Zero-Knowledge Pro Cloud module exports
@@ -75,30 +82,43 @@ sentris/
 │   │   ├── mod.rs                  # .sentris.toml parser & custom enterprise regex rules
 │   │   └── gitleaks_migrator.rs    # 1-command .gitleaks.toml -> .sentris.toml converter
 │   ├── detector/
-│   │   ├── mod.rs                  # DetectorEngine (Whole-file RegexSet DFA + capture-group & PEM extraction)
-│   │   ├── patterns.rs             # 55+ precision rules (AWS, Stripe, OpenAI, Anthropic, Groq, Supabase, etc.)
+│   │   ├── mod.rs                  # DetectorEngine (Single-pass Aho-Corasick + SoA rules + DECODE_OWNER)
+│   │   ├── decode.rs               # Multi-layer Base64 (incl. k8s Secret YAML) & URL-percent secret decoder
+│   │   ├── patterns.rs             # 115 precision rules (AWS, Stripe, OpenAI, Anthropic, Groq, Supabase, etc.)
 │   │   ├── entropy.rs              # Shannon information entropy calculator
 │   │   ├── false_positives.rs      # 6-Layer False Positive Suppression Engine
 │   │   └── baseline.rs             # Cryptographic fingerprint baseline snapshot (.sentris-baseline.json)
+│   ├── exposure/
+│   │   ├── mod.rs                  # Read-only capability exposure probes & flat tier ranking
+│   │   ├── stripe.rs               # Stripe live balance & read/write capability probe
+│   │   ├── github.rs               # GitHub PAT scopes & organization membership probe
+│   │   ├── aws.rs                  # AWS IAM attached/inline user & group policy probe
+│   │   ├── huggingface.rs          # Hugging Face fine-grained role & org write access probe
+│   │   └── gitlab.rs               # GitLab PAT scopes & expiration probe
 │   ├── git/
-│   │   ├── mod.rs                  # Staged diff-hunk parser (-U0), --since range scanner, hook installer
+│   │   ├── mod.rs                  # Staged diff-hunk parser (-U0), --since range scanner, parallel --git-history
 │   │   └── quarantine.rs           # Zone 3 quarantine brancher & git-filter-repo playbook generator
+│   ├── investigate/
+│   │   ├── mod.rs                  # Leaked credential commit introduction & CloudTrail forensics
+│   │   ├── aws.rs                  # AWS CloudTrail LookupEvents client
+│   │   └── window.rs               # Exposure window & IP anomaly analyzer
 │   ├── lsp/
 │   │   └── mod.rs                  # Native Language Server Protocol (LSP 3.17) over stdio (diagnostics + quickfix)
 │   ├── mcp/
 │   │   ├── mod.rs                  # Native Model Context Protocol (MCP JSON-RPC 2.0) server & router
-│   │   ├── tools.rs                # 6 MCP tools (scan_path, scan_staged, remediate, rollback, audit, blast_radius)
+│   │   ├── tools.rs                # 10 MCP tools (scan, staged, remediate, rollback, redact, rotate, investigate, audit, blast_radius)
+│   │   ├── rotate_tools.rs         # MCP rotation & investigation tool handlers
 │   │   └── manifest.rs             # MCP resources, prompts, AI Agent manifest & workspace scaffolder
 │   ├── remediator/
 │   │   ├── mod.rs                  # 7-step remediation pipeline & volatile RAM zeroization
-│   │   ├── backend/                # Modular Secret Store Backends
-│   │   │   ├── mod.rs              # SecretStoreBackend trait, SecretBackendType & SecretBackendFactory
+│   │   ├── backend/                # Modular Secret Store Backends (inject_secret + fetch_secret, zero argv leaks)
+│   │   │   ├── mod.rs              # SecretStoreBackend trait, SecretTempFile (0600) & SecretBackendFactory
 │   │   │   ├── env.rs              # .env local file driver
-│   │   │   ├── vault.rs            # HashiCorp Vault KV v2 driver
-│   │   │   ├── aws.rs              # AWS Secrets Manager driver
-│   │   │   ├── doppler.rs          # Doppler Secrets driver
-│   │   │   ├── onepassword.rs      # 1Password op:// reference & CLI driver
-│   │   │   └── infisical.rs        # Infisical secret manager driver
+│   │   │   ├── vault.rs            # HashiCorp Vault KV v2 driver (stdin)
+│   │   │   ├── aws.rs              # AWS Secrets Manager driver (0600 file:// tempfile)
+│   │   │   ├── doppler.rs          # Doppler Secrets driver (stdin)
+│   │   │   ├── onepassword.rs      # 1Password CLI driver (0600 --template JSON tempfile)
+│   │   │   └── infisical.rs        # Infisical CLI driver (0600 --file= tempfile)
 │   │   ├── code_replacer/          # Polyglot AST-like code replacer (10+ languages + multi-line PEM blocks)
 │   │   │   ├── mod.rs              # Language-aware env accessor generator & literal/PEM replacer
 │   │   │   ├── accessor_tests.rs   # Accessor generation unit tests
@@ -112,20 +132,30 @@ sentris/
 │   │   └── webhook/                # Slack Block Kit & Discord incident card dispatcher
 │   │       ├── mod.rs              # Formatter & HTTP webhook dispatcher
 │   │       └── tests.rs            # Webhook payload & transport unit tests
+│   ├── rotator/
+│   │   ├── mod.rs                  # ProviderRotator trait & dual-key rotation state machine
+│   │   ├── aws.rs                  # AWS IAM dual-key lifecycle driver
+│   │   ├── flow.rs                 # Crash-safe rotation orchestration
+│   │   ├── ledger.rs               # HMAC-signed rotation ledger (.sentris/rotations.json)
+│   │   └── timefmt.rs              # RFC 3339 UTC timestamp parser & formatter
 │   ├── scanner/
-│   │   └── mod.rs                  # Lock-free work-stealing parallel directory scanner (build_parallel)
+│   │   └── mod.rs                  # Lock-free work-stealing parallel directory scanner & workstation AI/MCP auditor
 │   ├── tui/
 │   │   ├── mod.rs                  # Panic-safe TerminalGuard & Ratatui event loop (sentris review)
 │   │   ├── app.rs                  # Split-pane TUI state machine (j/k, r Remediate, b Baseline, i Ignore)
 │   │   └── ui.rs                   # Split-pane Ratatui renderer with live -/+ staged patch diff preview
 │   └── verifier/
-│       ├── mod.rs                  # VerifierRegistry, ProviderVerifier trait, LiveStatus { scopes }
-│       ├── stripe.rs               # Stripe live probe & dual-key rotation
-│       ├── github.rs               # GitHub PAT probe & OAuth scope mapper
-│       ├── aws.rs                  # AWS STS caller-identity verification
+│       ├── mod.rs                  # VerifierRegistry (10 providers), ProviderVerifier trait, LiveStatus
+│       ├── stripe.rs               # Stripe live verifier
+│       ├── github.rs               # GitHub PAT live verifier & OAuth scope mapper
+│       ├── gitlab.rs               # GitLab PAT (/api/v4/personal_access_tokens/self) live verifier
+│       ├── huggingface.rs          # Hugging Face (/api/whoami-v2) live verifier
+│       ├── aws.rs                  # AWS STS caller-identity verifier
 │       ├── slack.rs                # Slack auth.test verifier
-│       ├── openai.rs               # OpenAI sk-proj- verifier & project key rotation
-│       └── anthropic.rs            # Anthropic sk-ant-api03- verifier & rotation
+│       ├── openai.rs               # OpenAI sk-proj- verifier
+│       ├── anthropic.rs            # Anthropic sk-ant-api03- verifier
+│       ├── groq.rs                 # Groq (/openai/v1/models) live verifier
+│       └── sendgrid.rs             # SendGrid (/v3/scopes) live verifier
 ├── tests/
 │   ├── integration_tests.rs        # 23 end-to-end CLI integration tests
 │   ├── benchmark_test.rs           # Throughput & latency SLA enforcement benchmark
@@ -189,9 +219,16 @@ Run `sentris mcp --print-config` (or `sentris agent --setup`) to generate the `m
 | `sentris scan --staged` | Diff-only staged hunk scan (`git diff --cached -U0`) in `12ms`. |
 | `sentris scan --since <REF>` | Commit-range scan (`HEAD~1` or `origin/main..HEAD`) for pre-push and PR checks. |
 | `sentris scan --git-history` | Full git commit DAG and diff history scan. |
-| `sentris scan --verify` | Probes live provider APIs and prints the Identity & Blast Radius scope map. |
+| `sentris scan --verify` | Probes 10 live provider APIs in parallel and prints the Identity & Blast Radius scope map. |
+| `sentris scan --probe` | Read-only capability exposure probes for Stripe, GitHub, AWS, Hugging Face, and GitLab ranked by risk tier. |
+| `sentris scan --workstation` | Audits workstation AI coding agent & MCP configs (`.mcp.json`, Cursor, Claude Code/Desktop, Windsurf, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, `~/.git-credentials`). |
 | `sentris review [PATH]` | Interactive Split-Pane Ratatui TUI with live `-`/`+` staged patch preview (`r`, `b`, `i`, `q`). |
-| `sentris remediate [TARGET]` | 7-step autonomous remediation (`--all` batch mode, `--rotate` API rotation, `--backend env\|vault\|aws\|doppler\|1password\|infisical`, `--dry-run`, `--yes`). |
+| `sentris remediate [TARGET]` | 7-step autonomous remediation (`--all` batch mode, `--rotate` AWS IAM rotation, `--backend env\|vault\|aws\|doppler\|1password\|infisical`, `--dry-run`, `--yes`). |
+| `sentris run --backend <B> --key <K>... -- <CMD>` | Zero-disk `.env` runtime runner: fetches secrets from any of the 6 backends into child process memory only and zeroizes parent buffers. |
+| `sentris revoke [TARGET]` | Guided or API-driven (`--api`) credential revocation with 2-second live verification polling (`--wait`) and `KeyDeactivated` SOC 2 audit logging. |
+| `sentris rotate status\|finish\|undo` | Inspects, completes, or reverts an AWS IAM dual-key rotation started with `remediate --rotate`. |
+| `sentris investigate <TARGET>` | Read-only forensics for a leaked AWS key: earliest git commit + CloudTrail management event history. |
+| `sentris hook [--print-config] [--fail-closed]` | Claude Code / AI agent hook blocking secrets in `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` tool outputs. |
 | `sentris rollback [--session ID]` | Atomically restores original file contents from `.sentris/rollback_ledger.json`. |
 | `sentris quarantine <ID>` | Creates a Zone 3 quarantine branch and `.sentris/quarantine_qz_<id>_playbook.md`. |
 | `sentris baseline record` | Snapshots existing findings into `.sentris-baseline.json`. |

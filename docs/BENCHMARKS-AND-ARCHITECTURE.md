@@ -4,7 +4,7 @@
 
 > **Binary Target:** `target/release/sentris` (`Mach-O 64-bit arm64` / `ELF x86_64`, `opt-level = 3`, `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`)  
 > **Binary Size:** `4,213,280 bytes` (`4.02 MB`) — zero C/C++/OpenSSL/Python/Node runtime dependencies  
-> **Test Suite:** **155 / 155 Passing (`100%`)** in **`0.28s`** (unit) + **`1.05s`** (CLI integration) + **`0.04s`** (throughput SLA benchmark)  
+> **Test Suite:** **319 / 319 Unit Tests Passing (`100%`)** + CLI integration, corpus recall/FP & throughput SLA benchmarks  
 > **Static Analysis:** **`0` Clippy warnings** (`--all-targets -- -D warnings`), **`0` `#[allow(dead_code)]` suppressions**, `100%` `rustfmt` compliant
 
 ---
@@ -80,31 +80,32 @@ Measured across 5–10 runs per workload on `./target/release/sentris`:
 
 ## 5. Modular Codebase Architecture & Quality Gates
 
-The Rust codebase is structured into **61 single-responsibility source files** (`15,325` total lines of Rust) with zero circular dependencies, zero duplicate crate compilation, and zero `#[allow(dead_code)]` suppressions:
+The Rust codebase is structured into **single-responsibility source files** across 19 modules with zero circular dependencies, zero duplicate crate compilation, and zero `#[allow(dead_code)]` suppressions:
 
 ```mermaid
 flowchart TD
     Main["src/main.rs (7 LOC)\nThin CLI Entry Point"] --> Handlers["src/cli/handlers/*\nModular Subcommand Routers"]
-    Handlers --> Scanner["src/scanner/\nWork-Stealing Parallel Walker"]
-    Handlers --> Remediator["src/remediator/\n7-Step Self-Healing Engine"]
+    Handlers --> Scanner["src/scanner/\nWork-Stealing Parallel Walker + --workstation"]
+    Handlers --> Remediator["src/remediator/\n7-Step Self-Healing + sentris run"]
+    Handlers --> Revoke["src/cli/handlers/revoke.rs & src/rotator/\nRevocation + AWS IAM Dual-Key Rotation"]
     Handlers --> Audit["src/audit/\nRFC 2104 HMAC-SHA256 & Vanta SOC 2"]
-    Handlers --> Protocols["src/mcp/ & src/lsp/\nAI Agent MCP + IDE LSP 3.17"]
+    Handlers --> Protocols["src/mcp/, src/lsp/, src/hook.rs\nAI Agent MCP + IDE LSP 3.17 + Pre/Post Hook"]
     Handlers --> Cloud["src/cloud/\nZero-Knowledge zk_<sha256> Blast Radius"]
-    Scanner --> Detector["src/detector/\nWhole-File RegexSet DFA + 6-Layer FP Filter"]
-    Remediator --> Backends["src/remediator/backend/\nEnv • Vault • AWS • Doppler • 1Password • Infisical"]
+    Scanner --> Detector["src/detector/\nSingle-Pass Aho-Corasick + SoA Rules + Base64/URL Decode"]
+    Scanner --> Exposure["src/verifier/ (10) & src/exposure/ (5)\nParallel 8-Worker Live Verifiers & Probes"]
+    Remediator --> Backends["src/remediator/backend/\nEnv • Vault • AWS • Doppler • 1Password • Infisical (Zero argv)"]
     Remediator --> Replacer["src/remediator/code_replacer/\nPolyglot Code & Multi-Line PEM Patcher"]
 ```
 
 ### Automated Test & Quality Summary
 
-| Verification Suite | Test Count | Release Execution Time | Debug Execution Time | Result |
-| :--- | :---: | :---: | :---: | :---: |
-| **Library Unit Tests (`src/lib.rs`)** | `130` | **`0.28 s`** | `1.43 s` | **130 / 130 PASS** |
-| **End-to-End CLI Integration Tests (`tests/integration_tests.rs`)** | `24` | **`1.05 s`** | `3.86 s` | **24 / 24 PASS** |
-| **Throughput SLA Microbenchmark (`tests/benchmark_test.rs`)** | `1` | **`0.04 s`** | `0.27 s` | **1 / 1 PASS** |
-| **Total Automated Test Suite** | **`155`** | **`1.37 s`** | **`5.56 s`** | **155 / 155 PASS (`100%`)** |
-| **Clippy Linter (`cargo clippy --all-targets -- -D warnings`)** | All targets | — | `2.75 s` | **`0` warnings, `0` errors** |
-| **Rustfmt Check (`cargo fmt --check`)** | `61` files | — | `< 0.5 s` | **100% compliant** |
+| Verification Suite | Test Count | Release Execution Time | Result |
+| :--- | :---: | :---: | :---: |
+| **Library Unit Tests (`src/lib.rs`)** | `319` | **`2.92 s`** | **319 / 319 PASS** |
+| **End-to-End CLI Integration Tests (`tests/integration_tests.rs`)** | `24` | **`1.05 s`** | **24 / 24 PASS** |
+| **Throughput SLA Microbenchmark (`tests/benchmark_test.rs`)** | `1` | **`0.04 s`** | **1 / 1 PASS** |
+| **Clippy Linter (`cargo clippy --all-targets -- -D warnings`)** | All targets | — | **`0` warnings, `0` errors** |
+| **Rustfmt Check (`cargo fmt --check`)** | All files | — | **100% compliant** |
 
 ---
 

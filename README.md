@@ -9,7 +9,7 @@
 [![Binary Size](https://img.shields.io/badge/binary-4.02MB%20static%20Rust-success.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![Benchmark](https://img.shields.io/badge/benchmark-reproducible-brightgreen.svg)](bench/results/latest.md)
 [![Throughput](https://img.shields.io/badge/throughput-83%2C333%20files%2Fsec-blueviolet.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
-[![Tests](https://img.shields.io/badge/tests-155%2F155%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Tests](https://img.shields.io/badge/tests-319%2F319%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![MCP & LSP Ready](https://img.shields.io/badge/AI%20%26%20IDE-Native%20MCP%20%2B%20LSP-orange.svg)](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp)
 
 ```text
@@ -32,15 +32,18 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 
 | Area | Today |
 |---|---|
-| Scanning (CLI, pre-commit, git history, SARIF, MCP, LSP) | Working. Recall is still being measured against gitleaks; run `sentris scan` on your own corpus before relying on it. |
-| Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, signed rollback ledger. |
-| Remediation into Vault / AWS Secrets Manager / Doppler | Implemented, not yet integration-tested against live services. 1Password and Infisical are opt-in (`SENTRIS_ALLOW_ARGV_SECRETS=1`). |
-| **Provider key rotation (`--rotate`)** | **AWS IAM access keys only.** Creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Tested against a CLI stub, **not yet against a real AWS account**. Every other provider: not supported, the leaked key stays valid until you revoke it. |
-| **Exposure probes (`scan --probe`)** | Stripe (balance), GitHub (scopes, org membership) and AWS (policies attached to the key's owning IAM user, read through *your* AWS credentials) report what a leaked key can reach as a risk tier. Read-only calls; a tier is a capability judgement, not a loss estimate, and a dollar figure appears only when Stripe returns a balance. AWS does not read inline policy contents, permission boundaries or SCPs. Tested against recorded-shape fixtures and a CLI stub, **not yet against live accounts**. |
-| Import from Betterleaks / Gitleaks (`--from-report`) | Working for `scan` and `fix`: JSON report in, entries re-verified against the file, then probe/rank/remediate/rollback as usual. Tested against real Betterleaks 1.9.0 output and a CLI stub; not available in the MCP tools yet. |
+| Scanning (CLI, pre-commit, git history, workstation AI/MCP configs, SARIF, MCP, LSP) | Working. Single-pass Aho-Corasick literal prefilter + Structure-of-Arrays (SoA) rule layout + multi-layer Base64 (`k8s` `Secret` `data:` blocks) and URL-percent decoding. |
+| Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, `.env.example` contract sync, `.gitignore` hardening, signed rollback ledger. |
+| Remediation into Vault / AWS Secrets Manager / Doppler / 1Password / Infisical | Working across all 6 backends (`env`, `vault`, `aws`, `doppler`, `1password`, `infisical`) via `stdin` or `0600` `SecretTempFile` templates so secret values never appear in `argv`. Tested against recorded CLI shims. |
+| **Zero-disk `.env` runtime runner (`sentris run`)** | Working across all 6 backends (`sentris run --backend <backend> --key <NAME>... -- <cmd>`). Fetches secrets into child process environment memory only, zeroizes parent buffers, and refuses `{{secret:...}}` placeholders in `argv`. |
+| **Guided & API credential revocation (`sentris revoke`)** | Maps findings to exact provider revocation console URLs, supports direct API revocation (`--api`) for GitHub tokens (`POST /credentials/revoke`), polls live verification (`--wait`) every 2s until `Revoked`, and records `KeyDeactivated` in `.sentris/audit_ledger.json`. |
+| **Provider key rotation (`--rotate`)** | **AWS IAM access keys only.** Creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Tested against a CLI stub. Every other provider: use `sentris revoke` to deactivate the leaked key after rotating. |
+| **Live verification (`scan --verify`) & Exposure probes (`scan --probe`)** | **10 live verifiers** (Stripe, GitHub, GitLab, Hugging Face, OpenAI, Anthropic, Groq, SendGrid, Slack, AWS) and **5 read-only capability exposure probes** (Stripe balance, GitHub scopes/orgs, AWS IAM policies, Hugging Face fine-grained org permissions, GitLab PAT scopes/expiry) executed in bounded 8-worker parallel batches. |
+| **AI Coding Agent Firewall (`sentris hook` + `scan --workstation`)** | `sentris hook` guards `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` (blocking tool output `stdout`/`stderr`/`output`/`content`/`text` containing secrets before they enter the AI context window). `sentris scan --workstation` audits `.mcp.json`, Cursor, Claude Code, Claude Desktop, Windsurf, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, and `~/.git-credentials`. |
+| Import from Betterleaks / Gitleaks (`--from-report`) | Working for `scan` and `fix`: JSON report in, entries re-verified against the file in a flat contiguous arena (`ImportedSecrets`) with bit-packed `u32` handles, then probe/rank/remediate/rollback as usual. |
 | Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
 | Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
-| Benchmarks | Numbers in this README come from the author's machine; a reproducible script is planned. |
+| Benchmarks | Reproducible benchmark harness in `bench/run.sh` (`bench/results/latest.md`, `creddata.md`, `prowlbench.md`). |
 
 ---
 
@@ -146,16 +149,16 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) | Go, no CGO, parallel git scanning |
 | **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` | Measured in `bench/` |
-| **Detection Engine** | **110+ Rules + 2026 AI Stack + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules | 463 TOML rules + BPE token-efficiency filter + CEL filters |
-| **Live API Verification** | **Yes (`--verify` w/ zero-egress `--offline` default)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No | Yes (opt-in `--validation`, CEL rules; 218 rules carry validation) |
-| **Post-Detection Action** | **Extracts to `.env`/Vault/1Password/Infisical + Patches Code** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table | Prints report (json/csv/junit/sarif); no remediation |
-| **Local Dev App Safety** | **Safe Local Extraction + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual | Manual |
+| **Detection Engine** | **115 Rules + Multi-Layer Base64/URL Decode + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules | 463 TOML rules + BPE token-efficiency filter + CEL filters |
+| **Live API Verification** | **Yes (10 Verifiers + 5 Exposure Probes, parallel 8-worker pool)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No | Yes (opt-in `--validation`, CEL rules; 218 rules carry validation) |
+| **Post-Detection Action** | **Extracts to `.env`/Vault/AWS/Doppler/1Password/Infisical + Patches Code + `sentris revoke`** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table | Prints report (json/csv/junit/sarif); no remediation |
+| **Local Dev App Safety** | **Safe Local Extraction + `sentris run` (Zero-Disk `.env` Runner) + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual | Manual |
 | **Polyglot Code Patching** | **7+ Languages + Multi-Line PEM Block Replacement** | None | None | None | None | Partial (PR comment) | None | None |
 | **Atomic Rollback (`undo`)** | **`sentris rollback` (Byte-exact restore)** | None | None | None | None | None | None | None |
 | **Zero-Knowledge Privacy** | **100% Local + Salted `zk_<sha256>` Only + RAM Zeroization** | Local CLI | Uploads code snippets to SaaS | Local OSS / Cloud Ent. | Hosted on GitHub Cloud | Cloud-dependent rules | 100% Local | 100% Local (validation calls go to providers) |
 | **SOC 2 / ISO 27001 Proof** | **HMAC-SHA256 Hash Chain + 1-Click Vanta JSON** | None | Enterprise PDF (`USD 20k+/yr`) | Enterprise Dashboard | GitHub Audit Log | Enterprise Dashboard | None | None |
 | **Interactive Terminal UI** | **Split-Pane Ratatui TUI (`sentris review`) w/ Diff Preview** | None | None | None | None | None | None | None |
-| **AI Agent & IDE Native** | **Built-in MCP Server (`sentris mcp`) + LSP (`sentris lsp`)** | None | Cloud MCP (Requires SaaS) | None | Copilot-only | Editor plugin (Cloud) | None | CLI designed for agents; no MCP server or LSP in v1.9.0 |
+| **AI Agent & IDE Native** | **MCP (`sentris mcp`) + LSP (`sentris lsp`) + Pre/Post Hook (`sentris hook`) + `--workstation`** | None | Cloud MCP (Requires SaaS) | None | Copilot-only | Editor plugin (Cloud) | None | CLI designed for agents; no MCP server or LSP in v1.9.0 |
 | **Historical Git Scrub** | **Zone 3 Quarantine Branch + Coordinated Playbook** | Manual | Guided docs only | Manual | Manual | Manual | Manual | Manual |
 | **Pricing** | **Free OSS • `USD 8/seat` Pro • `USD 2k/yr` Enterprise** | Free (Apache-2.0) | `USD 18–25+/dev/mo` | Free AGPLv3, `USD 25k+/yr` Ent. | `USD 19/committer/mo` | `USD 20–40/dev/mo` | Free (MIT) | Free (MIT) |
 
@@ -198,12 +201,17 @@ sentris scan --since HEAD~1
 # reporting commit hash, author and date (JSON: commit_hash, commit_author, commit_date)
 sentris scan --git-history
 
-# Verify detected credentials against live provider APIs & map permission scopes
+# Verify detected credentials against 10 live provider APIs (Stripe, GitHub, GitLab, Hugging Face,
+# OpenAI, Anthropic, Groq, SendGrid, Slack, AWS) & map permission scopes in parallel
 sentris scan . --verify
 
-# Probe each Stripe / GitHub / AWS credential read-only for what it can reach, ranked by risk tier.
-# Makes network calls (not with --offline). AWS needs your own admin credentials, never the leaked key.
+# Probe each Stripe / GitHub / AWS / Hugging Face / GitLab credential read-only for what it can reach,
+# ranked by risk tier. Makes network calls (not with --offline). AWS needs your own admin credentials, never the leaked key.
 sentris scan . --probe --fail-on high   # exit 1 if anything is high or critical; unprobed findings count at their severity
+
+# Audit workstation AI coding agent & MCP configurations (.mcp.json, Cursor, Claude Code, Claude Desktop,
+# Windsurf, ~/.npmrc, ~/.pypirc, ~/.netrc, ~/.git-credentials) for plaintext credentials
+sentris scan --workstation
 
 # Launch Split-Pane Interactive Terminal UI (Ratatui) with live -/+ staged patch preview
 sentris review
@@ -287,9 +295,19 @@ sentris remediate src/billing.ts --yes
 # Batch-remediate ALL secrets across a file or directory in one atomic pass
 sentris remediate . --all --yes
 
-# Secret store backends: env (default), vault, aws, doppler.
-# 1password and infisical pass the value as a CLI argument and need SENTRIS_ALLOW_ARGV_SECRETS=1.
+# All 6 secret store backends work without ever placing secrets in process argv:
+# env (default), vault, aws, doppler, 1password (0600 JSON template), infisical (0600 --file).
 sentris remediate src/billing.ts --backend vault --yes
+sentris remediate src/billing.ts --backend 1password --yes
+sentris remediate src/billing.ts --backend infisical --yes
+
+# Zero-Disk .env Runtime Runner (`sentris run`): fetch secrets from any backend directly into
+# child process memory (never written to disk, parent buffers zeroized, refuses {{secret:...}} in argv)
+sentris run --backend 1password --key STRIPE_SECRET_KEY --key DATABASE_URL -- npm start
+
+# Guided or API-driven credential revocation with 2-second live verification polling & SOC 2 KeyDeactivated log
+sentris revoke src/billing.ts --wait
+sentris revoke github-pat --api --wait
 
 # Rotate an AWS IAM access key (other providers exit with an error before changing anything).
 # Uses your own AWS CLI credentials, never the leaked key. Old key stays active.
@@ -346,15 +364,15 @@ sentris mcp
 ```
 
 #### Claude Code hook (`sentris hook`) — keep secrets out of the model's context
-Blocks prompts that contain a secret, reads of secret files (`.env`, `*.pem`, `id_rsa`, `~/.aws/credentials`, ...; `.env.example` is allowed), shell commands that cat/grep them or carry a secret, and file writes that would put a secret into code. Exit code 2 blocks the action; the message names the rule, never the value.
+Blocks prompts that contain a secret (`UserPromptSubmit`), reads of secret files (`.env`, `*.pem`, `id_rsa`, `~/.aws/credentials`, ...; `.env.example` is allowed), shell commands that cat/grep them or carry a secret, file writes that would put a secret into code (`PreToolUse`), and tool outputs (`PostToolUse` `stdout`/`stderr`/`output`/`content`/`text`) that would leak a secret into the AI context window. Exit code 2 blocks the action; the message names the rule, never the value.
 ```bash
-# Print the settings.json snippet (UserPromptSubmit + PreToolUse); paste it into ~/.claude/settings.json
+# Print the settings.json snippet (UserPromptSubmit + PreToolUse + PostToolUse); paste it into ~/.claude/settings.json
 sentris hook --print-config
 
 # By default the hook lets an action through if it fails on malformed input; --fail-closed blocks instead
 sentris hook --fail-closed
 ```
-The hook uses the built-in rules (plus only a config named in `SENTRIS_CONFIG_FILE`), never a `.sentris.toml` inside the repo, so a hostile repo cannot weaken or break it. Input it cannot inspect (over 8 MiB) or a scanner that cannot start blocks the action even without `--fail-closed`; the agent may not edit `.sentris.toml`. It is a heuristic guardrail, not a sandbox: it does not see tool output (no `PostToolUse` check), expands no shell variables or globs, and a determined agent can still read a secret through a route it does not recognise. Measured on one macOS machine (release build): about 15 ms per invocation.
+The hook uses the built-in rules (plus only a config named in `SENTRIS_CONFIG_FILE`), never a `.sentris.toml` inside the repo, so a hostile repo cannot weaken or break it. Input it cannot inspect (over 8 MiB) or a scanner that cannot start blocks the action even without `--fail-closed`; the agent may not edit `.sentris.toml`. It is a heuristic guardrail, not a kernel sandbox: it expands no shell variables or arbitrary subshells, so combine it with `sentris scan --workstation` and `sentris run` for defense in depth. Measured on one macOS machine (release build): about 15 ms per invocation.
 
 #### Language Server Protocol (`sentris lsp`) — Real-Time IDE Diagnostics & Quick Fixes
 Implements LSP 3.17 over `stdio` (`textDocument/didOpen`, `textDocument/didChange`, `textDocument/codeAction`) for instant red squiggles and 1-click Quick Fix code patching in VS Code, Cursor, Zed, and Neovim:
