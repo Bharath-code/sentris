@@ -9,7 +9,7 @@ use crate::cli::Cli;
 use crate::config::{Config, GitleaksMigrator};
 use crate::git::GitManager;
 
-pub fn handle_install(force: bool) {
+pub fn handle_install(force: bool, with_ai: bool) {
     match GitManager::install_pre_commit_hook(force) {
         Ok(msg) => println!("{}", msg.green()),
         Err(err) => {
@@ -19,6 +19,25 @@ pub fn handle_install(force: bool) {
                 err
             );
             process::exit(1);
+        }
+    }
+    if with_ai {
+        match crate::mcp::McpServer::setup_workspace_for_agents(std::path::Path::new(".")) {
+            Ok(files) => {
+                println!(
+                    "{} Configured AI agent firewall & MCP: {}",
+                    "✔".green().bold(),
+                    files.join(", ")
+                );
+            }
+            Err(err) => {
+                eprintln!(
+                    "{} Failed to configure AI agent workspace: {}",
+                    "ERROR:".red().bold(),
+                    err
+                );
+                process::exit(1);
+            }
         }
     }
 }

@@ -372,12 +372,33 @@ impl Remediator {
             print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");
         }
         let (original_line, replacement_line) = if !dry_run {
-            CodeReplacer::replace_secret(
+            let (orig, repl) = CodeReplacer::replace_secret(
                 &finding.file_path,
                 finding.line_number,
                 raw_secret,
                 env_var_name,
-            )?
+            )?;
+            if repl.contains(raw_secret) {
+                return Err(SentrisError::Scan(format!(
+                    "Closed-loop verification failed: patched line in '{}' still contained secret material",
+                    finding.file_path
+                )));
+            }
+            if let Ok(engine) = crate::detector::DetectorEngine::new() {
+                let residual = engine.scan_single_line(
+                    &repl,
+                    &finding.file_path,
+                    finding.line_number,
+                    None,
+                );
+                if residual.iter().any(|f| f.fingerprint == finding.fingerprint) {
+                    return Err(SentrisError::Scan(format!(
+                        "Closed-loop verification failed: finding fingerprint '{}' still present after patching '{}'",
+                        finding.fingerprint, finding.file_path
+                    )));
+                }
+            }
+            (orig, repl)
         } else {
             let orig = std::fs::read_to_string(&finding.file_path)
                 .ok()

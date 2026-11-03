@@ -206,7 +206,7 @@ mod tests {
             .as_array()
             .unwrap()
             .clone();
-        assert_eq!(tools.len(), 10);
+        assert_eq!(tools.len(), 13);
 
         // Without credentials the tool reports an error instead of inventing sample data
         let _guard = crate::keystore::TEST_ENV_LOCK
@@ -300,12 +300,13 @@ mod tests {
 
         let tmp = tempfile::tempdir().unwrap();
         let written = McpServer::setup_workspace_for_agents(tmp.path()).unwrap();
-        assert_eq!(written.len(), 2);
+        assert_eq!(written.len(), 3);
         assert!(tmp.path().join(".mcp.json").exists());
         assert!(tmp
             .path()
             .join(".agents/skills/sentris-security/SKILL.md")
             .exists());
+        assert!(tmp.path().join(".claude/settings.local.json").exists());
     }
 
     #[test]

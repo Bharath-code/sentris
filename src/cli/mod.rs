@@ -112,11 +112,15 @@ pub enum Commands {
         workstation: bool,
     },
 
-    /// Install the Sentris pre-commit hook into .git/hooks/pre-commit
+    /// Install the Sentris pre-commit & pre-push hooks (and optionally AI agent MCP/hook configs)
     Install {
         /// Force overwrite of existing pre-commit hook
         #[arg(short, long, default_value_t = false)]
         force: bool,
+
+        /// Also configure workspace AI agent protection (.mcp.json, SKILL.md, and .claude/settings.local.json)
+        #[arg(long, default_value_t = false)]
+        with_ai: bool,
     },
 
     /// Uninstall the Sentris pre-commit hook
