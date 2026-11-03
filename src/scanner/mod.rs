@@ -460,6 +460,84 @@ impl Scanner {
             exposures: Default::default(),
         })
     }
+
+    /// Returns well-known workstation AI coding agent and developer credential config paths under `home` and cwd.
+    pub fn workstation_candidate_paths(home: &Path) -> Vec<std::path::PathBuf> {
+        vec![
+            std::path::PathBuf::from(".mcp.json"),
+            std::path::PathBuf::from(".cursor/mcp.json"),
+            home.join(".cursor/mcp.json"),
+            home.join(".claude.json"),
+            home.join(".claude/settings.json"),
+            home.join("Library/Application Support/Claude/claude_desktop_config.json"),
+            home.join(".config/claude/claude_desktop_config.json"),
+            home.join(".codeium/windsurf/mcp_config.json"),
+            home.join(".npmrc"),
+            home.join(".pypirc"),
+            home.join(".netrc"),
+            home.join(".git-credentials"),
+        ]
+    }
+
+    /// Audits well-known local AI agent (MCP, Claude Code, Cursor, Windsurf) and package manager config files for plaintext secrets.
+    pub fn scan_workstation(&self) -> Result<ScanReport, SentrisError> {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .map(std::path::PathBuf::from)
+            .ok_or_else(|| {
+                SentrisError::Scan(
+                    "Cannot determine user home directory ($HOME or %USERPROFILE% not set)".into(),
+                )
+            })?;
+        self.scan_workstation_in(&home)
+    }
+
+    /// Audits workstation candidate files resolved relative to `home`.
+    pub fn scan_workstation_in(&self, home: &Path) -> Result<ScanReport, SentrisError> {
+        let start_time = Instant::now();
+        let candidates = Self::workstation_candidate_paths(home);
+        let mut findings = Vec::new();
+        let mut files_scanned = 0usize;
+        let mut files_ignored = 0usize;
+        let mut bytes_scanned = 0u64;
+
+        for path in candidates {
+            if !path.is_file() {
+                continue;
+            }
+            if crate::fsutil::reject_symlinks(&path).is_err() {
+                files_ignored += 1;
+                continue;
+            }
+            match std::fs::read_to_string(&path) {
+                Ok(content) => {
+                    files_scanned += 1;
+                    bytes_scanned += content.len() as u64;
+                    let path_str = path.to_string_lossy().to_string();
+                    findings.extend(self.detector.scan_text(&content, &path_str));
+                }
+                Err(_) => {
+                    files_ignored += 1;
+                }
+            }
+        }
+
+        let stats = ScanStats {
+            files_scanned,
+            files_ignored,
+            bytes_scanned,
+            findings_count: findings.len(),
+            duration_ms: start_time.elapsed().as_millis(),
+        };
+
+        Ok(ScanReport {
+            timestamp: now_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            stats,
+            findings,
+            exposures: Default::default(),
+        })
+    }
 }
 
 pub(crate) fn now_string() -> String {
@@ -536,6 +614,24 @@ mod tests {
         let mut stale = report.findings[0].clone();
         stale.fingerprint = "0".repeat(64);
         assert!(scanner.resolve_finding_secret(&src, &stale).is_err());
+    }
+
+    #[test]
+    fn workstation_scan_detects_secret_in_cursor_mcp_config() {
+        let dir = tempdir().unwrap();
+        let cursor_dir = dir.path().join(".cursor");
+        fs::create_dir_all(&cursor_dir).unwrap();
+        let mcp_json = cursor_dir.join("mcp.json");
+        let tok = concat!("ghp_", "R8sT2vXq9LmN4pWz7KdJ3hYb6FcA1eUo5GtV");
+        fs::write(
+            &mcp_json,
+            format!(r#"{{"mcpServers":{{"github":{{"env":{{"GITHUB_TOKEN":"{tok}"}}}}}}}}"#),
+        )
+        .unwrap();
+        let scanner = Scanner::new().unwrap();
+        let report = scanner.scan_workstation_in(dir.path()).unwrap();
+        assert!(report.stats.files_scanned >= 1);
+        assert!(report.findings.iter().any(|f| f.rule_id == "github-pat"));
     }
 }
 

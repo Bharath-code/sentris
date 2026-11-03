@@ -234,6 +234,64 @@ impl SecretStoreBackend for VaultBackend {
     fn is_mock(&self) -> bool {
         self.mock
     }
+
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        if self.mock {
+            let ledger_path = self
+                .mock_ledger_path
+                .clone()
+                .unwrap_or_else(|| Path::new(".sentris").join("vault_mock_ledger.json"));
+            let content = fs::read_to_string(&ledger_path).map_err(|e| {
+                SentrisError::Scan(format!(
+                    "Cannot read Vault mock ledger '{}': {e}",
+                    ledger_path.display()
+                ))
+            })?;
+            let ledger: VaultMockLedger = serde_json::from_str(&content)?;
+            for entry in ledger.transactions.iter().rev() {
+                if entry.key == key {
+                    if let Some(val) = entry.payload["data"][key].as_str() {
+                        return Ok(val.to_string());
+                    }
+                }
+            }
+            return Err(SentrisError::Scan(format!(
+                "Secret '{key}' not found in Vault mock ledger '{}'",
+                ledger_path.display()
+            )));
+        }
+
+        let base_addr = self.vault_addr.as_deref().ok_or_else(|| {
+            SentrisError::Scan(
+                "VAULT_ADDR is not set; refusing to simulate. Set SENTRIS_MOCK_BACKEND=1 for local testing"
+                    .into(),
+            )
+        })?;
+        let token = self
+            .vault_token
+            .as_deref()
+            .ok_or_else(|| SentrisError::Scan("VAULT_TOKEN is not set".into()))?;
+        let full_url = format!("{}{}", base_addr.trim_end_matches('/'), self.endpoint_path());
+        let timeout = std::time::Duration::from_secs(5);
+        let res = ureq::get(&full_url)
+            .set("X-Vault-Token", token)
+            .timeout(timeout)
+            .call()
+            .map_err(|e| {
+                SentrisError::Scan(format!("Failed to read Vault secret '{key}' at {full_url}: {e}"))
+            })?;
+        let body: serde_json::Value = res.into_json().map_err(|e| {
+            SentrisError::Scan(format!("Unreadable Vault response from {full_url}: {e}"))
+        })?;
+        body["data"]["data"][key]
+            .as_str()
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| {
+                SentrisError::Scan(format!(
+                    "Secret '{key}' not found in Vault KV v2 response at {full_url}"
+                ))
+            })
+    }
 }
 
 #[cfg(test)]

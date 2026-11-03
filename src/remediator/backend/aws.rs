@@ -1,6 +1,6 @@
 use crate::error::SentrisError;
 use crate::remediator::backend::{
-    mock_notice, mock_requested, record_mock, SecretStoreBackend, SecretTempFile,
+    mock_notice, mock_requested, read_mock_entry, record_mock, SecretStoreBackend, SecretTempFile,
 };
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -218,6 +218,56 @@ impl SecretStoreBackend for AwsSecretsManagerBackend {
 
     fn is_mock(&self) -> bool {
         self.mock
+    }
+
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        if self.mock {
+            let entry = read_mock_entry(
+                self.mock_ledger_path.as_deref(),
+                "aws_secrets_manager_mock.json",
+                key,
+            )?;
+            return entry["SecretString"]
+                .as_str()
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    SentrisError::Scan(format!(
+                        "SecretString missing for '{key}' in AWS mock ledger"
+                    ))
+                });
+        }
+
+        let output = std::process::Command::new("aws")
+            .args([
+                "secretsmanager",
+                "get-secret-value",
+                "--secret-id",
+                key,
+                "--region",
+                &self.region,
+                "--query",
+                "SecretString",
+                "--output",
+                "text",
+            ])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let val = String::from_utf8_lossy(&out.stdout);
+                Ok(val.trim_end_matches(&['\r', '\n'][..]).to_string())
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "aws secretsmanager get-secret-value failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 'aws' CLI to fetch '{key}': {e}"
+            ))),
+        }
     }
 }
 

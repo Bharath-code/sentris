@@ -1,7 +1,11 @@
 pub mod anthropic;
 pub mod aws;
 pub mod github;
+pub mod gitlab;
+pub mod groq;
+pub mod huggingface;
 pub mod openai;
+pub mod sendgrid;
 pub mod slack;
 pub mod stripe;
 
@@ -11,7 +15,11 @@ use serde::{Deserialize, Serialize};
 use self::anthropic::AnthropicVerifier;
 use self::aws::AwsVerifier;
 use self::github::GithubVerifier;
+use self::gitlab::GitlabVerifier;
+use self::groq::GroqVerifier;
+use self::huggingface::HuggingFaceVerifier;
 use self::openai::OpenAiVerifier;
+use self::sendgrid::SendgridVerifier;
 use self::slack::SlackVerifier;
 use self::stripe::StripeVerifier;
 
@@ -73,6 +81,10 @@ impl VerifierRegistry {
                 Box::new(SlackVerifier::new()),
                 Box::new(OpenAiVerifier::new()),
                 Box::new(AnthropicVerifier::new()),
+                Box::new(HuggingFaceVerifier::new()),
+                Box::new(GitlabVerifier::new()),
+                Box::new(GroqVerifier::new()),
+                Box::new(SendgridVerifier::new()),
             ],
         }
     }

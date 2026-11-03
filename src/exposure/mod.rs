@@ -3,7 +3,9 @@
 //! A tier is a capability judgement, never a dollar estimate; `measured_usd` is set only when the provider returned a number.
 pub mod aws;
 pub mod github;
+pub mod gitlab;
 pub mod http;
+pub mod huggingface;
 pub mod stripe;
 
 use crate::error::SentrisError;
@@ -84,6 +86,10 @@ pub fn probe_for_rule(rule_id: &str) -> Option<Box<dyn ExposureProbe>> {
         "github-pat" | "github-fine-grained-pat" | "github-oauth-access-token" => {
             Some(Box::new(github::GithubProbe::new(Box::new(http::UreqHttp))))
         }
+        "huggingface-token" => Some(Box::new(huggingface::HuggingFaceProbe::new(Box::new(
+            http::UreqHttp,
+        )))),
+        "gitlab-pat" => Some(Box::new(gitlab::GitlabProbe::new(Box::new(http::UreqHttp)))),
         "aws-access-key-id" => Some(Box::new(aws::AwsProbe::new())),
         _ => None,
     }
@@ -392,6 +398,8 @@ mod tests {
         for (name, src) in [
             ("stripe", include_str!("stripe.rs")),
             ("github", include_str!("github.rs")),
+            ("huggingface", include_str!("huggingface.rs")),
+            ("gitlab", include_str!("gitlab.rs")),
             ("http", include_str!("http.rs")),
         ] {
             let prod = src.split("#[cfg(test)]").next().unwrap();

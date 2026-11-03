@@ -6,7 +6,9 @@ pub mod investigate;
 pub mod quarantine;
 pub mod remediate;
 pub mod review;
+pub mod revoke;
 pub mod rotate;
+pub mod run;
 pub mod scan;
 mod scan_output;
 
@@ -58,6 +60,7 @@ pub fn execute(cli: Cli) {
             verify,
             probe,
             fail_on,
+            workstation,
         } => scan::handle_scan(
             &cli,
             path,
@@ -75,6 +78,7 @@ pub fn execute(cli: Cli) {
             verify,
             probe,
             fail_on,
+            workstation,
         ),
         Commands::Install { force } => audit::handle_install(force),
         Commands::Uninstall => audit::handle_uninstall(),
@@ -96,6 +100,16 @@ pub fn execute(cli: Cli) {
             all,
             from_report,
         ),
+        Commands::Revoke {
+            finding_id,
+            api,
+            wait,
+        } => revoke::handle_revoke(&cli, finding_id, api, wait),
+        Commands::Run {
+            backend,
+            keys,
+            command,
+        } => run::handle_run(backend, keys, command),
         Commands::Rollback { session } => remediate::handle_rollback(&cli, session),
         Commands::Hook {
             print_config,

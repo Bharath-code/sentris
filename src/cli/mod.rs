@@ -106,6 +106,10 @@ pub enum Commands {
         /// Exit 1 when any finding is at or above this risk tier (critical, high, medium, low); a finding that was not probed counts at its severity
         #[arg(long, value_enum)]
         fail_on: Option<crate::exposure::RiskTier>,
+
+        /// Audit local workstation AI coding agent & MCP config files (~/.cursor/mcp.json, ~/.claude.json, ~/.npmrc, etc.) for plaintext secrets
+        #[arg(long, default_value_t = false)]
+        workstation: bool,
     },
 
     /// Install the Sentris pre-commit hook into .git/hooks/pre-commit
@@ -132,7 +136,7 @@ pub enum Commands {
         #[arg(short, long, default_value_t = false)]
         yes: bool,
 
-        /// Secret store backend to provision replacement into: env, vault, aws, doppler
+        /// Secret store backend to provision replacement into: env, vault, aws, doppler, 1password, infisical
         #[arg(long, default_value = "env")]
         backend: String,
 
@@ -147,6 +151,35 @@ pub enum Commands {
         /// Remediate findings from a Betterleaks/Gitleaks JSON report instead of scanning; each entry is re-checked against the file
         #[arg(long)]
         from_report: Option<PathBuf>,
+    },
+
+    /// Guided or API-driven credential revocation with live verification polling and SOC 2 audit logging
+    Revoke {
+        /// The finding ID, file path, rule ID, or fingerprint prefix to revoke
+        finding_id: Option<String>,
+
+        /// Call the provider's revocation API directly when supported (e.g. GitHub `POST /credentials/revoke`)
+        #[arg(long, default_value_t = false)]
+        api: bool,
+
+        /// Poll the provider's live verification API every 2 seconds until the credential flips to Revoked
+        #[arg(long, default_value_t = false)]
+        wait: bool,
+    },
+
+    /// Execute a command with secrets fetched from a vault/backend into child environment memory only (no `.env` on disk)
+    Run {
+        /// Secret store backend to fetch from: env, vault, aws, doppler, 1password, infisical
+        #[arg(long, default_value = "env")]
+        backend: String,
+
+        /// Secret key / environment variable name to fetch and inject (repeatable, e.g. `--key STRIPE_SECRET_KEY`)
+        #[arg(short = 'k', long = "key")]
+        keys: Vec<String>,
+
+        /// Command and arguments to execute (after `--`)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true, required = true)]
+        command: Vec<String>,
     },
 
     /// Revert a previous remediation session and restore original files

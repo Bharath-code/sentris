@@ -52,6 +52,39 @@ impl SecretStoreBackend for EnvFileBackend {
 
         Ok(format!("Successfully injected {key} into .env"))
     }
+
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        let env_path = self.base_dir.join(".env");
+        crate::fsutil::reject_symlinks(&env_path)?;
+        let content = std::fs::read_to_string(&env_path).map_err(|e| {
+            SentrisError::Scan(format!(
+                "Cannot read '{}' to fetch '{key}': {e}",
+                env_path.display()
+            ))
+        })?;
+        for raw_line in content.lines() {
+            let line = raw_line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let stripped = line.strip_prefix("export ").unwrap_or(line).trim_start();
+            if let Some((k, v)) = stripped.split_once('=') {
+                if k.trim() == key {
+                    let val = v.trim();
+                    let unquoted = val
+                        .strip_prefix('"')
+                        .and_then(|s| s.strip_suffix('"'))
+                        .or_else(|| val.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                        .unwrap_or(val);
+                    return Ok(unquoted.to_string());
+                }
+            }
+        }
+        Err(SentrisError::Scan(format!(
+            "Secret '{key}' not found in '{}'",
+            env_path.display()
+        )))
+    }
 }
 
 #[cfg(test)]
