@@ -19,7 +19,7 @@ Include affected version or commit, reproduction steps, and impact. Expect an ac
 
 - Findings that only affect the synthetic secrets in `tests/` and `docs/` (all fixtures are fake)
 - Denial of service through very large inputs on a local scan
-- Backends not yet verified against live services: Vault, AWS and Doppler are tested with shims only, so integration bugs there are welcome as normal issues
+- Backends not yet verified against live third-party cloud accounts: Vault, AWS, Doppler, 1Password, and Infisical are tested with recorded CLI shims (zero `argv` secret exposure via `stdin` or `0600` tempfiles), so live integration bugs are welcome as normal issues
 
 ## Known limitations
 

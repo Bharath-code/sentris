@@ -172,8 +172,8 @@ function Zones() {
 const surfaces = [
   ['Pre-commit & pre-push', 'sentris install', 'Hooks that scan only staged hunks, plus a pre-push safety net.'],
   ['Your editor', 'sentris lsp', 'LSP 3.17 diagnostics and a one-click "extract to env" quick fix in VS Code, Cursor, Zed and Neovim.'],
-  ['Your AI agent', 'sentris mcp', 'A local MCP server so Claude Code, Cursor and Windsurf fix leaked keys before finishing their turn.'],
-  ['CI', 'sentris scan --format sarif', 'SARIF 2.1.0 output for GitHub code scanning and any CI runner.'],
+  ['Your AI agent', 'sentris mcp · sentris hook', 'Local MCP server, Pre/PostToolUse firewall hook, and --workstation MCP auditor for Claude Code, Cursor and Windsurf.'],
+  ['Zero-disk runtime & CI', 'sentris run · sentris scan --format sarif', 'Inject secrets from any vault into child process memory without .env files on disk, plus SARIF 2.1.0 for CI.'],
 ] as const
 
 function Surfaces() {
@@ -235,7 +235,7 @@ function FlowRow({ label, value, tone }: { label: string; value: string; tone: s
 function Closer() {
   return (
     <section className="container-page py-28 text-center md:py-36">
-      <h2 className="mx-auto max-w-3xl text-title font-semibold">The CLI is free forever. The fix-it-for-me part is ${site.priceMonthly} a developer.</h2>
+      <h2 className="mx-auto max-w-3xl text-title font-semibold">The CLI is free forever. The multi-repo team part is ${site.priceMonthly} a developer.</h2>
       <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
         <ButtonLink to="/login" variant="ember">Start 14-day Pro trial</ButtonLink>
         <ButtonLink to="/pricing" variant="ghost">Compare plans</ButtonLink>

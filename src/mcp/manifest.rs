@@ -171,14 +171,26 @@ impl McpServer {
                     "name": "scan",
                     "command": "sentris scan <path> --json",
                     "staged_command": "sentris scan --staged --json",
+                    "workstation_command": "sentris scan --workstation --json",
                     "verify_command": "sentris scan <path> --verify --json",
-                    "description": "Scans files or staged git diff hunks. Each finding in JSON includes `context_kind` (PRODUCTION | TEST_FIXTURE), `recommended_env_var`, and `remediate_command`."
+                    "probe_command": "sentris scan <path> --probe --json",
+                    "description": "Scans files, staged git diff hunks, or workstation AI/MCP configs. Each finding in JSON includes `context_kind` (PRODUCTION | TEST_FIXTURE), `recommended_env_var`, and `remediate_command`."
                 },
                 {
                     "name": "remediate (alias: fix)",
                     "command": "sentris fix <path_or_rule_or_fingerprint> --all --yes --backend <env|vault|aws|doppler|1password|infisical> --json",
                     "dry_run_command": "sentris fix <path> --all --dry-run --json",
-                    "description": "Autonomously patches hardcoded literals in source code (.py, .ts, .js, .rs, .go, .java, .rb, .php, .sh, multi-line PEM) and injects secrets into the target backend."
+                    "description": "Autonomously patches hardcoded literals in source code (.py, .ts, .js, .rs, .go, .java, .rb, .php, .sh, multi-line PEM) and injects secrets into the target backend without argv exposure."
+                },
+                {
+                    "name": "run",
+                    "command": "sentris run --backend <env|vault|aws|doppler|1password|infisical> --key <NAME>... -- <cmd> [args...]",
+                    "description": "Fetches secrets from the chosen backend directly into child process environment memory (no .env on disk), zeroizes parent buffers, and refuses {{secret:...}} in argv."
+                },
+                {
+                    "name": "revoke",
+                    "command": "sentris revoke [finding_id_or_path] [--api] [--wait] --json",
+                    "description": "Guided or API-driven credential revocation with 2-second live verification polling (--wait) and SOC 2 KeyDeactivated audit logging."
                 },
                 {
                     "name": "rollback",
@@ -256,9 +268,11 @@ sentris scan . --json
   - `recommended_env_var`: e.g. `"STRIPE_SECRET_KEY"`
   - `remediate_command`: exact command to fix the finding
 
-### Scan Staged Pre-Commit Diff Hunks (`<15ms`)
+### Scan Staged Pre-Commit Diff Hunks (`<15ms`) or Workstation AI/MCP Configs
 ```bash
 sentris scan --staged --json
+sentris scan --workstation --json
+sentris scan . --probe --json
 ```
 
 ### Autonomously Remediate Secrets (Code Rewrite + Secret Store Injection)
@@ -266,11 +280,16 @@ sentris scan --staged --json
 # Remediate a single file or finding into .env (safe local extraction)
 sentris fix <file_path> --yes --json
 
-# Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler
+# Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler (zero argv leaks)
 sentris fix . --all --yes --backend 1password --json
 
-# Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key at the provider
+# Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key with `sentris revoke <target> --wait --json`
 # Forensics for a leaked AWS key (read-only): sentris investigate <file> --json [--known-ip <ip>]
+```
+
+### Run Commands Without `.env` on Disk (`sentris run`)
+```bash
+sentris run --backend 1password --key STRIPE_SECRET_KEY --key DATABASE_URL -- npm start
 ```
 
 ### Atomic Byte-for-Byte Rollback

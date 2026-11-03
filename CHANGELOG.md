@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No rele
 ## [Unreleased]
 
 ### Added
+- `sentris run` zero-disk `.env` runtime runner: fetches secrets from `env`, `vault`, `aws`, `doppler`, `1password`, or `infisical` directly into child process memory and zeroizes parent buffers
+- `sentris revoke` guided and API-driven (`--api` for GitHub tokens) credential revocation with 2-second live verification polling (`--wait`) and `KeyDeactivated` SOC 2 audit ledger entries
+- `sentris scan --workstation` auditor for AI coding agent & MCP configs (`.mcp.json`, Cursor, Claude Code/Desktop, Windsurf, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, `~/.git-credentials`)
+- `PostToolUse` guard in `sentris hook` to block tool outputs (`stdout`, `stderr`, `output`, `content`, `text`) containing secrets before they enter AI context windows
+- Multi-layer Base64 (including Kubernetes `Secret` YAML `data:` blocks) and URL-percent secret decoding integrated into `DetectorEngine` (`DECODE_OWNER`)
+- 4 new live verifiers (`Hugging Face`, `GitLab`, `Groq`, `SendGrid`, bringing `VerifierRegistry` to 10 providers) and 2 new read-only capability exposure probes (`Hugging Face`, `GitLab`, bringing `--probe` to 5 providers)
 - Release pipeline (`release.yml`): 5 targets, SHA256SUMS, CycloneDX SBOM, build provenance attestations; installer verifies checksums
 - 115 detection rules including vendor token formats, URL basic auth, password literals and keyed secrets
 - Git history scan, SARIF output, MCP server, LSP
@@ -13,6 +19,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No rele
 - Zero-knowledge sync: fingerprints are HMACs under a team secret, previews are never uploaded
 
 ### Changed
+- Data-oriented detector and scanner optimizations: Structure-of-Arrays (SoA) rule layout, flat `ImportedSecrets` arena with bit-packed `u32` handles, Rayon parallel file scanning, parallel `--git-history` diff scanning, and bounded 8-worker parallel HTTP verification/probing
+- Upgraded `1Password` (`op item edit --template <0600-tempfile>`) and `Infisical` (`infisical secrets set --file=<0600-tempfile>`) backends so all 6 backends write secrets without ever exposing values in process `argv`
 - Aho-Corasick literal prefilter replaces the single large `RegexSet` (django checkout 8.7 s to under 0.5 s; peak RSS 143 MB to 20 MB)
 - Source patching is atomic; `.env` writes refuse to clobber existing variables
 - Mock backends are opt-in and labelled in CLI, JSON and MCP output

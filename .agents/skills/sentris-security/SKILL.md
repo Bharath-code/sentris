@@ -19,9 +19,11 @@ sentris scan . --json
   - `recommended_env_var`: e.g. `"STRIPE_SECRET_KEY"`
   - `remediate_command`: exact command to fix the finding
 
-### Scan Staged Pre-Commit Diff Hunks (`<15ms`)
+### Scan Staged Pre-Commit Diff Hunks (`<15ms`) or Workstation AI/MCP Configs
 ```bash
 sentris scan --staged --json
+sentris scan --workstation --json
+sentris scan . --probe --json
 ```
 
 ### Autonomously Remediate Secrets (Code Rewrite + Secret Store Injection)
@@ -29,11 +31,19 @@ sentris scan --staged --json
 # Remediate a single file or finding into .env (safe local extraction)
 sentris fix <file_path> --yes --json
 
-# Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler
+# Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler (zero argv leaks)
 sentris fix . --all --yes --backend 1password --json
 
-# Rotate the credential via provider API (Dual-Key zero-downtime rotation)
-sentris fix <file_path> --yes --rotate --backend env --json
+# Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>)
+# For other providers, use guided or API-driven revocation with live polling:
+sentris revoke <file_path_or_rule_id> --wait --json
+sentris revoke github-pat --api --wait --json
+```
+
+### Run Commands Without `.env` on Disk (`sentris run`)
+```bash
+# Fetch secrets from any backend directly into child process memory (never written to disk)
+sentris run --backend 1password --key STRIPE_SECRET_KEY --key DATABASE_URL -- npm start
 ```
 
 ### Atomic Byte-for-Byte Rollback
