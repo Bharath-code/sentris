@@ -36,7 +36,7 @@ function Pricing() {
           <Plan name="CLI" price="$0" unit="forever, MIT">
             <CopyCommand command={site.install} className="w-full" />
             <ul className="mt-6 space-y-2.5 text-sm text-muted">
-              {['110+ detectors', 'Pre-commit & pre-push hooks', 'LSP + MCP servers', 'SARIF, JSON, TUI', 'Local remediation to .env'].map(tick)}
+              {['115+ detectors + Base64/URL decoding', 'Claude Code hook, LSP + MCP servers', 'Live exposure probes & CloudTrail forensics', 'Remediation to .env, Vault, AWS, Doppler, 1Password & Infisical', 'Zero-downtime AWS IAM key rotation & guided revocation'].map(tick)}
             </ul>
           </Plan>
 
@@ -55,7 +55,7 @@ function Pricing() {
             </label>
             <p className="mt-2 text-right font-mono text-sm text-muted tabular-nums">${seats * per}/mo</p>
             <ul className="mt-5 space-y-2.5 text-sm text-muted">
-              {['Everything in CLI', 'Vault, AWS Secrets Manager and Doppler backends', 'Zero-knowledge cloud dashboard', `${RETENTION_DAYS.pro}-day scan history`, 'Cross-repo blast radius'].map(tick)}
+              {['Everything in CLI', 'Zero-knowledge cloud dashboard (`sentris sync`)', 'Cross-repo blast-radius correlation', `${RETENTION_DAYS.pro}-day org scan history & posture tracking`, 'Up to 2,000 scans & 200,000 findings / day'].map(tick)}
             </ul>
           </Plan>
 

@@ -1,5 +1,7 @@
 use crate::error::SentrisError;
-use crate::remediator::backend::{mock_notice, mock_requested, record_mock, SecretStoreBackend};
+use crate::remediator::backend::{
+    mock_notice, mock_requested, read_mock_entry, record_mock, SecretStoreBackend, SecretTempFile,
+};
 use std::path::PathBuf;
 
 /// Infisical Cloud / Self-Hosted Secret Manager backend driver.
@@ -98,17 +100,14 @@ impl SecretStoreBackend for InfisicalBackend {
             ));
         }
 
-        if !crate::remediator::backend::argv_secrets_allowed() {
-            return Err(SentrisError::Scan(format!(
-                "Live {name} writes pass the secret as a CLI argument, visible to other local users via ps. Refusing; set SENTRIS_ALLOW_ARGV_SECRETS=1 to accept that risk, or use the aws, doppler or vault backend."
-            , name = self.backend_name())));
-        }
-
-        let kv_arg = format!("{key}={secret}");
+        // Stage a 0600 env file so the secret value never appears in argv (`ps`)
+        let secret_file = SecretTempFile::create(&format!("{key}={secret}\n"))
+            .map_err(|e| SentrisError::Scan(format!("Cannot stage secret for infisical CLI: {e}")))?;
+        let file_arg = format!("--file={}", secret_file.path().display());
         let env_arg = format!("--env={}", self.env_slug);
         let path_arg = format!("--path={}", self.secret_path);
         let output = std::process::Command::new("infisical")
-            .args(["secrets", "set", &kv_arg, &env_arg, &path_arg])
+            .args(["secrets", "set", &file_arg, &env_arg, &path_arg])
             .output();
 
         match output {
@@ -131,6 +130,47 @@ impl SecretStoreBackend for InfisicalBackend {
 
     fn is_mock(&self) -> bool {
         self.mock
+    }
+
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        if self.mock {
+            let entry = read_mock_entry(
+                self.mock_ledger_path.as_deref(),
+                "infisical_mock.json",
+                key,
+            )?;
+            return entry["secretValue"]
+                .as_str()
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    SentrisError::Scan(format!(
+                        "Secret '{key}' missing from Infisical mock ledger entry"
+                    ))
+                });
+        }
+
+        let env_arg = format!("--env={}", self.env_slug);
+        let path_arg = format!("--path={}", self.secret_path);
+        let output = std::process::Command::new("infisical")
+            .args(["secrets", "get", key, "--plain", &env_arg, &path_arg])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let val = String::from_utf8_lossy(&out.stdout);
+                Ok(val.trim_end_matches(&['\r', '\n'][..]).to_string())
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "infisical secrets get failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 'infisical' CLI to fetch '{key}': {e}"
+            ))),
+        }
     }
 }
 

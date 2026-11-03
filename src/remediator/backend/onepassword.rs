@@ -1,6 +1,7 @@
 use crate::error::SentrisError;
 use crate::remediator::backend::{
-    current_timestamp_secs, mock_notice, mock_requested, record_mock, SecretStoreBackend,
+    current_timestamp_secs, mock_notice, mock_requested, read_mock_entry, record_mock,
+    SecretStoreBackend, SecretTempFile,
 };
 use std::path::PathBuf;
 
@@ -102,14 +103,18 @@ impl SecretStoreBackend for OnePasswordBackend {
             ));
         }
 
-        if !crate::remediator::backend::argv_secrets_allowed() {
-            return Err(SentrisError::Scan(format!(
-                "Live {} writes pass the secret as a CLI argument, visible to other local users via ps. Refusing; set SENTRIS_ALLOW_ARGV_SECRETS=1 to accept that risk, or use the aws, doppler or vault backend.",
-                self.backend_name()
-            )));
-        }
+        // Stage a 0600 JSON template file so the secret value never appears in argv (`ps`)
+        let template_payload = serde_json::json!({
+            "fields": [{
+                "id": key,
+                "label": key,
+                "type": "CONCEALED",
+                "value": secret
+            }]
+        });
+        let template_file = SecretTempFile::create(&serde_json::to_string(&template_payload)?)
+            .map_err(|e| SentrisError::Scan(format!("Cannot stage 1Password template: {e}")))?;
 
-        let assignment = format!("{key}[password]={secret}");
         let output = std::process::Command::new("op")
             .args([
                 "item",
@@ -117,7 +122,8 @@ impl SecretStoreBackend for OnePasswordBackend {
                 &self.item_name,
                 "--vault",
                 &self.vault_name,
-                &assignment,
+                "--template",
+                &template_file.path().to_string_lossy(),
             ])
             .output();
 
@@ -140,6 +146,46 @@ impl SecretStoreBackend for OnePasswordBackend {
 
     fn is_mock(&self) -> bool {
         self.mock
+    }
+
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        let op_ref = self.format_op_reference(key);
+        if self.mock {
+            let entry = read_mock_entry(
+                self.mock_ledger_path.as_deref(),
+                "1password_mock.json",
+                key,
+            )?;
+            return entry["secret"]
+                .as_str()
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    SentrisError::Scan(format!(
+                        "Secret '{key}' missing from 1Password mock ledger entry"
+                    ))
+                });
+        }
+
+        let output = std::process::Command::new("op")
+            .args(["read", &op_ref])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let val = String::from_utf8_lossy(&out.stdout);
+                Ok(val.trim_end_matches(&['\r', '\n'][..]).to_string())
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "1Password 'op read' failed for '{op_ref}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 1Password 'op' CLI for '{op_ref}': {e}"
+            ))),
+        }
     }
 }
 

@@ -1,4 +1,5 @@
 pub mod baseline;
+pub mod decode;
 pub mod entropy;
 pub mod false_positives;
 pub mod patterns;
@@ -36,6 +37,7 @@ fn rule_tier(rule_id: &str) -> u8 {
 
 const FLAG_TIER_MASK: u8 = 0b0011;
 const FLAG_REQUIRES_CONFIG_EXT: u8 = 0b0100;
+const DECODE_OWNER: usize = usize::MAX;
 
 fn compute_rule_flags(rule_id: &str) -> u8 {
     let tier = rule_tier(rule_id) & FLAG_TIER_MASK;
@@ -182,6 +184,10 @@ impl DetectorEngine {
                 None => always.push(idx),
             }
         }
+        for &trig in decode::DECODE_TRIGGER_LITERALS {
+            literal_owner.push(DECODE_OWNER);
+            literals.push(trig.to_string());
+        }
         let prefilter = if literals.is_empty() {
             None
         } else {
@@ -245,10 +251,21 @@ impl DetectorEngine {
         fingerprint: &str,
     ) -> Option<String> {
         let idx = self.meta.iter().position(|m| m.rule_id == rule_id)?;
-        self.regexes[idx].captures_iter(line).find_map(|caps| {
+        if let Some(found) = self.regexes[idx].captures_iter(line).find_map(|caps| {
             let m = secret_group(&caps)?.as_str();
             (hex::encode(Sha256::digest(m.as_bytes())) == fingerprint).then(|| m.to_string())
-        })
+        }) {
+            return Some(found);
+        }
+        for dec in decode::extract_decoded_candidates(line, false) {
+            if let Some(found) = self.regexes[idx].captures_iter(&dec).find_map(|caps| {
+                let m = secret_group(&caps)?.as_str();
+                (hex::encode(Sha256::digest(m.as_bytes())) == fingerprint).then(|| m.to_string())
+            }) {
+                return Some(found);
+            }
+        }
+        None
     }
 
     /// Extracts a multi-line PEM / private key block starting at `start_line_number` (1-indexed),
@@ -364,8 +381,13 @@ impl DetectorEngine {
         }
 
         let mut raw_hits: Vec<(usize, usize, u8, Finding)> = Vec::new();
+        let mut has_decode_trigger = false;
 
         for &rule_idx in matched_indices {
+            if rule_idx == DECODE_OWNER {
+                has_decode_trigger = true;
+                continue;
+            }
             let flags = self.rule_flags[rule_idx];
             if !allows_unquoted && (flags & FLAG_REQUIRES_CONFIG_EXT) != 0 {
                 continue;
@@ -431,6 +453,63 @@ impl DetectorEngine {
                         commit_date: None,
                     },
                 ));
+            }
+        }
+
+        // Multi-layer Base64 / URL-percent decoding pass when a known encoded secret prefix hit or no tier-0 rule matched
+        let has_tier0_direct = raw_hits.iter().any(|(_, _, t, _)| *t == 0);
+        if !has_tier0_direct && (has_decode_trigger || line.contains('=') || line.contains('%')) {
+            let mut decoded_tier0: Vec<Finding> = Vec::new();
+            for dec_line in decode::extract_decoded_candidates(line, false) {
+                let dec_rules = self.candidate_rules(&dec_line, None);
+                for rule_idx in dec_rules {
+                    if rule_idx == DECODE_OWNER {
+                        continue;
+                    }
+                    let flags = self.rule_flags[rule_idx];
+                    if (flags & FLAG_TIER_MASK) != 0 {
+                        continue;
+                    }
+                    let re = &self.regexes[rule_idx];
+                    let min_ent = self.min_entropies[rule_idx];
+                    for caps in re.captures_iter(&dec_line) {
+                        let Some(mat) = secret_group(&caps) else {
+                            continue;
+                        };
+                        let matched_str = mat.as_str();
+                        let entropy = entropy::calculate_shannon_entropy(matched_str);
+                        if entropy < effective_min_entropy(min_ent, matched_str) {
+                            continue;
+                        }
+                        let meta = &self.meta[rule_idx];
+                        if false_positives::FalsePositiveFilter::is_false_positive(
+                            matched_str,
+                            &meta.rule_id,
+                            &dec_line,
+                        ) {
+                            continue;
+                        }
+                        let fingerprint = hex::encode(Sha256::digest(matched_str.as_bytes()));
+                        decoded_tier0.push(Finding {
+                            rule_id: meta.rule_id.clone(),
+                            description: meta.description.clone(),
+                            severity: meta.severity,
+                            file_path: file_path.to_string(),
+                            line_number,
+                            column: 1,
+                            redacted_match: Finding::mask_secret(matched_str),
+                            entropy,
+                            fingerprint,
+                            commit_hash: commit_hash.clone(),
+                            commit_author: None,
+                            commit_date: None,
+                        });
+                    }
+                }
+            }
+            if !decoded_tier0.is_empty() {
+                findings.extend(decoded_tier0);
+                return;
             }
         }
 
@@ -784,5 +863,46 @@ mod tests {
             engine.extract_raw_secret(jwt_secret_line, "structural-secret-assignment"),
             Some("k9L2mP8qR4vW7xZ1bN5jC3dF6hT0sU8yA2cB9xQ4wE".to_string())
         );
+    }
+
+    #[test]
+    fn test_base64_and_url_encoded_secret_detection() {
+        let engine = DetectorEngine::new().unwrap();
+        // Kubernetes Secret YAML with Base64-encoded Stripe live key
+        let k8s_yaml = concat!(
+            "apiVersion: v1\nkind: Secret\ndata:\n  stripe: c2tfbGl2ZV",
+            "81MUFiY0RlZkdoSWpLbE1uT3BRclN0VXZ3eFl6MTIzNDU2\n"
+        );
+        let findings = engine.scan_text(k8s_yaml, "k8s/secret.yaml");
+        assert_eq!(findings.len(), 1);
+        assert_eq!(findings[0].rule_id, "stripe-secret-key");
+        assert_eq!(findings[0].line_number, 4);
+        assert_eq!(
+            engine.extract_secret_for_fingerprint(
+                concat!(
+                    "  stripe: c2tfbGl2ZV",
+                    "81MUFiY0RlZkdoSWpLbE1uT3BRclN0VXZ3eFl6MTIzNDU2"
+                ),
+                "stripe-secret-key",
+                &findings[0].fingerprint
+            ),
+            Some(
+                concat!(
+                    "sk_live_",
+                    "51AbcDefGhIjKlMnOpQrStUvwxYz123456"
+                )
+                .to_string()
+            )
+        );
+
+        // URL percent-encoded Postgres connection URI
+        let url_env = concat!(
+            "DATABASE_URL=postgres%3A%2F%2F",
+            "admin%3As3cr3tP4ssw0rd99%40db.internal%3A5432%2Fprod\n"
+        );
+        let url_findings = engine.scan_text(url_env, ".env");
+        assert!(url_findings
+            .iter()
+            .any(|f| f.rule_id == "postgres-connection-uri"));
     }
 }

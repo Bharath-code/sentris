@@ -316,6 +316,22 @@ fn pre_tool(scanner: &Scanner, tool: &str, input: &Value) -> Verdict {
     }
 }
 
+fn response_text(resp: &Value) -> String {
+    match resp {
+        Value::String(s) => s.clone(),
+        Value::Object(map) => {
+            let mut parts = Vec::new();
+            for key in ["stdout", "stderr", "output", "content", "text"] {
+                if let Some(s) = map.get(key).and_then(Value::as_str) {
+                    parts.push(s);
+                }
+            }
+            parts.join("\n")
+        }
+        _ => String::new(),
+    }
+}
+
 pub fn evaluate(scanner: &Scanner, input: &Value) -> Verdict {
     match input.get("hook_event_name").and_then(Value::as_str) {
         Some("UserPromptSubmit") => {
@@ -335,6 +351,18 @@ pub fn evaluate(scanner: &Scanner, input: &Value) -> Verdict {
                 input.get("tool_input").unwrap_or(&Value::Null),
             )
         }
+        Some("PostToolUse") => {
+            let resp = input
+                .get("tool_response")
+                .or_else(|| input.get("tool_output"))
+                .unwrap_or(&Value::Null);
+            let rules = secret_rules(scanner, &response_text(resp));
+            if rules.is_empty() {
+                Verdict::Allow
+            } else {
+                deny_secrets("this tool output", &rules)
+            }
+        }
         _ => Verdict::Allow,
     }
 }
@@ -347,6 +375,10 @@ pub fn config_snippet() -> String {
             "UserPromptSubmit": [{"hooks": handler}],
             "PreToolUse": [{
                 "matcher": "Read|Grep|Write|Edit|MultiEdit|NotebookEdit|Bash",
+                "hooks": handler
+            }],
+            "PostToolUse": [{
+                "matcher": "Bash|Read|Grep",
                 "hooks": handler
             }]
         }
@@ -737,5 +769,27 @@ mod tests {
                 "{cmd}"
             );
         }
+    }
+
+    #[test]
+    fn post_tool_use_blocks_secret_in_tool_response() {
+        let msg = denied(check(json!({
+            "hook_event_name": "PostToolUse",
+            "tool_name": "Bash",
+            "tool_response": {
+                "stdout": format!("STRIPE_SECRET_KEY={STRIPE}\n")
+            }
+        })));
+        assert!(msg.contains("stripe-secret-key"), "{msg}");
+        assert!(!msg.contains("51Nq8x"), "{msg}");
+
+        assert_eq!(
+            check(json!({
+                "hook_event_name": "PostToolUse",
+                "tool_name": "Bash",
+                "tool_response": { "stdout": "build succeeded\n" }
+            })),
+            Verdict::Allow
+        );
     }
 }

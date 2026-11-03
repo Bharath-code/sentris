@@ -33,11 +33,19 @@ pub fn handle_scan(
     verify: bool,
     probe: bool,
     fail_on: Option<RiskTier>,
+    workstation: bool,
 ) {
     let mut scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let mut report = match &from_report {
         Some(file) => import_report(cli, &mut scanner, file),
-        None => run_scan(&scanner, since.as_deref(), git_history, staged, &path),
+        None => run_scan(
+            &scanner,
+            since.as_deref(),
+            git_history,
+            staged,
+            workstation,
+            &path,
+        ),
     };
     let path = from_report.unwrap_or(path);
 
@@ -114,9 +122,15 @@ fn run_scan(
     since: Option<&str>,
     git_history: bool,
     staged: bool,
+    workstation: bool,
     path: &Path,
 ) -> ScanReport {
-    let (context, result) = if let Some(since_ref) = since {
+    let (context, result) = if workstation {
+        (
+            "Failed during workstation AI & MCP config scan".to_string(),
+            scanner.scan_workstation(),
+        )
+    } else if let Some(since_ref) = since {
         (
             format!("Failed during git commit range scan ({since_ref})"),
             scanner.scan_git_since(since_ref),

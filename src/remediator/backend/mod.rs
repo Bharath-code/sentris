@@ -32,6 +32,14 @@ pub trait SecretStoreBackend: Send + Sync {
     fn inject_secret(&self, key: &str, secret: &str, dry_run: bool)
         -> Result<String, SentrisError>;
 
+    /// Fetches a secret's current plaintext value from the storage backend into memory only.
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        Err(SentrisError::NotImplemented(format!(
+            "fetch_secret is not implemented for backend '{}' (key: '{key}')",
+            self.backend_name()
+        )))
+    }
+
     /// True when writes go to a local simulation file instead of the real store.
     fn is_mock(&self) -> bool {
         false
@@ -90,11 +98,28 @@ pub(crate) fn record_mock(
     Ok(path)
 }
 
-/// Explicit opt-in for backends whose CLI offers no stdin/file input for the value.
-pub(crate) fn argv_secrets_allowed() -> bool {
-    std::env::var("SENTRIS_ALLOW_ARGV_SECRETS")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+pub(crate) fn read_mock_entry(
+    custom: Option<&Path>,
+    default_name: &str,
+    key: &str,
+) -> Result<serde_json::Value, SentrisError> {
+    let path = custom
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| Path::new(".sentris").join(default_name));
+    if !path.exists() {
+        return Err(SentrisError::Scan(format!(
+            "Mock ledger '{}' does not exist when fetching '{key}'",
+            path.display()
+        )));
+    }
+    let entries: HashMap<String, serde_json::Value> =
+        serde_json::from_str(&fs::read_to_string(&path)?)?;
+    entries.get(key).cloned().ok_or_else(|| {
+        SentrisError::Scan(format!(
+            "Secret '{key}' not found in mock ledger '{}'",
+            path.display()
+        ))
+    })
 }
 
 pub(crate) fn mock_notice(backend: &str) -> String {
@@ -323,11 +348,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         let log = dir.path().join("calls.log");
-        for bin in ["aws", "doppler"] {
+        for bin in ["aws", "doppler", "op", "infisical"] {
             let path = dir.path().join(bin);
-            // Records argv, stdin and (for aws) the file:// payload, then succeeds
+            // Records argv, stdin and any file:// or --file= or --template payload, then succeeds
             let script = format!(
-                "#!/bin/sh\necho \"ARGV: $@\" >> {log}\nfor a in \"$@\"; do case \"$a\" in file://*) echo \"FILE: $(cat ${{a#file://}})\" >> {log};; esac; done\nif [ ! -t 0 ]; then echo \"STDIN: $(cat)\" >> {log}; fi\n",
+                "#!/bin/sh\necho \"ARGV: $@\" >> {log}\nprev=\"\"\nfor a in \"$@\"; do\n  case \"$a\" in\n    file://*) echo \"FILE: $(cat ${{a#file://}})\" >> {log};;\n    --file=*) echo \"FILE: $(cat ${{a#--file=}})\" >> {log};;\n  esac\n  if [ \"$prev\" = \"--template\" ]; then echo \"FILE: $(cat $a)\" >> {log}; fi\n  prev=\"$a\"\ndone\nif [ ! -t 0 ]; then echo \"STDIN: $(cat)\" >> {log}; fi\n",
                 log = log.display()
             );
             fs::write(&path, script).unwrap();
@@ -339,11 +364,17 @@ mod tests {
         let secret = "sk_live_SUPERSECRETVALUE123";
         let aws = AwsSecretsManagerBackend::new().with_mock(false);
         let doppler = DopplerBackend::new().with_mock(false);
+        let op = OnePasswordBackend::new().with_mock(false);
+        let inf = InfisicalBackend::new().with_mock(false);
         let a = aws.inject_secret("STRIPE_KEY", secret, false);
         let d = doppler.inject_secret("STRIPE_KEY", secret, false);
+        let o = op.inject_secret("STRIPE_KEY", secret, false);
+        let i = inf.inject_secret("STRIPE_KEY", secret, false);
         std::env::set_var("PATH", old_path);
         a.unwrap();
         d.unwrap();
+        o.unwrap();
+        i.unwrap();
 
         let calls = fs::read_to_string(&log).unwrap();
         for line in calls.lines().filter(|l| l.starts_with("ARGV:")) {
@@ -357,10 +388,52 @@ mod tests {
             .filter(|e| e.file_name().to_string_lossy().starts_with("sentris-"))
             .filter(|e| {
                 fs::read_to_string(e.path())
-                    .map(|c| c == secret)
+                    .map(|c| c.contains(secret))
                     .unwrap_or(false)
             })
             .count();
         assert_eq!(leftovers, 0);
+    }
+
+    #[test]
+    fn fetch_secret_round_trip_all_backends() {
+        let dir = tempfile::tempdir().unwrap();
+        let env_b = EnvFileBackend::with_base_dir(dir.path());
+        env_b.inject_secret("K_ENV", "val_env_1", false).unwrap();
+        assert_eq!(env_b.fetch_secret("K_ENV").unwrap(), "val_env_1");
+
+        let vault_b = VaultBackend::new()
+            .with_mock(true)
+            .with_mock_ledger_path(dir.path().join("vault.json"));
+        vault_b
+            .inject_secret("K_VAULT", "val_vault_2", false)
+            .unwrap();
+        assert_eq!(vault_b.fetch_secret("K_VAULT").unwrap(), "val_vault_2");
+
+        let aws_b = AwsSecretsManagerBackend::new()
+            .with_mock(true)
+            .with_mock_ledger_path(dir.path().join("aws.json"));
+        aws_b.inject_secret("K_AWS", "val_aws_3", false).unwrap();
+        assert_eq!(aws_b.fetch_secret("K_AWS").unwrap(), "val_aws_3");
+
+        let doppler_b = DopplerBackend::new()
+            .with_mock(true)
+            .with_mock_ledger_path(dir.path().join("doppler.json"));
+        doppler_b
+            .inject_secret("K_DOP", "val_dop_4", false)
+            .unwrap();
+        assert_eq!(doppler_b.fetch_secret("K_DOP").unwrap(), "val_dop_4");
+
+        let op_b = OnePasswordBackend::new()
+            .with_mock(true)
+            .with_mock_ledger_path(dir.path().join("op.json"));
+        op_b.inject_secret("K_OP", "val_op_5", false).unwrap();
+        assert_eq!(op_b.fetch_secret("K_OP").unwrap(), "val_op_5");
+
+        let inf_b = InfisicalBackend::new()
+            .with_mock(true)
+            .with_mock_ledger_path(dir.path().join("inf.json"));
+        inf_b.inject_secret("K_INF", "val_inf_6", false).unwrap();
+        assert_eq!(inf_b.fetch_secret("K_INF").unwrap(), "val_inf_6");
     }
 }

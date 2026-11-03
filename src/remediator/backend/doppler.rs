@@ -1,6 +1,6 @@
 use crate::error::SentrisError;
 use crate::remediator::backend::{
-    mock_notice, mock_requested, record_mock, run_with_stdin, SecretStoreBackend,
+    mock_notice, mock_requested, read_mock_entry, record_mock, run_with_stdin, SecretStoreBackend,
 };
 use std::path::PathBuf;
 
@@ -138,6 +138,54 @@ impl SecretStoreBackend for DopplerBackend {
 
     fn is_mock(&self) -> bool {
         self.mock
+    }
+
+    fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
+        if self.mock {
+            let entry = read_mock_entry(
+                self.mock_ledger_path.as_deref(),
+                "doppler_mock.json",
+                key,
+            )?;
+            return entry["secrets"][key]
+                .as_str()
+                .map(ToOwned::to_owned)
+                .ok_or_else(|| {
+                    SentrisError::Scan(format!(
+                        "Secret '{key}' missing from Doppler mock ledger entry"
+                    ))
+                });
+        }
+
+        let output = std::process::Command::new("doppler")
+            .args([
+                "secrets",
+                "get",
+                key,
+                "--plain",
+                "--project",
+                &self.project,
+                "--config",
+                &self.config,
+            ])
+            .output();
+
+        match output {
+            Ok(out) if out.status.success() => {
+                let val = String::from_utf8_lossy(&out.stdout);
+                Ok(val.trim_end_matches(&['\r', '\n'][..]).to_string())
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr);
+                Err(SentrisError::Scan(format!(
+                    "doppler secrets get failed for '{key}': {}",
+                    stderr.trim()
+                )))
+            }
+            Err(e) => Err(SentrisError::Scan(format!(
+                "Failed to spawn 'doppler' CLI to fetch '{key}': {e}"
+            ))),
+        }
     }
 }
 

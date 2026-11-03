@@ -30,7 +30,7 @@ export const site = {
     slowestRamMb: slowestRun.peak_rss_mb,
     compared: benchmarkData.results.map((r) => r.name),
   },
-  backends: ['.env', 'Vault', 'AWS Secrets Manager', 'Doppler'],
+  backends: ['.env', 'Vault', 'AWS Secrets Manager', 'Doppler', '1Password', 'Infisical'],
 } as const
 
 export const loginCommand = (server: string, key = '<your-key>') =>
