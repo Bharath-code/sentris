@@ -51,27 +51,35 @@ pub(super) fn verify_findings_live(cli: &Cli, scanner: &Scanner, report: &ScanRe
             .cyan()
             .bold()
     );
-    for f in &report.findings {
-        let env_tier = match f.context_kind() {
-            ContextKind::Production => "Production Code",
-            ContextKind::TestFixture => "Test/Fixture",
-        };
-        let place = format!("{}:{}", f.file_path.bold(), f.line_number);
-        match registry.find_verifier(&f.rule_id) {
-            Some(verifier) => {
-                let status = live_status(scanner, f, verifier);
-                println!(
+    use rayon::prelude::*;
+    let lines: Vec<String> = report
+        .findings
+        .par_iter()
+        .map(|f| {
+            let env_tier = match f.context_kind() {
+                ContextKind::Production => "Production Code",
+                ContextKind::TestFixture => "Test/Fixture",
+            };
+            let place = format!("{}:{}", f.file_path.bold(), f.line_number);
+            match registry.find_verifier(&f.rule_id) {
+                Some(verifier) => {
+                    let status = live_status(scanner, f, verifier);
+                    format!(
+                        "   • {place} ({} • {env_tier}): {}",
+                        verifier.provider_name().cyan(),
+                        describe_status(status)
+                    )
+                }
+                None => format!(
                     "   • {place} ({} • {env_tier}): {}",
-                    verifier.provider_name().cyan(),
-                    describe_status(status)
-                );
+                    f.rule_id.cyan(),
+                    "Pattern-Verified (High Entropy)".yellow()
+                ),
             }
-            None => println!(
-                "   • {place} ({} • {env_tier}): {}",
-                f.rule_id.cyan(),
-                "Pattern-Verified (High Entropy)".yellow()
-            ),
-        }
+        })
+        .collect();
+    for line in lines {
+        println!("{line}");
     }
     println!();
 }

@@ -68,15 +68,24 @@ where
     if !inv.supported {
         return Ok(inv);
     }
-    let exposure = window::first_exposure(repo, &finding.fingerprint)?;
     // Commit dates are attacker-controlled metadata: never let them narrow the query. They only label events as before/after exposure.
     let since = now.saturating_sub(LOOKBACK_SECS);
+    let fingerprint = &finding.fingerprint;
+    let (exposure_res, usage_res) = std::thread::scope(|s| {
+        let exp_handle = s.spawn(move || window::first_exposure(repo, fingerprint));
+        let usage_res = usage(secret, since);
+        let exposure_res = exp_handle
+            .join()
+            .unwrap_or_else(|_| Err(SentrisError::Scan("first_exposure thread panicked".into())));
+        (exposure_res, usage_res)
+    });
+    let exposure = exposure_res?;
     inv.exposure_at = exposure
         .start
         .as_ref()
         .map(|s| s.author_time)
         .filter(|t| *t <= now);
-    inv.usage = Some(usage(secret, since)?);
+    inv.usage = Some(usage_res?);
     inv.exposure = Some(exposure);
     inv.since = Some(since);
     Ok(inv)

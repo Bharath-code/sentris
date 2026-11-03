@@ -79,71 +79,117 @@ impl AwsProbe {
             });
         }
 
-        let mut arns = self.list(
-            &[
-                "iam",
-                "list-attached-user-policies",
-                "--user-name",
-                &user,
-                "--output",
-                "json",
-            ],
-            "AttachedPolicies",
-            "PolicyArn",
-        )?;
-        let mut inline = self
-            .list(
-                &[
-                    "iam",
-                    "list-user-policies",
-                    "--user-name",
-                    &user,
-                    "--output",
-                    "json",
-                ],
-                "PolicyNames",
-                "",
-            )?
-            .len();
-        let groups = self.list(
-            &[
-                "iam",
-                "list-groups-for-user",
-                "--user-name",
-                &user,
-                "--output",
-                "json",
-            ],
-            "Groups",
-            "GroupName",
-        )?;
-        for g in &groups {
-            arns.extend(self.list(
-                &[
-                    "iam",
-                    "list-attached-group-policies",
-                    "--group-name",
-                    g,
-                    "--output",
-                    "json",
-                ],
-                "AttachedPolicies",
-                "PolicyArn",
-            )?);
-            inline += self
-                .list(
+        let (arns_res, inline_res, groups_res) = std::thread::scope(|s| {
+            let h_arns = s.spawn(|| {
+                self.list(
                     &[
                         "iam",
-                        "list-group-policies",
-                        "--group-name",
-                        g,
+                        "list-attached-user-policies",
+                        "--user-name",
+                        &user,
+                        "--output",
+                        "json",
+                    ],
+                    "AttachedPolicies",
+                    "PolicyArn",
+                )
+            });
+            let h_inline = s.spawn(|| {
+                self.list(
+                    &[
+                        "iam",
+                        "list-user-policies",
+                        "--user-name",
+                        &user,
                         "--output",
                         "json",
                     ],
                     "PolicyNames",
                     "",
-                )?
-                .len();
+                )
+            });
+            let groups_res = self.list(
+                &[
+                    "iam",
+                    "list-groups-for-user",
+                    "--user-name",
+                    &user,
+                    "--output",
+                    "json",
+                ],
+                "Groups",
+                "GroupName",
+            );
+            let arns_res = h_arns
+                .join()
+                .unwrap_or_else(|_| Err(SentrisError::Scan("IAM query thread panicked".into())));
+            let inline_res = h_inline
+                .join()
+                .unwrap_or_else(|_| Err(SentrisError::Scan("IAM query thread panicked".into())));
+            (arns_res, inline_res, groups_res)
+        });
+
+        let mut arns = arns_res?;
+        let mut inline = inline_res?.len();
+        let groups = groups_res?;
+
+        if !groups.is_empty() {
+            let group_results: Vec<(
+                Result<Vec<String>, SentrisError>,
+                Result<Vec<String>, SentrisError>,
+            )> = std::thread::scope(|s| {
+                let handles: Vec<_> = groups
+                    .iter()
+                    .map(|g| {
+                        let h_att = s.spawn(move || {
+                            self.list(
+                                &[
+                                    "iam",
+                                    "list-attached-group-policies",
+                                    "--group-name",
+                                    g,
+                                    "--output",
+                                    "json",
+                                ],
+                                "AttachedPolicies",
+                                "PolicyArn",
+                            )
+                        });
+                        let h_inl = s.spawn(move || {
+                            self.list(
+                                &[
+                                    "iam",
+                                    "list-group-policies",
+                                    "--group-name",
+                                    g,
+                                    "--output",
+                                    "json",
+                                ],
+                                "PolicyNames",
+                                "",
+                            )
+                        });
+                        (h_att, h_inl)
+                    })
+                    .collect();
+                handles
+                    .into_iter()
+                    .map(|(h_att, h_inl)| {
+                        let att = h_att.join().unwrap_or_else(|_| {
+                            Err(SentrisError::Scan("IAM group thread panicked".into()))
+                        });
+                        let inl = h_inl.join().unwrap_or_else(|_| {
+                            Err(SentrisError::Scan("IAM group thread panicked".into()))
+                        });
+                        (att, inl)
+                    })
+                    .collect()
+            });
+
+            for (att_res, inl_res) in group_results {
+                arns.extend(att_res?);
+                inline += inl_res?.len();
+            }
         }
         Ok(Exposure {
             provider: PROVIDER.to_string(),

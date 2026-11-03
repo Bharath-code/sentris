@@ -18,25 +18,57 @@ fn is_safe_ignore(pattern: &str) -> bool {
     !(p.is_empty() || matches!(p, "." | ".." | "*" | "**"))
 }
 
+/// Zero-allocation component-aware match against an already trimmed pattern (`pat`) and normalized path (`norm`).
+fn matches_trimmed_component(norm: &str, pat: &str) -> bool {
+    if norm == pat {
+        return true;
+    }
+    if norm
+        .strip_prefix(pat)
+        .is_some_and(|rest| rest.starts_with('/'))
+    {
+        return true;
+    }
+    if norm
+        .strip_suffix(pat)
+        .is_some_and(|pre| pre.ends_with('/'))
+    {
+        return true;
+    }
+    let bytes = norm.as_bytes();
+    let mut start = 0;
+    while let Some(rel) = norm[start..].find(pat) {
+        let pos = start + rel;
+        let end = pos + pat.len();
+        if pos > 0 && bytes[pos - 1] == b'/' && bytes.get(end) == Some(&b'/') {
+            return true;
+        }
+        start = pos + 1;
+    }
+    false
+}
+
 /// Component-aware match: `vendor` hides `a/vendor/x` but not `my-vendor-notes.txt`.
+#[cfg(test)]
 fn path_matches_ignore(path: &str, pattern: &str) -> bool {
     let pat = pattern.trim().trim_matches('/');
-    if !is_safe_ignore(pattern) {
+    if pat.is_empty() || matches!(pat, "." | ".." | "*" | "**") {
         return false;
     }
-    let norm = path.replace('\\', "/");
+    let norm: std::borrow::Cow<'_, str> = if path.contains('\\') {
+        std::borrow::Cow::Owned(path.replace('\\', "/"))
+    } else {
+        std::borrow::Cow::Borrowed(path)
+    };
     let norm = norm.trim_start_matches("./");
-    norm == pat
-        || norm.starts_with(&format!("{pat}/"))
-        || norm.contains(&format!("/{pat}/"))
-        || norm.ends_with(&format!("/{pat}"))
+    matches_trimmed_component(norm, pat)
 }
 
 pub struct Scanner {
     detector: DetectorEngine,
     config: Option<Config>,
-    /// Secrets of findings imported from another scanner's report, by fingerprint (see `crate::import`).
-    imported: std::collections::HashMap<String, String>,
+    /// Secrets of findings imported from another scanner's report, indexed in a flat array (see `crate::import`).
+    imported: crate::import::ImportedSecrets,
 }
 
 impl Scanner {
@@ -81,8 +113,8 @@ impl Scanner {
     }
 
     /// Registers the secrets of findings imported from a Betterleaks/Gitleaks report so they can be probed and remediated.
-    pub fn use_imported_secrets(&mut self, secrets: std::collections::HashMap<String, String>) {
-        self.imported = secrets;
+    pub fn use_imported_secrets(&mut self, secrets: impl Into<crate::import::ImportedSecrets>) {
+        self.imported = secrets.into();
     }
 
     /// Extracts the raw secret token from a line using the compiled rule's regex capture
@@ -95,7 +127,7 @@ impl Scanner {
     ) -> Result<String, SentrisError> {
         if let Some(secret) = self.imported.get(&finding.fingerprint) {
             return if crate::import::secret_at_line(content, finding.line_number, secret) {
-                Ok(secret.clone())
+                Ok(secret.to_string())
             } else {
                 Err(SentrisError::Scan(format!(
                     "Imported secret is no longer on line {} of {} (file changed since the scan?); refusing to guess",
@@ -170,23 +202,76 @@ impl Scanner {
             .map(|c| c.scanner.max_file_size_mb * 1024 * 1024)
             .unwrap_or(10 * 1024 * 1024);
 
+        let ignore_patterns: Vec<&str> = self
+            .config
+            .as_ref()
+            .map(|cfg| {
+                cfg.scanner
+                    .ignore_paths
+                    .iter()
+                    .map(|p| p.trim().trim_matches('/'))
+                    .filter(|&pat| !(pat.is_empty() || matches!(pat, "." | ".." | "*" | "**")))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let aggregated_findings: Mutex<Vec<Finding>> = Mutex::new(Vec::new());
+
+        struct WorkerFlush<'a> {
+            findings: Vec<Finding>,
+            scanned: usize,
+            ignored: usize,
+            bytes: u64,
+            aggregated_findings: &'a Mutex<Vec<Finding>>,
+            total_files_scanned: &'a AtomicUsize,
+            files_ignored: &'a AtomicUsize,
+            total_bytes_scanned: &'a AtomicU64,
+        }
+
+        impl Drop for WorkerFlush<'_> {
+            fn drop(&mut self) {
+                if self.scanned != 0 {
+                    self.total_files_scanned
+                        .fetch_add(self.scanned, Ordering::Relaxed);
+                }
+                if self.ignored != 0 {
+                    self.files_ignored
+                        .fetch_add(self.ignored, Ordering::Relaxed);
+                }
+                if self.bytes != 0 {
+                    self.total_bytes_scanned
+                        .fetch_add(self.bytes, Ordering::Relaxed);
+                }
+                if !self.findings.is_empty() {
+                    if let Ok(mut guard) = self.aggregated_findings.lock() {
+                        guard.append(&mut self.findings);
+                    }
+                }
+            }
+        }
 
         // Lock-free work-stealing parallel directory traversal & file scanning
         builder.build_parallel().run(|| {
             let detector = &self.detector;
-            let config = &self.config;
+            let ignore_patterns = &ignore_patterns;
             let root = path;
-            let files_ignored = &files_ignored;
-            let total_files_scanned = &total_files_scanned;
-            let total_bytes_scanned = &total_bytes_scanned;
-            let aggregated_findings = &aggregated_findings;
+            let mut buffer: Vec<u8> = Vec::with_capacity(64 * 1024);
+            let mut worker = WorkerFlush {
+                findings: Vec::new(),
+                scanned: 0,
+                ignored: 0,
+                bytes: 0,
+                aggregated_findings: &aggregated_findings,
+                total_files_scanned: &total_files_scanned,
+                files_ignored: &files_ignored,
+                total_bytes_scanned: &total_bytes_scanned,
+            };
 
             Box::new(move |result| {
                 let entry = match result {
                     Ok(e) => e,
                     Err(_) => {
-                        files_ignored.fetch_add(1, Ordering::Relaxed);
+                        worker.ignored += 1;
                         return WalkState::Continue;
                     }
                 };
@@ -202,7 +287,7 @@ impl Scanner {
                 if rel.components().any(|c| c.as_os_str() == ".git")
                     || entry.file_name() == ".sentris-baseline.json"
                 {
-                    files_ignored.fetch_add(1, Ordering::Relaxed);
+                    worker.ignored += 1;
                     return WalkState::Skip;
                 }
 
@@ -213,15 +298,19 @@ impl Scanner {
                 let file_path = entry.path();
                 let path_str = file_path.to_string_lossy();
 
-                // Check custom ignore_paths from config
-                if let Some(cfg) = config {
-                    if cfg
-                        .scanner
-                        .ignore_paths
+                // Check custom ignore_paths from config using pre-trimmed patterns without heap allocations
+                if !ignore_patterns.is_empty() {
+                    let norm: std::borrow::Cow<'_, str> = if path_str.contains('\\') {
+                        std::borrow::Cow::Owned(path_str.replace('\\', "/"))
+                    } else {
+                        std::borrow::Cow::Borrowed(&path_str)
+                    };
+                    let norm = norm.trim_start_matches("./");
+                    if ignore_patterns
                         .iter()
-                        .any(|p| path_matches_ignore(&path_str, p))
+                        .any(|&pat| matches_trimmed_component(norm, pat))
                     {
-                        files_ignored.fetch_add(1, Ordering::Relaxed);
+                        worker.ignored += 1;
                         return WalkState::Continue;
                     }
                 }
@@ -232,14 +321,17 @@ impl Scanner {
                 };
 
                 // Skip oversized files exceeding max_file_bytes to protect memory and CPU
+                let mut file_len = 0usize;
                 if let Ok(meta) = file.metadata() {
                     if meta.len() > max_file_bytes {
-                        files_ignored.fetch_add(1, Ordering::Relaxed);
+                        worker.ignored += 1;
                         return WalkState::Continue;
                     }
+                    file_len = meta.len() as usize;
                 }
 
-                let mut buffer = Vec::new();
+                buffer.clear();
+                buffer.reserve(file_len);
                 if file.read_to_end(&mut buffer).is_err() {
                     return WalkState::Continue;
                 }
@@ -247,7 +339,7 @@ impl Scanner {
                 // Check for null bytes in initial 512 bytes (binary file detection)
                 let check_len = buffer.len().min(512);
                 if buffer[..check_len].contains(&0) {
-                    files_ignored.fetch_add(1, Ordering::Relaxed);
+                    worker.ignored += 1;
                     return WalkState::Continue;
                 }
 
@@ -256,14 +348,12 @@ impl Scanner {
                     Err(_) => return WalkState::Continue,
                 };
 
-                total_files_scanned.fetch_add(1, Ordering::Relaxed);
-                total_bytes_scanned.fetch_add(buffer.len() as u64, Ordering::Relaxed);
+                worker.scanned += 1;
+                worker.bytes += buffer.len() as u64;
 
                 let file_findings = detector.scan_text(content, &path_str);
                 if !file_findings.is_empty() {
-                    if let Ok(mut guard) = aggregated_findings.lock() {
-                        guard.extend(file_findings);
-                    }
+                    worker.findings.extend(file_findings);
                 }
 
                 WalkState::Continue

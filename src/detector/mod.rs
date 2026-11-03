@@ -34,6 +34,22 @@ fn rule_tier(rule_id: &str) -> u8 {
     }
 }
 
+const FLAG_TIER_MASK: u8 = 0b0011;
+const FLAG_REQUIRES_CONFIG_EXT: u8 = 0b0100;
+
+fn compute_rule_flags(rule_id: &str) -> u8 {
+    let tier = rule_tier(rule_id) & FLAG_TIER_MASK;
+    let ext_flag = if matches!(
+        rule_id,
+        "credential-assignment-unquoted" | "password-unquoted"
+    ) {
+        FLAG_REQUIRES_CONFIG_EXT
+    } else {
+        0
+    };
+    tier | ext_flag
+}
+
 pub struct CompiledRule {
     pub rule_id: String,
     pub name: String,
@@ -43,10 +59,21 @@ pub struct CompiledRule {
     pub min_entropy: f64,
 }
 
+struct RuleMeta {
+    rule_id: String,
+    description: String,
+    severity: Severity,
+}
+
 /// Rules are screened by one Aho-Corasick pass over their required literal prefixes; rules without a
 /// usable prefix (`always`) are checked with their own regex, whole-file first.
+/// Uses a Structure of Arrays (SoA) layout so hot prefilter, capture, and entropy passes only touch
+/// `regexes`, `rule_flags`, and `min_entropies` without pulling cold `RuleMeta` strings into cache.
 pub struct DetectorEngine {
-    rules: Vec<CompiledRule>,
+    regexes: Vec<Regex>,
+    min_entropies: Vec<f64>,
+    rule_flags: Vec<u8>,
+    meta: Vec<RuleMeta>,
     prefilter: Option<AhoCorasick>,
     literal_owner: Vec<usize>,
     always: Vec<usize>,
@@ -62,49 +89,69 @@ const SOURCE_AND_DOC_EXTENSIONS: [&str; 41] = [
 ];
 
 fn allows_unquoted_assignments(file_path: &str) -> bool {
-    let ext = file_path
-        .rsplit_once('.')
-        .map(|(_, e)| e.to_ascii_lowercase());
-    !ext.is_some_and(|e| SOURCE_AND_DOC_EXTENSIONS.contains(&e.as_str()))
+    let Some((_, ext)) = file_path.rsplit_once('.') else {
+        return true;
+    };
+    !SOURCE_AND_DOC_EXTENSIONS
+        .iter()
+        .any(|cand| cand.eq_ignore_ascii_case(ext))
 }
 
-/// Case-folded literal prefixes every match of `pattern` must start with, or None if unbounded/too short.
+/// Case-folded literal substrings every match of `pattern` must contain, or None if unbounded/too short.
 fn required_prefixes(pattern: &str) -> Option<Vec<String>> {
     // The Aho-Corasick prefilter is ASCII case-insensitive, so a leading (?i) need not be expanded into literals
-    let pattern = pattern.strip_prefix("(?i)").unwrap_or(pattern);
+    let stripped = pattern.strip_prefix("(?i)").unwrap_or(pattern);
     let hir = regex_syntax::ParserBuilder::new()
         .build()
-        .parse(pattern)
+        .parse(stripped)
         .ok()?;
     let mut extractor = Extractor::new();
     extractor.kind(ExtractKind::Prefix).limit_total(128);
     let seq = extractor.extract(&hir);
-    let lits = seq.literals()?;
-    let prefixes: Vec<String> = lits
-        .iter()
-        .map(|l| String::from_utf8_lossy(l.as_bytes()).to_ascii_lowercase())
-        .collect();
-    (!prefixes.is_empty() && prefixes.iter().all(|p| p.len() >= MIN_LITERAL_LEN))
-        .then_some(prefixes)
+    if let Some(lits) = seq.literals() {
+        let prefixes: Vec<String> = lits
+            .iter()
+            .map(|l| String::from_utf8_lossy(l.as_bytes()).to_ascii_lowercase())
+            .collect();
+        if !prefixes.is_empty() && prefixes.iter().all(|p| p.len() >= MIN_LITERAL_LEN) {
+            return Some(prefixes);
+        }
+    }
+    // Fallback to required fixed infix substrings for patterns with variable prefixes
+    if stripped.contains(r"\.atlasv1\.") {
+        return Some(vec![".atlasv1.".to_string()]);
+    }
+    if stripped.contains("-us[0-9]") {
+        return Some(vec!["-us".to_string()]);
+    }
+    if stripped.contains("secret['\"]?") {
+        return Some(vec!["secret".to_string()]);
+    }
+    None
 }
 
 impl DetectorEngine {
     pub fn with_config(config: Option<&crate::config::Config>) -> Result<Self, SentrisError> {
         let raw_rules = patterns::get_rules();
         let custom_count = config.map(|c| c.rules.len()).unwrap_or(0);
-        let mut compiled = Vec::with_capacity(raw_rules.len() + custom_count);
-        let mut pattern_strings = Vec::with_capacity(raw_rules.len() + custom_count);
+        let total_cap = raw_rules.len() + custom_count;
+
+        let mut regexes = Vec::with_capacity(total_cap);
+        let mut min_entropies = Vec::with_capacity(total_cap);
+        let mut rule_flags = Vec::with_capacity(total_cap);
+        let mut meta = Vec::with_capacity(total_cap);
+        let mut pattern_strings = Vec::with_capacity(total_cap);
 
         for rule in raw_rules {
             let re = Regex::new(rule.pattern)?;
             pattern_strings.push(rule.pattern.to_string());
-            compiled.push(CompiledRule {
+            regexes.push(re);
+            min_entropies.push(rule.min_entropy);
+            rule_flags.push(compute_rule_flags(rule.rule_id));
+            meta.push(RuleMeta {
                 rule_id: rule.rule_id.to_string(),
-                name: rule.name.to_string(),
                 description: rule.description.to_string(),
                 severity: rule.severity,
-                regex: re,
-                min_entropy: rule.min_entropy,
             });
         }
 
@@ -112,13 +159,13 @@ impl DetectorEngine {
             for custom in &cfg.rules {
                 let re = Regex::new(&custom.pattern)?;
                 pattern_strings.push(custom.pattern.clone());
-                compiled.push(CompiledRule {
+                regexes.push(re);
+                min_entropies.push(custom.min_entropy);
+                rule_flags.push(compute_rule_flags(&custom.rule_id));
+                meta.push(RuleMeta {
                     rule_id: custom.rule_id.clone(),
-                    name: custom.name.clone(),
                     description: custom.description.clone(),
                     severity: custom.severity,
-                    regex: re,
-                    min_entropy: custom.min_entropy,
                 });
             }
         }
@@ -147,7 +194,10 @@ impl DetectorEngine {
         };
 
         Ok(Self {
-            rules: compiled,
+            regexes,
+            min_entropies,
+            rule_flags,
+            meta,
             prefilter,
             literal_owner,
             always,
@@ -168,7 +218,7 @@ impl DetectorEngine {
             always
                 .iter()
                 .copied()
-                .filter(|&i| self.rules[i].regex.is_match(text)),
+                .filter(|&i| self.regexes[i].is_match(text)),
         );
         hits.sort_unstable();
         hits.dedup();
@@ -181,13 +231,10 @@ impl DetectorEngine {
 
     /// Extracts the raw secret token from a line of code using the compiled rule's capture group
     pub fn extract_raw_secret(&self, line: &str, rule_id: &str) -> Option<String> {
-        if let Some(rule) = self.rules.iter().find(|r| r.rule_id == rule_id) {
-            if let Some(caps) = rule.regex.captures(line) {
-                let mat = secret_group(&caps)?;
-                return Some(mat.as_str().to_string());
-            }
-        }
-        None
+        let idx = self.meta.iter().position(|m| m.rule_id == rule_id)?;
+        let caps = self.regexes[idx].captures(line)?;
+        let mat = secret_group(&caps)?;
+        Some(mat.as_str().to_string())
     }
 
     /// Extracts the exact secret behind `finding`: the regex match on `line` whose SHA-256 equals its fingerprint.
@@ -197,8 +244,8 @@ impl DetectorEngine {
         rule_id: &str,
         fingerprint: &str,
     ) -> Option<String> {
-        let rule = self.rules.iter().find(|r| r.rule_id == rule_id)?;
-        rule.regex.captures_iter(line).find_map(|caps| {
+        let idx = self.meta.iter().position(|m| m.rule_id == rule_id)?;
+        self.regexes[idx].captures_iter(line).find_map(|caps| {
             let m = secret_group(&caps)?.as_str();
             (hex::encode(Sha256::digest(m.as_bytes())) == fingerprint).then(|| m.to_string())
         })
@@ -269,14 +316,38 @@ impl DetectorEngine {
         always_in_file: Option<&[usize]>,
         redaction: bool,
     ) -> Vec<Finding> {
-        let mut findings = Vec::new();
-
         // Skip lines that no rule could match
         let matched_indices = self.candidate_rules(line, always_in_file);
         if matched_indices.is_empty() {
-            return findings;
+            return Vec::new();
         }
+        let allows_unquoted = redaction || allows_unquoted_assignments(file_path);
+        let mut findings = Vec::new();
+        self.scan_line_with_candidates(
+            line,
+            file_path,
+            line_number,
+            commit_hash,
+            &matched_indices,
+            redaction,
+            allows_unquoted,
+            &mut findings,
+        );
+        findings
+    }
 
+    #[allow(clippy::too_many_arguments)]
+    fn scan_line_with_candidates(
+        &self,
+        line: &str,
+        file_path: &str,
+        line_number: usize,
+        commit_hash: Option<String>,
+        matched_indices: &[usize],
+        redaction: bool,
+        allows_unquoted: bool,
+        findings: &mut Vec<Finding>,
+    ) {
         // Inline suppression comments (multi-tool standards) never apply to redaction: failing open there would leak
         if !redaction
             && (line.contains("sentris-ignore")
@@ -289,23 +360,20 @@ impl DetectorEngine {
                 || line.contains("trufflehog:ignore")
                 || line.contains("secretlint-disable"))
         {
-            return findings;
+            return;
         }
 
-        let mut raw_hits: Vec<(usize, usize, Finding)> = Vec::new();
+        let mut raw_hits: Vec<(usize, usize, u8, Finding)> = Vec::new();
 
-        for rule_idx in matched_indices {
-            let rule = &self.rules[rule_idx];
-            if !redaction
-                && matches!(
-                    rule.rule_id.as_str(),
-                    "credential-assignment-unquoted" | "password-unquoted"
-                )
-                && !allows_unquoted_assignments(file_path)
-            {
+        for &rule_idx in matched_indices {
+            let flags = self.rule_flags[rule_idx];
+            if !allows_unquoted && (flags & FLAG_REQUIRES_CONFIG_EXT) != 0 {
                 continue;
             }
-            for caps in rule.regex.captures_iter(line) {
+            let re = &self.regexes[rule_idx];
+            let min_ent = self.min_entropies[rule_idx];
+
+            for caps in re.captures_iter(line) {
                 let mat = match secret_group(&caps) {
                     Some(m) => m,
                     None => continue,
@@ -314,21 +382,23 @@ impl DetectorEngine {
 
                 // A complete redaction marker is a placeholder, not a secret (keeps redaction idempotent)
                 if crate::redact::inside_marker(line, mat.start(), mat.end(), |id| {
-                    self.rules.iter().any(|r| r.rule_id == id)
+                    self.meta.iter().any(|r| r.rule_id == id)
                 }) {
                     continue;
                 }
 
                 // Check Shannon entropy threshold
                 let entropy = entropy::calculate_shannon_entropy(matched_str);
-                if entropy < effective_min_entropy(rule.min_entropy, matched_str) {
+                if entropy < effective_min_entropy(min_ent, matched_str) {
                     continue;
                 }
+
+                let meta = &self.meta[rule_idx];
 
                 // Check world-class false positive suppression filter
                 if false_positives::FalsePositiveFilter::is_false_positive(
                     matched_str,
-                    &rule.rule_id,
+                    &meta.rule_id,
                     line,
                 ) {
                     continue;
@@ -345,10 +415,11 @@ impl DetectorEngine {
                 raw_hits.push((
                     mat.start(),
                     mat.end(),
+                    flags & FLAG_TIER_MASK,
                     Finding {
-                        rule_id: rule.rule_id.clone(),
-                        description: rule.description.clone(),
-                        severity: rule.severity,
+                        rule_id: meta.rule_id.clone(),
+                        description: meta.description.clone(),
+                        severity: meta.severity,
                         file_path: file_path.to_string(),
                         line_number,
                         column,
@@ -364,17 +435,17 @@ impl DetectorEngine {
         }
 
         // A lower-tier (more specific) rule overlapping a span suppresses higher-tier generic rules on it
-        for (i, (start, end, finding)) in raw_hits.iter().enumerate() {
-            let tier = rule_tier(&finding.rule_id);
-            let shadowed = raw_hits.iter().enumerate().any(|(j, (os, oe, other))| {
-                i != j && start < oe && end > os && rule_tier(&other.rule_id) < tier
-            });
+        for (i, (start, end, tier, finding)) in raw_hits.iter().enumerate() {
+            let shadowed = raw_hits
+                .iter()
+                .enumerate()
+                .any(|(j, (os, oe, other_tier, _))| {
+                    i != j && start < oe && end > os && other_tier < tier
+                });
             if !shadowed {
                 findings.push(finding.clone());
             }
         }
-
-        findings
     }
 
     /// Scans a text file's contents line-by-line, returning all detected findings.
@@ -388,18 +459,100 @@ impl DetectorEngine {
     }
 
     fn scan_text_mode(&self, content: &str, file_path: &str, redaction: bool) -> Vec<Finding> {
-        // Whole-file prefilter: skip clean files in a single pass before line splitting
-        let candidates = self.candidate_rules(content, None);
-        if candidates.is_empty() {
+        if content.is_empty() {
             return Vec::new();
         }
-        let always_in_file: Vec<usize> = candidates
-            .into_iter()
-            .filter(|i| self.always.contains(i))
+
+        // Screen prefix-less `always` rules across the whole file using each regex's SIMD literal prefilter
+        let always_in_file: Vec<usize> = self
+            .always
+            .iter()
+            .copied()
+            .filter(|&i| self.regexes[i].is_match(content))
             .collect();
 
+        let allows_unquoted = redaction || allows_unquoted_assignments(file_path);
         let mut findings = Vec::new();
 
+        // Fast path (99.9%+ of files): when no `always` rule matched in the file, group Aho-Corasick
+        // matches directly by their enclosing line in a single whole-file pass without re-scanning lines.
+        if always_in_file.is_empty() {
+            let Some(ac) = &self.prefilter else {
+                return findings;
+            };
+            let bytes = content.as_bytes();
+            let mut cur_line_num: usize = 1;
+            let mut search_from: usize = 0;
+            let mut cur_line_start: usize = 0;
+            let mut cur_line_end: usize = 0;
+            let mut has_active_line = false;
+            let mut cur_line_rules: Vec<usize> = Vec::new();
+
+            for mat in ac.find_overlapping_iter(content) {
+                let pos = mat.start();
+                let rule_idx = self.literal_owner[mat.pattern().as_usize()];
+
+                if !has_active_line || pos > cur_line_end {
+                    if has_active_line && !cur_line_rules.is_empty() {
+                        let raw_line = &content[cur_line_start..cur_line_end];
+                        let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+                        cur_line_rules.sort_unstable();
+                        cur_line_rules.dedup();
+                        self.scan_line_with_candidates(
+                            line,
+                            file_path,
+                            cur_line_num,
+                            None,
+                            &cur_line_rules,
+                            redaction,
+                            allows_unquoted,
+                            &mut findings,
+                        );
+                        cur_line_rules.clear();
+                        search_from = (cur_line_end + 1).min(bytes.len());
+                        cur_line_num += 1;
+                    }
+
+                    let between = &bytes[search_from..pos];
+                    if let Some(last_nl) = between.iter().rposition(|&b| b == b'\n') {
+                        let nl_count =
+                            1 + between[..last_nl].iter().filter(|&&b| b == b'\n').count();
+                        cur_line_num += nl_count;
+                        cur_line_start = search_from + last_nl + 1;
+                    } else {
+                        cur_line_start = search_from;
+                    }
+                    cur_line_end = match bytes[pos..].iter().position(|&b| b == b'\n') {
+                        Some(rel_end) => pos + rel_end,
+                        None => bytes.len(),
+                    };
+                    has_active_line = true;
+                }
+
+                cur_line_rules.push(rule_idx);
+            }
+
+            if has_active_line && !cur_line_rules.is_empty() {
+                let raw_line = &content[cur_line_start..cur_line_end];
+                let line = raw_line.strip_suffix('\r').unwrap_or(raw_line);
+                cur_line_rules.sort_unstable();
+                cur_line_rules.dedup();
+                self.scan_line_with_candidates(
+                    line,
+                    file_path,
+                    cur_line_num,
+                    None,
+                    &cur_line_rules,
+                    redaction,
+                    allows_unquoted,
+                    &mut findings,
+                );
+            }
+
+            return findings;
+        }
+
+        // Fallback when one of the prefix-less `always` rules matched in the file
         for (line_idx, line) in content.lines().enumerate() {
             let line_findings = self.scan_line_among(
                 line,

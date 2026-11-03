@@ -141,7 +141,7 @@ fn tier_of(exposures: &std::collections::BTreeMap<String, Exposure>, f: &Finding
 
 /// Highest tier first, then rule, path and position so the order is stable. Does nothing unless probes ran: without `--probe` the output order must stay what it was.
 pub fn rank_findings(report: &mut ScanReport) {
-    if report.exposures.is_empty() {
+    if report.exposures.is_empty() || report.findings.len() <= 1 {
         return;
     }
     let ScanReport {
@@ -149,15 +149,24 @@ pub fn rank_findings(report: &mut ScanReport) {
         exposures,
         ..
     } = report;
-    findings.sort_by_cached_key(|f| {
-        (
-            std::cmp::Reverse(tier_of(exposures, f)),
-            f.rule_id.clone(),
-            f.file_path.clone(),
-            f.line_number,
-            f.column,
-        )
+    let tiers: Vec<RiskTier> = findings.iter().map(|f| tier_of(exposures, f)).collect();
+    let mut order: Vec<usize> = (0..findings.len()).collect();
+    order.sort_by(|&a, &b| {
+        tiers[b]
+            .cmp(&tiers[a])
+            .then_with(|| findings[a].rule_id.cmp(&findings[b].rule_id))
+            .then_with(|| findings[a].file_path.cmp(&findings[b].file_path))
+            .then_with(|| findings[a].line_number.cmp(&findings[b].line_number))
+            .then_with(|| findings[a].column.cmp(&findings[b].column))
     });
+    let mut sorted = Vec::with_capacity(findings.len());
+    let mut slots: Vec<Option<Finding>> = findings.drain(..).map(Some).collect();
+    for idx in order {
+        if let Some(f) = slots[idx].take() {
+            sorted.push(f);
+        }
+    }
+    *findings = sorted;
 }
 
 /// True when any finding sits at or above `threshold` (see `tier_of`).

@@ -342,43 +342,65 @@ impl LspServer {
         };
 
         let file_path = Self::uri_to_file_path(uri);
-        let findings = self.detector.scan_text(doc_text, file_path);
-        let lines: Vec<&str> = doc_text.lines().collect();
+        let range = params.get("range");
+        let start_line = range
+            .and_then(|r| r.get("start"))
+            .and_then(|s| s.get("line"))
+            .and_then(|v| v.as_u64())
+            .map(|l| l as usize);
+        let end_line = range
+            .and_then(|r| r.get("end"))
+            .and_then(|e| e.get("line"))
+            .and_then(|v| v.as_u64())
+            .map(|l| l as usize);
 
         let mut actions = Vec::new();
-        for f in findings {
-            let line_idx = f.line_number.saturating_sub(1);
-            if line_idx >= lines.len() {
-                continue;
-            }
-            let target_line = lines[line_idx];
-            let Some(raw_secret) = self.detector.extract_raw_secret(target_line, &f.rule_id) else {
-                continue;
-            };
-            let env_var = Remediator::env_var_name_for_rule(&f.rule_id);
-            let patched_line =
-                CodeReplacer::replace_secret_in_line(file_path, target_line, &raw_secret, env_var);
-
-            let mut changes = serde_json::Map::new();
-            changes.insert(
-                uri.to_string(),
-                json!([{
-                    "range": {
-                        "start": { "line": line_idx, "character": 0 },
-                        "end": { "line": line_idx, "character": target_line.encode_utf16().count() }
-                    },
-                    "newText": patched_line
-                }]),
-            );
-
-            actions.push(json!({
-                "title": format!("Sentris: Extract {} to {}", f.rule_id, env_var),
-                "kind": "quickfix",
-                "isPreferred": true,
-                "edit": {
-                    "changes": changes
+        for (line_idx, target_line) in doc_text.lines().enumerate() {
+            if let (Some(s), Some(e)) = (start_line, end_line) {
+                if line_idx < s {
+                    continue;
                 }
-            }));
+                if line_idx > e {
+                    break;
+                }
+            }
+            for f in self
+                .detector
+                .scan_single_line(target_line, file_path, line_idx + 1, None)
+            {
+                let Some(raw_secret) = self.detector.extract_raw_secret(target_line, &f.rule_id)
+                else {
+                    continue;
+                };
+                let env_var = Remediator::env_var_name_for_rule(&f.rule_id);
+                let patched_line = CodeReplacer::replace_secret_in_line(
+                    file_path,
+                    target_line,
+                    &raw_secret,
+                    env_var,
+                );
+
+                let mut changes = serde_json::Map::new();
+                changes.insert(
+                    uri.to_string(),
+                    json!([{
+                        "range": {
+                            "start": { "line": line_idx, "character": 0 },
+                            "end": { "line": line_idx, "character": target_line.encode_utf16().count() }
+                        },
+                        "newText": patched_line
+                    }]),
+                );
+
+                actions.push(json!({
+                    "title": format!("Sentris: Extract {} to {}", f.rule_id, env_var),
+                    "kind": "quickfix",
+                    "isPreferred": true,
+                    "edit": {
+                        "changes": changes
+                    }
+                }));
+            }
         }
 
         actions
