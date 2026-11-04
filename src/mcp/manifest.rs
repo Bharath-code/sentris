@@ -232,6 +232,7 @@ impl McpServer {
     /// Writes `.mcp.json`, `.agents/skills/sentris-security/SKILL.md`, and `.claude/settings.local.json`
     /// into `workspace_dir` so AI coding agents (Claude Code, Cursor, Antigravity, Windsurf) auto-discover
     /// Sentris and enforce the Pre/PostToolUse secret firewall.
+    #[allow(clippy::too_many_lines)]
     pub fn setup_workspace_for_agents(workspace_dir: &Path) -> Result<Vec<String>, SentrisError> {
         let mut written_files = Vec::new();
 
@@ -347,23 +348,23 @@ sentris team --json
         let claude_settings_path = claude_dir.join("settings.local.json");
         let hook_cfg: Value =
             serde_json::from_str(&crate::hook::config_snippet()).unwrap_or_else(|_| json!({}));
-        let merged_claude =
-            if let Ok(existing_raw) = std::fs::read_to_string(&claude_settings_path) {
-                if let Ok(mut existing_val) = serde_json::from_str::<Value>(&existing_raw) {
-                    if let (Some(obj), Some(hooks)) =
-                        (existing_val.as_object_mut(), hook_cfg.get("hooks"))
-                    {
-                        obj.insert("hooks".to_string(), hooks.clone());
-                        existing_val
-                    } else {
-                        hook_cfg
-                    }
+        let merged_claude = if let Ok(existing_raw) = std::fs::read_to_string(&claude_settings_path)
+        {
+            if let Ok(mut existing_val) = serde_json::from_str::<Value>(&existing_raw) {
+                if let (Some(obj), Some(hooks)) =
+                    (existing_val.as_object_mut(), hook_cfg.get("hooks"))
+                {
+                    obj.insert("hooks".to_string(), hooks.clone());
+                    existing_val
                 } else {
                     hook_cfg
                 }
             } else {
                 hook_cfg
-            };
+            }
+        } else {
+            hook_cfg
+        };
         std::fs::write(
             &claude_settings_path,
             serde_json::to_string_pretty(&merged_claude).unwrap_or_default(),

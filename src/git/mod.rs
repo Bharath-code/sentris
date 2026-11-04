@@ -373,7 +373,10 @@ fi
             .filter_map(|&file_path| {
                 // Retrieve staged content from git index: git show :<file_path>
                 let show_arg = format!(":{file_path}");
-                let out = Command::new("git").args(["show", &show_arg]).output().ok()?;
+                let out = Command::new("git")
+                    .args(["show", &show_arg])
+                    .output()
+                    .ok()?;
                 if out.status.success() {
                     let content = String::from_utf8_lossy(&out.stdout).into_owned();
                     Some((file_path.to_string(), content))
@@ -421,6 +424,105 @@ fi
             _ => Ok(None),
         }
     }
+
+    /// Resolves the owning team/users for `file_path` from `.github/CODEOWNERS`, `CODEOWNERS`, or `docs/CODEOWNERS`
+    /// (last matching rule wins, per GitHub/GitLab CODEOWNERS specification; answers OWASP NHI1 Ownership).
+    pub fn resolve_codeowners(repo_root: &std::path::Path, file_path: &str) -> Vec<String> {
+        const CANDIDATES: &[&str] = &[
+            ".github/CODEOWNERS",
+            "CODEOWNERS",
+            "docs/CODEOWNERS",
+            ".gitlab/CODEOWNERS",
+        ];
+        let norm_file = file_path
+            .replace('\\', "/")
+            .trim_start_matches("./")
+            .trim_start_matches('/')
+            .to_string();
+
+        for rel in CANDIDATES {
+            let candidate = repo_root.join(rel);
+            if !candidate.is_file() || crate::fsutil::reject_symlinks(&candidate).is_err() {
+                continue;
+            }
+            let Ok(content) = fs::read_to_string(&candidate) else {
+                continue;
+            };
+            let mut matched_owners: Vec<String> = Vec::new();
+            for line in content.lines() {
+                let trimmed = line.split('#').next().unwrap_or("").trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                let mut parts = trimmed.split_whitespace();
+                let Some(pattern) = parts.next() else {
+                    continue;
+                };
+                let owners: Vec<String> = parts.map(ToOwned::to_owned).collect();
+                if owners.is_empty() {
+                    continue;
+                }
+                if Self::codeowners_pattern_matches(pattern, &norm_file) {
+                    matched_owners = owners;
+                }
+            }
+            return matched_owners;
+        }
+        Vec::new()
+    }
+
+    fn codeowners_pattern_matches(pattern: &str, norm_file: &str) -> bool {
+        if pattern == "*" {
+            return true;
+        }
+        let pat = pattern.trim_start_matches('/');
+        if let Some(ext) = pat.strip_prefix("*.") {
+            return norm_file
+                .rsplit_once('.')
+                .is_some_and(|(_, f_ext)| f_ext.eq_ignore_ascii_case(ext));
+        }
+        let dir_prefix = pat.trim_end_matches('/').trim_end_matches("/*");
+        if norm_file == dir_prefix {
+            return true;
+        }
+        norm_file
+            .strip_prefix(dir_prefix)
+            .is_some_and(|rest| rest.starts_with('/'))
+    }
+
+    /// Generates a least-privilege AWS IAM OIDC Federation Trust Policy JSON locked to a specific GitHub `org/repo` and `branch`.
+    /// Prevents cross-repo or untrusted fork assumption via strict `StringEquals` conditions on `aud` and `sub`.
+    pub fn generate_aws_oidc_trust_policy(
+        org_repo: &str,
+        branch: &str,
+        aws_account_id: &str,
+    ) -> serde_json::Value {
+        serde_json::json!({
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Federated": format!("arn:aws:iam::{aws_account_id}:oidc-provider/token.actions.githubusercontent.com")
+                    },
+                    "Action": "sts:AssumeRoleWithWebIdentity",
+                    "Condition": {
+                        "StringEquals": {
+                            "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+                            "token.actions.githubusercontent.com:sub": format!("repo:{org_repo}:ref:refs/heads/{branch}")
+                        }
+                    }
+                }
+            ]
+        })
+    }
+
+    /// Generates a secretless GitHub Actions OIDC workflow step using `aws-actions/configure-aws-credentials@v4`.
+    pub fn generate_github_actions_oidc_snippet(role_arn: &str, aws_region: &str) -> String {
+        format!(
+            "permissions:\n  id-token: write\n  contents: read\n\nsteps:\n  - name: Configure AWS Credentials via OIDC (Secretless)\n    uses: aws-actions/configure-aws-credentials@v4\n    with:\n      role-to-assume: {role_arn}\n      aws-region: {aws_region}\n"
+        )
+    }
 }
 
 #[cfg(test)]
@@ -457,5 +559,52 @@ mod tests {
         assert_eq!(findings[0].file_path, "src/payments.ts");
         assert_eq!(findings[0].line_number, 43);
         assert_eq!(findings[0].rule_id, "stripe-secret-key");
+    }
+
+    #[test]
+    fn test_resolve_codeowners_last_match_wins() {
+        let dir = tempfile::tempdir().unwrap();
+        let gh = dir.path().join(".github");
+        fs::create_dir_all(&gh).unwrap();
+        fs::write(
+            gh.join("CODEOWNERS"),
+            "# Global fallback\n* @acme/platform-team\n/src/billing/ @acme/payments-sec @alice\n*.tf @acme/infra-sec\n",
+        )
+        .unwrap();
+
+        assert_eq!(
+            GitManager::resolve_codeowners(dir.path(), "src/billing/stripe.ts"),
+            vec!["@acme/payments-sec".to_string(), "@alice".to_string()]
+        );
+        assert_eq!(
+            GitManager::resolve_codeowners(dir.path(), "infra/main.tf"),
+            vec!["@acme/infra-sec".to_string()]
+        );
+        assert_eq!(
+            GitManager::resolve_codeowners(dir.path(), "README.md"),
+            vec!["@acme/platform-team".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_generate_aws_oidc_trust_policy_and_workflow_snippet() {
+        let policy =
+            GitManager::generate_aws_oidc_trust_policy("acme/payments-api", "main", "123456789012");
+        assert_eq!(
+            policy["Statement"][0]["Condition"]["StringEquals"]
+                ["token.actions.githubusercontent.com:sub"],
+            "repo:acme/payments-api:ref:refs/heads/main"
+        );
+        assert_eq!(
+            policy["Statement"][0]["Action"],
+            "sts:AssumeRoleWithWebIdentity"
+        );
+
+        let snippet = GitManager::generate_github_actions_oidc_snippet(
+            "arn:aws:iam::123456789012:role/GitHubActionsDeployRole",
+            "us-east-1",
+        );
+        assert!(snippet.contains("id-token: write"));
+        assert!(snippet.contains("aws-actions/configure-aws-credentials@v4"));
     }
 }

@@ -46,7 +46,17 @@ impl RotationStep<'_> {
     }
 
     pub(super) fn run(&self, raw_secret: &str) -> Result<String, SentrisError> {
-        let out = provision(
+        let is_env_backend = matches!(
+            self.backend_label.trim().to_ascii_lowercase().as_str(),
+            "env" | "envfile"
+        );
+        let cleared_old_in_env = is_env_backend
+            && super::env_patcher::EnvPatcher::remove_if_value_matches_in(
+                std::path::Path::new("."),
+                self.env_var,
+                raw_secret,
+            );
+        let out = match provision(
             self.rotator.as_ref(),
             self.backend,
             &RotationLedger::path(),
@@ -58,7 +68,18 @@ impl RotationStep<'_> {
                 now: unix_now(),
                 grace_secs: DEFAULT_GRACE_SECS,
             },
-        )?;
+        ) {
+            Ok(out) => out,
+            Err(err) => {
+                if cleared_old_in_env {
+                    let _ = super::env_patcher::EnvPatcher::inject_env_variable(
+                        self.env_var,
+                        raw_secret,
+                    );
+                }
+                return Err(err);
+            }
+        };
         if !self.quiet {
             let how = if out.resumed { "RESUMED" } else { "ROTATED" };
             println!(

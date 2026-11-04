@@ -525,6 +525,11 @@ pub fn get_rules() -> Vec<Rule> {
         Rule { rule_id: "slack-config-token", name: "Slack Configuration Token", description: "Identifies Slack app configuration access and refresh tokens (xoxe)", severity: Severity::High, pattern: r"\bxoxe(?:\.xox[bp])?-[0-9]-[A-Za-z0-9]{146,166}", min_entropy: 3.5 },
         Rule { rule_id: "slack-workflow-webhook", name: "Slack Workflow/Trigger Webhook", description: "Identifies Slack workflow and trigger webhook URLs", severity: Severity::High, pattern: r"https://hooks\.slack\.com/(?:workflows|triggers)/[A-Za-z0-9+/]{43,56}", min_entropy: 3.5 },
         Rule { rule_id: "vault-batch-token", name: "HashiCorp Vault Batch Token", description: "Identifies Vault batch tokens (hvb.)", severity: Severity::Critical, pattern: r"\bhvb\.[A-Za-z0-9_-]{138,300}", min_entropy: 3.5 },
+        // ==================== 2026 AI/RAG Infrastructure & Edge Cloud ====================
+        Rule { rule_id: "cloudflare-api-token", name: "Cloudflare API Token", description: "Identifies Cloudflare API Bearer tokens in assignments", severity: Severity::Critical, pattern: r#"(?i)(?:cloudflare|cf)[a-z0-9_.-]{0,20}(?:api[_-]?)?token['"]?\s*[:=]\s*['"]([A-Za-z0-9_-]{40})['"]"#, min_entropy: 3.5 },
+        Rule { rule_id: "tavily-api-key", name: "Tavily AI Search API Key", description: "Identifies Tavily AI agent/RAG search keys (tvly-)", severity: Severity::High, pattern: r"\btvly-(?:dev-|prod-)?[a-zA-Z0-9]{28,40}\b", min_entropy: 3.3 },
+        Rule { rule_id: "pinecone-api-key", name: "Pinecone Vector DB API Key", description: "Identifies Pinecone vector database API keys (pcsk_)", severity: Severity::Critical, pattern: r"\bpcsk_[a-zA-Z0-9_]{50,90}\b", min_entropy: 3.5 },
+        Rule { rule_id: "firecrawl-api-key", name: "Firecrawl AI Web Scraper Key", description: "Identifies Firecrawl AI web scraping API keys (fc-)", severity: Severity::High, pattern: r"\bfc-[a-f0-9]{32}\b", min_entropy: 3.0 },
     ]
 }
 

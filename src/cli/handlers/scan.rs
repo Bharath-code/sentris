@@ -34,6 +34,7 @@ pub fn handle_scan(
     probe: bool,
     fail_on: Option<RiskTier>,
     workstation: bool,
+    stdin: bool,
 ) {
     let mut scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let mut report = match &from_report {
@@ -44,6 +45,7 @@ pub fn handle_scan(
             git_history,
             staged,
             workstation,
+            stdin,
             &path,
         ),
     };
@@ -54,7 +56,12 @@ pub fn handle_scan(
         report.stats.findings_count = report.findings.len();
     }
 
-    let show_notes = !cli.quiet && format == OutputFormat::Text;
+    let effective_format = if cli.is_agent_mode() && matches!(format, OutputFormat::Text) {
+        OutputFormat::Json
+    } else {
+        format
+    };
+    let show_notes = !cli.quiet && matches!(effective_format, OutputFormat::Text);
     if let Some(baseline_path) = &baseline {
         apply_baseline(&mut report, baseline_path, show_notes);
     }
@@ -67,11 +74,6 @@ pub fn handle_scan(
         rank_findings(&mut report);
     }
 
-    let effective_format = if cli.is_agent_mode() && matches!(format, OutputFormat::Text) {
-        OutputFormat::Json
-    } else {
-        format
-    };
     render_scan_report(cli, &report, effective_format);
     if matches!(effective_format, OutputFormat::Text) {
         print_exposures(&report, cli.no_color);
@@ -123,9 +125,15 @@ fn run_scan(
     git_history: bool,
     staged: bool,
     workstation: bool,
+    stdin: bool,
     path: &Path,
 ) -> ScanReport {
-    let (context, result) = if workstation {
+    let (context, result) = if stdin {
+        (
+            "Failed during standard input (--stdin) stream scan".to_string(),
+            scanner.scan_reader(std::io::stdin().lock(), "<stdin>"),
+        )
+    } else if workstation {
         (
             "Failed during workstation AI & MCP config scan".to_string(),
             scanner.scan_workstation(),

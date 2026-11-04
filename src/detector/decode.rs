@@ -38,8 +38,8 @@ pub fn decode_base64_ascii(token: &str) -> Option<String> {
     }
     let bytes = trimmed.as_bytes();
     let mut out = Vec::with_capacity((bytes.len() * 3) / 4);
-    let mut chunks = bytes.chunks_exact(4);
-    for chunk in &mut chunks {
+    let (chunks, rem) = bytes.as_chunks::<4>();
+    for chunk in chunks {
         let a = b64_val(chunk[0])?;
         let b = b64_val(chunk[1])?;
         let c = b64_val(chunk[2])?;
@@ -48,7 +48,6 @@ pub fn decode_base64_ascii(token: &str) -> Option<String> {
         out.push((b << 4) | (c >> 2));
         out.push((c << 6) | d);
     }
-    let rem = chunks.remainder();
     match rem.len() {
         2 => {
             let a = b64_val(rem[0])?;
@@ -139,9 +138,7 @@ pub fn extract_decoded_candidates(line: &str, force_unpadded_b64: bool) -> Vec<S
         if tok.len() >= 24
             && (force_unpadded_b64
                 || tok.ends_with('=')
-                || DECODE_TRIGGER_LITERALS
-                    .iter()
-                    .any(|p| tok.starts_with(p)))
+                || DECODE_TRIGGER_LITERALS.iter().any(|p| tok.starts_with(p)))
         {
             if let Some(decoded) = decode_base64_ascii(tok) {
                 // Reconstruct the surrounding line context so keyed rules (e.g. `api_key: <b64>`) work too
@@ -167,19 +164,13 @@ mod tests {
             "c2tfbGl2ZV",
             "81MUFiY0RlZkdoSWpLbE1uT3BRclN0VXZ3eFl6MTIzNDU2"
         );
-        let expected_raw = concat!(
-            "sk_live_",
-            "51AbcDefGhIjKlMnOpQrStUvwxYz123456"
-        );
+        let expected_raw = concat!("sk_live_", "51AbcDefGhIjKlMnOpQrStUvwxYz123456");
         let dec = decode_base64_ascii(b64).unwrap();
         assert_eq!(dec, expected_raw);
 
         let line = format!("  stripe_key: {b64}");
         let cands = extract_decoded_candidates(&line, false);
-        assert_eq!(
-            cands,
-            vec![format!("  stripe_key: {expected_raw}")]
-        );
+        assert_eq!(cands, vec![format!("  stripe_key: {expected_raw}")]);
 
         let url_line = concat!(
             "DATABASE_URL=\"postgres%3A%2F%2F",

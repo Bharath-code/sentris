@@ -23,13 +23,17 @@ pub fn handle_remediate(
     rotate: bool,
     all: bool,
     from_report: Option<PathBuf>,
+    workstation: bool,
 ) {
     let agent_mode = cli.is_agent_mode();
     let mut scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let scan_target = scan_target_for(finding_id.as_deref());
-    let report = match &from_report {
-        Some(file) => super::scan::import_report(cli, &mut scanner, file),
-        None => scanner
+    let report = match (&from_report, workstation) {
+        (Some(file), _) => super::scan::import_report(cli, &mut scanner, file),
+        (None, true) => scanner
+            .scan_workstation()
+            .unwrap_or_else(|err| die("Failed to scan workstation configs and transcripts", err)),
+        (None, false) => scanner
             .scan_path(&scan_target)
             .unwrap_or_else(|err| die("Failed to scan target", err)),
     };
@@ -41,6 +45,10 @@ pub fn handle_remediate(
 
     let targets = select_targets(&report, finding_id.as_deref(), all);
     if targets.is_empty() {
+        if finding_id.as_deref().is_none_or(|id| id == ".") {
+            print_clean(agent_mode);
+            return;
+        }
         fail("Could not find matching finding to remediate.");
     }
     if !dry_run
@@ -128,22 +136,42 @@ fn matches_id(f: &Finding, id: &str) -> bool {
         || Path::new(&f.file_path) == Path::new(id)
 }
 
+/// Internal Sentris state files (`.sentris/*.json`) and `.env` secret stores hold extracted secrets by design
+/// and must never be rewritten as source code by `sentris remediate`.
+fn is_remediable_target(f: &Finding) -> bool {
+    let norm = f.file_path.replace('\\', "/");
+    let norm = norm.trim_start_matches("./");
+    if norm.starts_with(".sentris/") || norm.contains("/.sentris/") {
+        return false;
+    }
+    let base = norm.rsplit('/').next().unwrap_or(norm);
+    base != ".env"
+}
+
 fn select_targets<'a>(
     report: &'a ScanReport,
     finding_id: Option<&str>,
     all: bool,
 ) -> Vec<&'a Finding> {
+    let eligible: Vec<&'a Finding> = report
+        .findings
+        .iter()
+        .filter(|f| is_remediable_target(f))
+        .collect();
     if all {
-        return report.findings.iter().collect();
+        return eligible;
     }
     let preferred = match finding_id {
-        Some(id) => report.findings.iter().find(|f| matches_id(f, id)),
-        None => report
-            .findings
+        Some(id) => eligible.iter().copied().find(|f| matches_id(f, id)),
+        None => eligible
             .iter()
+            .copied()
             .find(|f| f.rule_id == "stripe-secret-key" || f.rule_id == "stripe-restricted-key"),
     };
-    preferred.or(report.findings.first()).into_iter().collect()
+    preferred
+        .or_else(|| eligible.first().copied())
+        .into_iter()
+        .collect()
 }
 
 /// Remediates one finding and returns its session record; any failure aborts the command.
@@ -349,5 +377,47 @@ pub fn handle_rollback(cli: &Cli, session: Option<String>) {
                 "ℹ️ ".cyan()
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::model::{ScanStats, Severity};
+
+    fn finding_at(path: &str) -> Finding {
+        Finding {
+            rule_id: "stripe-secret-key".to_string(),
+            description: "Stripe".to_string(),
+            severity: Severity::Critical,
+            file_path: path.to_string(),
+            line_number: 1,
+            column: 1,
+            redacted_match: "sk_liv...".to_string(),
+            entropy: 5.0,
+            fingerprint: "fp1234567890".to_string(),
+            commit_hash: None,
+            commit_author: None,
+            commit_date: None,
+        }
+    }
+
+    #[test]
+    fn select_targets_excludes_dot_sentris_ledgers_and_dotenv() {
+        let report = ScanReport {
+            timestamp: "0".to_string(),
+            version: "0".to_string(),
+            stats: ScanStats::default(),
+            findings: vec![
+                finding_at("./.sentris/rollback_ledger.json"),
+                finding_at(".sentris/audit_ledger.json"),
+                finding_at("./.env"),
+                finding_at("./src/billing/stripe.ts"),
+            ],
+            exposures: Default::default(),
+        };
+        let all_targets = select_targets(&report, Some("."), true);
+        assert_eq!(all_targets.len(), 1);
+        assert_eq!(all_targets[0].file_path, "./src/billing/stripe.ts");
     }
 }

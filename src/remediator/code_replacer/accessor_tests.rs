@@ -124,3 +124,35 @@ fn test_accessor_generation_case_insensitivity_and_fallback() {
         "process.env.API_KEY"
     );
 }
+
+#[test]
+fn test_accessor_generation_iac_mcp_and_transcripts() {
+    assert_eq!(
+        CodeReplacer::get_env_accessor(".github/workflows/deploy.yml", "STRIPE_SECRET_KEY"),
+        "${{ secrets.STRIPE_SECRET_KEY }}"
+    );
+    assert_eq!(
+        CodeReplacer::get_env_accessor("infra/main.tf", "STRIPE_SECRET_KEY"),
+        "var.stripe_secret_key"
+    );
+    assert_eq!(
+        CodeReplacer::get_env_accessor("Dockerfile", "STRIPE_SECRET_KEY"),
+        "\"${STRIPE_SECRET_KEY}\""
+    );
+    assert_eq!(
+        CodeReplacer::get_env_accessor("docker-compose.yml", "STRIPE_SECRET_KEY"),
+        "\"${STRIPE_SECRET_KEY}\""
+    );
+    assert_eq!(
+        CodeReplacer::get_env_accessor(".cursor/mcp.json", "GITHUB_TOKEN"),
+        "\"${GITHUB_TOKEN}\""
+    );
+    assert_eq!(
+        CodeReplacer::get_env_accessor("session.jsonl", "STRIPE_SECRET_KEY"),
+        "[REDACTED_BY_SENTRIS:STRIPE_SECRET_KEY]"
+    );
+    assert_eq!(
+        CodeReplacer::get_env_accessor(".zsh_history", "STRIPE_SECRET_KEY"),
+        "[REDACTED_BY_SENTRIS:STRIPE_SECRET_KEY]"
+    );
+}

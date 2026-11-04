@@ -2,7 +2,7 @@ use owo_colors::OwoColorize;
 use std::path::Path;
 use std::process;
 
-use super::{die, fail};
+use super::{die, fail, print_json};
 use crate::cli::{AuthSubcommand, Cli};
 use crate::cloud::auth::{generate_team_secret, validate_team_secret};
 use crate::cloud::Credentials;
@@ -30,7 +30,13 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
         AuthSubcommand::Status => status(cli, plain),
         AuthSubcommand::Logout => {
             let _ = Credentials::delete_default();
-            if !cli.quiet {
+            if cli.is_agent_mode() {
+                print_json(serde_json::json!({
+                    "ok": true,
+                    "command": "auth logout",
+                    "authenticated": false
+                }));
+            } else if !cli.quiet {
                 println!(
                     "{}",
                     "✔ Logged out from Sentris Pro Cloud. Local credentials cleared.".green()
@@ -52,7 +58,20 @@ fn login(cli: &Cli, plain: bool, token: &str, server: Option<String>, team_secre
     if let Err(err) = creds.save_to_path(&path) {
         die("Failed to save credentials", err);
     }
-    if !cli.quiet {
+    if cli.is_agent_mode() {
+        print_json(serde_json::json!({
+            "ok": true,
+            "command": "auth login",
+            "authenticated": true,
+            "org_id": creds.org_id,
+            "org_name": creds.org_name,
+            "tier": creds.tier,
+            "seats_used": creds.seats_used,
+            "seat_limit": creds.seat_limit,
+            "credentials_path": path,
+            "team_secret_generated": generated
+        }));
+    } else if !cli.quiet {
         print_login_summary(plain, &creds, &path, generated.then_some(secret.as_str()));
     }
 }
@@ -132,7 +151,14 @@ fn status(cli: &Cli, plain: bool) {
     let creds = match Credentials::load_default() {
         Ok(creds) => creds,
         Err(err) => {
-            if !cli.quiet {
+            if cli.is_agent_mode() {
+                print_json(serde_json::json!({
+                    "ok": false,
+                    "command": "auth status",
+                    "authenticated": false,
+                    "error": err.to_string()
+                }));
+            } else if !cli.quiet {
                 if plain {
                     eprintln!("No active session: {err}");
                 } else {
@@ -143,6 +169,21 @@ fn status(cli: &Cli, plain: bool) {
             process::exit(1);
         }
     };
+    if cli.is_agent_mode() {
+        print_json(serde_json::json!({
+            "ok": true,
+            "command": "auth status",
+            "authenticated": true,
+            "org_id": creds.org_id,
+            "org_name": creds.org_name,
+            "user_email": creds.user_email,
+            "tier": creds.tier,
+            "seats_used": creds.seats_used,
+            "seat_limit": creds.seat_limit,
+            "server_url": creds.server_url
+        }));
+        return;
+    }
     if plain {
         println!("Active Sentris Pro Cloud Session:");
         println!("   Organization: {} ({})", creds.org_name, creds.org_id);

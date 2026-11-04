@@ -92,6 +92,10 @@ impl Remediator {
             "linear-api-key" => "LINEAR_API_KEY",
             "planetscale-token" => "PLANETSCALE_TOKEN",
             "posthog-api-key" => "POSTHOG_API_KEY",
+            "cloudflare-api-token" | "cloudflare-origin-ca-key" => "CLOUDFLARE_API_TOKEN",
+            "tavily-api-key" => "TAVILY_API_KEY",
+            "pinecone-api-key" => "PINECONE_API_KEY",
+            "firecrawl-api-key" => "FIRECRAWL_API_KEY",
             "structural-secret-assignment" => "APP_SECRET_KEY",
             "rsa-private-key"
             | "openssh-private-key"
@@ -155,7 +159,13 @@ impl Remediator {
         if !git_ok(&["rev-parse", "--verify", "--quiet", "HEAD"]) {
             return Ok("local-working-tree".to_string());
         }
-        if git_ok(&["branch", &branch_name]) {
+        if git_ok(&[
+            "rev-parse",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch_name}"),
+        ]) || git_ok(&["branch", &branch_name])
+        {
             Ok(branch_name)
         } else {
             Err(SentrisError::Scan(format!(
@@ -349,7 +359,10 @@ impl Remediator {
             );
         }
 
-        // Step 4: Inject into selected secret backend and verify gitignore
+        // Step 4: Inject into selected secret backend and verify gitignore (skipped for transcript/shell-history scrubs)
+        let is_log_scrub = finding.file_path.ends_with(".jsonl")
+            || finding.file_path.ends_with(".zsh_history")
+            || finding.file_path.ends_with(".bash_history");
         if !quiet {
             print!(
                 "  [4/7] 🔒 Securing credential into {} backend... ",
@@ -358,7 +371,7 @@ impl Remediator {
         }
         let env_var_name = env_var_name.as_str();
 
-        if rotation_id.is_none() {
+        if rotation_id.is_none() && !is_log_scrub {
             let inject_note = backend_driver.inject_secret(env_var_name, &new_key, dry_run)?;
             if backend_driver.is_mock() && !dry_run && !quiet {
                 eprintln!("{}", inject_note.yellow().bold());
@@ -366,7 +379,14 @@ impl Remediator {
         }
         Self::zeroize_secret_string(&mut new_key);
         if !quiet {
-            println!("{} ({}=***)", "INJECTED".green(), env_var_name);
+            if is_log_scrub {
+                println!(
+                    "{} (transcript/history scrub — not written to backend)",
+                    "SCRUB_ONLY".green()
+                );
+            } else {
+                println!("{} ({}=***)", "INJECTED".green(), env_var_name);
+            }
 
             // Step 5: Replace hardcoded secret in target source file
             print!("  [5/7] 📝 Replacing hardcoded literal in source code... ");
@@ -385,13 +405,12 @@ impl Remediator {
                 )));
             }
             if let Ok(engine) = crate::detector::DetectorEngine::new() {
-                let residual = engine.scan_single_line(
-                    &repl,
-                    &finding.file_path,
-                    finding.line_number,
-                    None,
-                );
-                if residual.iter().any(|f| f.fingerprint == finding.fingerprint) {
+                let residual =
+                    engine.scan_single_line(&repl, &finding.file_path, finding.line_number, None);
+                if residual
+                    .iter()
+                    .any(|f| f.fingerprint == finding.fingerprint)
+                {
                     return Err(SentrisError::Scan(format!(
                         "Closed-loop verification failed: finding fingerprint '{}' still present after patching '{}'",
                         finding.fingerprint, finding.file_path

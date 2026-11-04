@@ -38,6 +38,12 @@ pub fn revocation_url_for_rule(rule_id: &str) -> &'static str {
         "linear-api-key" => "https://linear.app/settings/api",
         "resend-api-key" => "https://resend.com/api-keys",
         "supabase-access-token" => "https://supabase.com/dashboard/account/tokens",
+        "cloudflare-api-token" | "cloudflare-origin-ca-key" => {
+            "https://dash.cloudflare.com/profile/api-tokens"
+        }
+        "tavily-api-key" => "https://app.tavily.com/home",
+        "pinecone-api-key" => "https://app.pinecone.io/organizations/-/projects/-/keys",
+        "firecrawl-api-key" => "https://www.firecrawl.dev/app/api-keys",
         _ => "https://docs.github.com/en/code-security/secret-scanning/managing-alerts-from-secret-scanning",
     }
 }
@@ -83,6 +89,7 @@ fn find_target<'a>(findings: &'a [Finding], id: Option<&str>) -> Option<&'a Find
     }
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn handle_revoke(cli: &Cli, finding_id: Option<String>, api: bool, wait: bool) {
     let agent_mode = cli.is_agent_mode();
     if cli.offline {

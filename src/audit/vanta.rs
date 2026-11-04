@@ -32,6 +32,8 @@ impl AuditLedger {
         let mut quarantines_created = 0usize;
         let mut keys_rotated = 0usize;
         let mut keys_deactivated = 0usize;
+        let mut exposure_probes_run = 0usize;
+        let mut investigations_run = 0usize;
 
         for r in &self.records {
             match &r.action {
@@ -49,7 +51,8 @@ impl AuditLedger {
                 AuditAction::QuarantineCreated { .. } => quarantines_created += 1,
                 AuditAction::KeyRotated { .. } => keys_rotated += 1,
                 AuditAction::KeyDeactivated { .. } => keys_deactivated += 1,
-                AuditAction::InvestigationRun { .. } | AuditAction::ExposureProbed { .. } => {}
+                AuditAction::InvestigationRun { .. } => investigations_run += 1,
+                AuditAction::ExposureProbed { .. } => exposure_probes_run += 1,
             }
         }
 
@@ -67,7 +70,9 @@ impl AuditLedger {
                 "SOC2_CC6.1_Logical_Access_Security",
                 "SOC2_CC6.7_Zero_Knowledge_Data_Transmission",
                 "SOC2_CC6.8_Autonomous_Credential_Remediation",
-                "ISO27001_A.8.24_Use_Of_Cryptography"
+                "ISO27001_A.8.24_Use_Of_Cryptography",
+                "OWASP_NHI_2025_Non_Human_Identity_Governance",
+                "PCI_DSS_v4_0_Req_3_5_And_8_6_Key_Lifecycle"
             ],
             "control_attestations": {
                 "SOC2_CC6.1": {
@@ -100,6 +105,21 @@ impl AuditLedger {
                     "broken_links": if chain_valid { 0 } else { 1 },
                     "chain_head_hash": head_hash,
                     "chain_head_hmac": head_hmac
+                },
+                "OWASP_NHI_2025": {
+                    "control_name": "OWASP Non-Human Identities Top 10 (NHI1 Offboarding, NHI2 Secret Leakage, NHI5 Overprivilege, NHI7 Rotation)",
+                    "status": status_str,
+                    "nhi1_deactivated_keys": keys_deactivated,
+                    "nhi2_secrets_remediated": secrets_remediated,
+                    "nhi5_exposure_probes_executed": exposure_probes_run,
+                    "nhi7_keys_rotated": keys_rotated,
+                    "forensic_investigations_run": investigations_run
+                },
+                "PCI_DSS_v4_0": {
+                    "control_name": "PCI-DSS v4.0 Req 3.5 & 8.6 (Application/System Account & Cryptographic Key Hygiene)",
+                    "status": status_str,
+                    "hardcoded_secrets_extracted_to_vault": secrets_remediated,
+                    "historical_leaks_quarantined": quarantines_created
                 }
             },
             "cryptographic_proof": {

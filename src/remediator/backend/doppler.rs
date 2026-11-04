@@ -142,11 +142,8 @@ impl SecretStoreBackend for DopplerBackend {
 
     fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
         if self.mock {
-            let entry = read_mock_entry(
-                self.mock_ledger_path.as_deref(),
-                "doppler_mock.json",
-                key,
-            )?;
+            let entry =
+                read_mock_entry(self.mock_ledger_path.as_deref(), "doppler_mock.json", key)?;
             return entry["secrets"][key]
                 .as_str()
                 .map(ToOwned::to_owned)

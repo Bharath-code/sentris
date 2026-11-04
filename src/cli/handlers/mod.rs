@@ -41,6 +41,7 @@ pub(super) fn die(context: &str, err: impl std::fmt::Display) -> ! {
 }
 
 /// Dispatches the parsed CLI subcommand to its modular handler.
+#[allow(clippy::too_many_lines)]
 pub fn execute(cli: Cli) {
     let command = cli.command.clone();
     match command {
@@ -61,6 +62,7 @@ pub fn execute(cli: Cli) {
             probe,
             fail_on,
             workstation,
+            stdin,
         } => scan::handle_scan(
             &cli,
             path,
@@ -79,6 +81,7 @@ pub fn execute(cli: Cli) {
             probe,
             fail_on,
             workstation,
+            stdin,
         ),
         Commands::Install { force, with_ai } => audit::handle_install(force, with_ai),
         Commands::Uninstall => audit::handle_uninstall(),
@@ -90,6 +93,7 @@ pub fn execute(cli: Cli) {
             rotate,
             all,
             from_report,
+            workstation,
         } => remediate::handle_remediate(
             &cli,
             finding_id,
@@ -99,6 +103,7 @@ pub fn execute(cli: Cli) {
             rotate,
             all,
             from_report,
+            workstation,
         ),
         Commands::Revoke {
             finding_id,

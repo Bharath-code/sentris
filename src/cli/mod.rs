@@ -110,6 +110,10 @@ pub enum Commands {
         /// Audit local workstation AI coding agent & MCP config files (~/.cursor/mcp.json, ~/.claude.json, ~/.npmrc, etc.) for plaintext secrets
         #[arg(long, default_value_t = false)]
         workstation: bool,
+
+        /// Scan an arbitrary stream from standard input (e.g. `gh run view --log | sentris scan --stdin` or `docker history`)
+        #[arg(long, default_value_t = false, conflicts_with_all = ["staged", "git_history", "since", "workstation", "from_report"])]
+        stdin: bool,
     },
 
     /// Install the Sentris pre-commit & pre-push hooks (and optionally AI agent MCP/hook configs)
@@ -155,6 +159,10 @@ pub enum Commands {
         /// Remediate findings from a Betterleaks/Gitleaks JSON report instead of scanning; each entry is re-checked against the file
         #[arg(long)]
         from_report: Option<PathBuf>,
+
+        /// Remediate workstation AI/MCP configs (.mcp.json) and scrub local AI `.jsonl` transcripts / shell histories
+        #[arg(long, default_value_t = false)]
+        workstation: bool,
     },
 
     /// Guided or API-driven credential revocation with live verification polling and SOC 2 audit logging

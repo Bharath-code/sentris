@@ -457,3 +457,60 @@ fn test_pem_original_block_is_returned_in_full() {
         src.trim_end().strip_suffix("next();").unwrap().trim_end()
     );
 }
+
+#[test]
+fn test_iac_mcp_and_transcript_replacements() {
+    let secret = "sk_live_123";
+    let var = "STRIPE_SECRET_KEY";
+
+    // GitHub Actions workflow YAML
+    assert_eq!(
+        CodeReplacer::replace_secret_in_line(
+            ".github/workflows/ci.yml",
+            "        STRIPE_KEY: \"sk_live_123\"",
+            secret,
+            var
+        ),
+        "        STRIPE_KEY: ${{ secrets.STRIPE_SECRET_KEY }}"
+    );
+
+    // Terraform .tf file
+    assert_eq!(
+        CodeReplacer::replace_secret_in_line(
+            "infra/main.tf",
+            "  api_key = \"sk_live_123\"",
+            secret,
+            var
+        ),
+        "  api_key = var.stripe_secret_key"
+    );
+
+    // MCP config JSON (exact value & embedded arg)
+    assert_eq!(
+        CodeReplacer::replace_secret_in_line(
+            ".cursor/mcp.json",
+            "\"STRIPE_KEY\": \"sk_live_123\"",
+            secret,
+            var
+        ),
+        "\"STRIPE_KEY\": \"${STRIPE_SECRET_KEY}\""
+    );
+    assert_eq!(
+        CodeReplacer::replace_secret_in_line(
+            ".cursor/mcp.json",
+            "\"args\": [\"--api-key=sk_live_123\"]",
+            secret,
+            var
+        ),
+        "\"args\": [\"--api-key=${STRIPE_SECRET_KEY}\"]"
+    );
+
+    // AI session transcript (.jsonl) preserves valid JSON structure
+    let jsonl_line = r#"{"role":"user","content":"Here is my key sk_live_123 for debugging"}"#;
+    let scrubbed = CodeReplacer::replace_secret_in_line("chat.jsonl", jsonl_line, secret, var);
+    assert_eq!(
+        scrubbed,
+        r#"{"role":"user","content":"Here is my key [REDACTED_BY_SENTRIS:STRIPE_SECRET_KEY] for debugging"}"#
+    );
+    assert!(serde_json::from_str::<serde_json::Value>(&scrubbed).is_ok());
+}

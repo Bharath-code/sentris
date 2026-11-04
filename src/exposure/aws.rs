@@ -50,6 +50,7 @@ impl AwsProbe {
             .collect())
     }
 
+    #[allow(clippy::too_many_lines)]
     fn inspect(&self, key_id: &str) -> Result<Exposure, SentrisError> {
         let user = self.cli.resolve_principal(key_id)?;
         let keys = self.cli.json(&[
@@ -134,10 +135,11 @@ impl AwsProbe {
         let groups = groups_res?;
 
         if !groups.is_empty() {
-            let group_results: Vec<(
+            type GroupPolicyPair = (
                 Result<Vec<String>, SentrisError>,
                 Result<Vec<String>, SentrisError>,
-            )> = std::thread::scope(|s| {
+            );
+            let group_results: Vec<GroupPolicyPair> = std::thread::scope(|s| {
                 let handles: Vec<_> = groups
                     .iter()
                     .map(|g| {

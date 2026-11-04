@@ -19,6 +19,7 @@ pub struct Investigation {
     pub rule_id: String,
     pub file_path: String,
     pub line_number: usize,
+    pub codeowners: Vec<String>,
     pub supported: bool,
     pub exposure: Option<Exposure>,
     pub since: Option<u64>,
@@ -58,6 +59,7 @@ where
         rule_id: finding.rule_id.clone(),
         file_path: finding.file_path.clone(),
         line_number: finding.line_number,
+        codeowners: crate::git::GitManager::resolve_codeowners(repo, &finding.file_path),
         supported: finding.rule_id == AWS_RULE,
         exposure: None,
         since: None,
@@ -161,6 +163,9 @@ impl Investigation {
             },
             "supported": self.supported,
         });
+        if !self.codeowners.is_empty() {
+            out["finding"]["codeowners"] = json!(self.codeowners);
+        }
         let (Some(exposure), Some(usage)) = (&self.exposure, &self.usage) else {
             if let Some(exposure) = &self.exposure {
                 out["exposure"] = json!({
@@ -199,6 +204,9 @@ impl Investigation {
             "Investigation of finding {} ({} in {}:{})\n",
             self.finding_id, self.rule_id, self.file_path, self.line_number
         );
+        if !self.codeowners.is_empty() {
+            s.push_str(&format!("Codeowners: {}\n", self.codeowners.join(", ")));
+        }
         let (Some(exposure), Some(usage)) = (&self.exposure, &self.usage) else {
             if let Some(exposure) = &self.exposure {
                 if let Some(st) = &exposure.start {
@@ -311,6 +319,7 @@ mod tests {
             rule_id: AWS_RULE.into(),
             file_path: "src/app.py".into(),
             line_number: 7,
+            codeowners: Vec::new(),
             supported: true,
             exposure: Some(Exposure {
                 start: Some(window::ExposureStart {

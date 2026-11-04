@@ -5,6 +5,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). No rele
 ## [Unreleased]
 
 ### Added
+- IaC, MCP & AI Transcript Smart Patching in `CodeReplacer`: native GitHub Actions (`${{ secrets.VAR }}`), Terraform (`var.<name>`), Dockerfile / Docker Compose / Kubernetes (`"${VAR}"`), MCP JSON (`"${VAR}"`), and in-place `.jsonl` / `.zsh_history` / `.bash_history` secret scrubbing (`[REDACTED_BY_SENTRIS:VAR]`)
+- `sentris scan --stdin` stream scanner for CI/CD logs (`gh run view --log`), `docker history`, and Kubernetes manifests
+- `sentris fix --workstation` autonomous remediation and scrubbing across local `.mcp.json` configs, Claude Code `~/.claude/projects/**/*.jsonl` session transcripts, and shell history files
+- Canary / Honeytoken pre-flight tripwire detection (`detect_canary_token`) to skip outbound network verification on Thinkst Canary and GitGuardian honeytokens without triggering false SOC alarms
+- 2 new live verifiers (`Cloudflare`, `DigitalOcean`, bringing `VerifierRegistry` to 12 providers) and 4 new 2026 AI/RAG & Cloud detector rules (`cloudflare-api-token`, `tavily-api-key`, `pinecone-api-key`, `firecrawl-api-key`, bringing built-in rules to 119)
+- `CODEOWNERS` team ownership attribution (`GitManager::resolve_codeowners`) integrated into `sentris investigate` (`OWASP NHI1`) plus `OWASP_NHI_2025` and `PCI_DSS_v4_0` compliance attestations in `sentris audit --export-vanta`
 - `sentris run` zero-disk `.env` runtime runner: fetches secrets from `env`, `vault`, `aws`, `doppler`, `1password`, or `infisical` directly into child process memory and zeroizes parent buffers
 - `sentris revoke` guided and API-driven (`--api` for GitHub tokens) credential revocation with 2-second live verification polling (`--wait`) and `KeyDeactivated` SOC 2 audit ledger entries
 - `sentris scan --workstation` auditor for AI coding agent & MCP configs (`.mcp.json`, Cursor, Claude Code/Desktop, Windsurf, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, `~/.git-credentials`)

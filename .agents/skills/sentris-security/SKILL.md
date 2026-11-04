@@ -19,17 +19,21 @@ sentris scan . --json
   - `recommended_env_var`: e.g. `"STRIPE_SECRET_KEY"`
   - `remediate_command`: exact command to fix the finding
 
-### Scan Staged Pre-Commit Diff Hunks (`<15ms`) or Workstation AI/MCP Configs
+### Scan Staged Pre-Commit Diff Hunks (`<15ms`), Stdin Streams, or Workstation AI/MCP Configs & Transcripts
 ```bash
 sentris scan --staged --json
 sentris scan --workstation --json
+gh run view --log | sentris scan --stdin --json
 sentris scan . --probe --json
 ```
 
-### Autonomously Remediate Secrets (Code Rewrite + Secret Store Injection)
+### Autonomously Remediate Secrets (Code / IaC / MCP Rewrite + Secret Store Injection + Transcript Scrubbing)
 ```bash
-# Remediate a single file or finding into .env (safe local extraction)
+# Remediate a single file or finding into .env (safe local extraction; supports source code, .github/workflows, .tf, Dockerfile, .mcp.json)
 sentris fix <file_path> --yes --json
+
+# Remediate workstation AI/MCP configs (.mcp.json) and scrub local AI .jsonl transcripts & shell histories
+sentris fix --workstation --yes --json
 
 # Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler (zero argv leaks)
 sentris fix . --all --yes --backend 1password --json

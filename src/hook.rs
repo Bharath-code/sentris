@@ -367,6 +367,12 @@ pub fn evaluate(scanner: &Scanner, input: &Value) -> Verdict {
     }
 }
 
+/// Cloaks detected secrets in arbitrary tool output or prompt text into `«sentris:<rule>:<fp8>»` phantom markers
+/// so LLM contexts and `.jsonl` transcripts never ingest raw credential bytes.
+pub fn cloak_tool_output(scanner: &Scanner, text: &str) -> crate::redact::Redaction {
+    scanner.redact_text(text)
+}
+
 /// `settings.json` snippet that registers `sentris hook` for prompts and tool calls.
 pub fn config_snippet() -> String {
     let handler = json!([{"type": "command", "command": "sentris hook"}]);
@@ -726,9 +732,11 @@ mod tests {
 
     #[test]
     fn pathological_wildcards_finish_quickly() {
+        let scanner = Scanner::new().unwrap();
         let nasty = format!("rm {}b", "a*".repeat(60));
+        let input = json!({"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": nasty}});
         let start = std::time::Instant::now();
-        assert_eq!(tool("Bash", json!({"command": nasty})), Verdict::Allow);
+        assert_eq!(evaluate(&scanner, &input), Verdict::Allow);
         assert!(start.elapsed() < std::time::Duration::from_millis(500));
     }
 
@@ -791,5 +799,15 @@ mod tests {
             })),
             Verdict::Allow
         );
+    }
+
+    #[test]
+    fn cloak_tool_output_replaces_secrets_with_phantom_markers() {
+        let scanner = Scanner::new().unwrap();
+        let raw = format!("export STRIPE_SECRET_KEY={STRIPE}\n");
+        let cloaked = cloak_tool_output(&scanner, &raw);
+        assert_eq!(cloaked.findings.len(), 1);
+        assert!(cloaked.text.contains("«sentris:stripe-secret-key:"));
+        assert!(!cloaked.text.contains(STRIPE));
     }
 }

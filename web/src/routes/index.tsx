@@ -46,14 +46,13 @@ function Hero() {
       <div className="container-page relative grid grid-cols-1 gap-14 pt-16 [&>*]:min-w-0 pb-24 sm:pt-24 lg:grid-cols-[1.1fr_1fr] lg:items-center lg:gap-12 lg:pt-28">
         <div>
           <p data-rise className="mb-6 inline-flex items-center gap-2 rounded-full bg-raised px-3 py-1 text-xs text-muted ring-1 ring-line">
-            <span className="size-1.5 rounded-full bg-ember" /> Public beta · open-source CLI
+            <span className="size-1.5 rounded-full bg-ember" /> Public beta · 3.8 MB static Rust CLI · MCP &amp; Claude Code firewall
           </p>
           <h1 data-headline className="text-display font-semibold">
-            Leaked a key? It's fixed before you push.
+            Stop just finding leaked API keys. Fix the code in 1 second.
           </h1>
           <p data-rise className="mt-6 max-w-[34rem] text-lg text-pretty text-muted">
-            Other scanners stop at an alert. Sentris finds hardcoded secrets in milliseconds, moves them into your
-            secret store and patches the code&nbsp;— in one command, with a byte-exact rollback if you change your mind.
+            Other scanners stop at <span className="font-mono text-[0.9em]">EXIT 1</span>. Sentris detects hardcoded secrets across source code, GitHub Actions, Terraform, and Claude Code/Cursor transcripts&nbsp;— moving them into <span className="font-mono text-[0.9em]">.env</span> or your vault and rewriting the code in one command, with byte-exact rollback.
           </p>
           <div data-rise className="mt-9 flex flex-col gap-3 sm:flex-row sm:items-center">
             <ButtonLink to="/login" variant="ember">Start 14-day Pro trial</ButtonLink>
@@ -118,20 +117,20 @@ const zones = [
   {
     k: '01',
     title: 'Not committed yet',
-    body: 'Rewrites the literal to process.env / os.environ / std::env across 7+ languages, writes the value to .env or your vault, hardens .gitignore and syncs .env.example.',
+    body: 'Rewrites the literal across 10+ languages, GitHub Actions (${{ secrets.VAR }}), Terraform (var.*), Docker and .mcp.json, writes the value to .env or your vault, hardens .gitignore and syncs .env.example.',
     code: 'sentris fix --all --backend vault',
   },
   {
     k: '02',
-    title: 'Committed, not pushed',
-    body: 'Produces a surgical fixup commit so the credential never reaches the remote. Your history stays clean and reviewable.',
-    code: 'sentris scan --since origin/main..HEAD',
+    title: 'Committed or in AI transcripts',
+    body: 'Scans unpushed commit ranges and scrubs leaked credentials out of local Claude Code/Cursor .jsonl transcripts and shell histories without breaking session files.',
+    code: 'sentris fix --workstation --yes',
   },
   {
     k: '03',
     title: 'Already pushed',
-    body: 'Never rewrites shared history behind your back. Opens a quarantine branch and hands you a purge playbook. Revoke the old key at your provider; automatic rotation covers AWS IAM access keys today and other providers are on the roadmap.',
-    code: 'sentris quarantine <finding>',
+    body: 'Never rewrites shared history behind your back. Opens a quarantine branch with a purge playbook, maps .github/CODEOWNERS + CloudTrail forensics, and rotates AWS IAM keys with a 24h grace window.',
+    code: 'sentris investigate <finding>',
   },
 ]
 
@@ -170,10 +169,10 @@ function Zones() {
 }
 
 const surfaces = [
-  ['Pre-commit & pre-push', 'sentris install', 'Hooks that scan only staged hunks, plus a pre-push safety net.'],
+  ['Pre-commit & pre-push', 'sentris install --with-ai', 'Hooks that scan only staged hunks in <15 ms, plus a pre-push safety net and AI workspace config.'],
   ['Your editor', 'sentris lsp', 'LSP 3.17 diagnostics and a one-click "extract to env" quick fix in VS Code, Cursor, Zed and Neovim.'],
-  ['Your AI agent', 'sentris mcp · sentris hook', 'Local MCP server, Pre/PostToolUse firewall hook, and --workstation MCP auditor for Claude Code, Cursor and Windsurf.'],
-  ['Zero-disk runtime & CI', 'sentris run · sentris scan --format sarif', 'Inject secrets from any vault into child process memory without .env files on disk, plus SARIF 2.1.0 for CI.'],
+  ['Your AI agent & transcripts', 'sentris mcp · sentris fix --workstation', 'Local MCP server, Pre/PostToolUse firewall hook, and in-place scrubber for .mcp.json, ~/.claude/projects/**/*.jsonl and shell histories.'],
+  ['Zero-disk runtime & CI streams', 'sentris run · sentris scan --stdin', 'Inject secrets from any vault into child process memory without .env on disk, stream CI/Docker logs via stdin, and skip Canary tripwires automatically.'],
 ] as const
 
 function Surfaces() {
@@ -203,20 +202,20 @@ function Cloud() {
     <section id="cloud" className="scroll-mt-20 bg-term text-zinc-100">
       <div className="container-page grid gap-14 py-24 md:grid-cols-2 md:items-center md:py-32">
         <div>
-          <p className="font-mono text-xs tracking-[0.14em] text-zinc-500 uppercase">Sentris Pro Cloud</p>
-          <h2 className="mt-4 text-title font-semibold">See one leaked key across fifty repos. Without seeing the key.</h2>
+          <p className="font-mono text-xs tracking-[0.14em] text-zinc-500 uppercase">Sentris Pro Cloud &amp; SOC 2 Evidence</p>
+          <h2 className="mt-4 text-title font-semibold">See one leaked key across fifty repos. Pass Vanta SOC 2 in 10 seconds.</h2>
           <p className="mt-5 text-zinc-400">
             The CLI fingerprints every finding with a team secret that lives only on your developers' machines. The
-            cloud receives keyed fingerprints it can match but never reverse or test guesses against, so it can tell you the same Stripe key lives in <span className="text-zinc-200">billing-svc</span> and{' '}
-            <span className="text-zinc-200">checkout-web</span>. It never stores a single byte of source or secret.
+            cloud receives keyed fingerprints it can match across <span className="text-zinc-200">billing-svc</span> and{' '}
+            <span className="text-zinc-200">checkout-web</span> without ever storing a single byte of source or secret&nbsp;— and exports a 1-click Vanta/Drata evidence bundle mapped to <span className="text-zinc-200">SOC 2 (CC6.1/CC6.7/CC6.8)</span>, <span className="text-zinc-200">ISO 27001</span>, <span className="text-zinc-200">OWASP NHI Top 10</span> and <span className="text-zinc-200">PCI-DSS v4.0</span>.
           </p>
         </div>
         <div className="space-y-3 font-mono text-[12.5px]" aria-label="Data flow: raw secret stays local, only a salted fingerprint is sent">
           <FlowRow label="On your laptop" value='"sk_live_51AbcDef…"' tone="text-crit" />
           <p className="pl-4 text-zinc-600">↓ HMAC-SHA256(team secret)</p>
           <FlowRow label="Sent to cloud" value="zk_9f3c1a…e04b" tone="text-ok" />
-          <p className="pl-4 text-zinc-600">↓ correlate</p>
-          <FlowRow label="You see" value="2 repos · same credential" tone="text-ember" />
+          <p className="pl-4 text-zinc-600">↓ correlate &amp; attest</p>
+          <FlowRow label="You see" value="2 repos · SOC 2 + OWASP NHI PASS" tone="text-ember" />
         </div>
       </div>
     </section>

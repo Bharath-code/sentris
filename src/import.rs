@@ -152,6 +152,7 @@ pub struct Imported {
 }
 
 /// Loads a Betterleaks/Gitleaks JSON report; file paths are resolved against, and confined to, `root`.
+#[allow(clippy::too_many_lines)]
 pub fn load(report_path: &Path, root: &Path) -> Result<Imported, SentrisError> {
     let meta = fs::metadata(report_path)?;
     if meta.len() > MAX_REPORT_BYTES {

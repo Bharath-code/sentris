@@ -1,12 +1,19 @@
 use super::*;
 use std::fs;
-use tempfile::tempdir;
+use tempfile::{tempdir, TempDir};
+
+fn lock_state() -> (std::sync::MutexGuard<'static, ()>, TempDir) {
+    let g = crate::keystore::TEST_ENV_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    let state = tempdir().unwrap();
+    std::env::set_var("SENTRIS_STATE_DIR", state.path());
+    (g, state)
+}
 
 #[test]
 fn test_audit_action_serialization() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let actions = vec![
         AuditAction::ScanCompleted {
             files_scanned: 100,
@@ -37,9 +44,7 @@ fn test_audit_action_serialization() {
 
 #[test]
 fn test_creation_of_multiple_audit_entries() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let dir = tempdir().unwrap();
     let ledger_path = dir.path().join("audit.json");
     let mut ledger = AuditLedger::load_or_init(&ledger_path).unwrap();
@@ -111,9 +116,7 @@ fn test_creation_of_multiple_audit_entries() {
 
 #[test]
 fn test_verification_of_hash_chain_integrity() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let dir = tempdir().unwrap();
     let ledger_path = dir.path().join("audit.json");
     let mut ledger = AuditLedger::load_or_init(&ledger_path).unwrap();
@@ -162,9 +165,7 @@ fn test_verification_of_hash_chain_integrity() {
 
 #[test]
 fn test_tamper_detection_index() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -195,9 +196,7 @@ fn test_tamper_detection_index() {
 
 #[test]
 fn test_tamper_detection_timestamp() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -228,9 +227,7 @@ fn test_tamper_detection_timestamp() {
 
 #[test]
 fn test_tamper_detection_action() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -265,9 +262,7 @@ fn test_tamper_detection_action() {
 
 #[test]
 fn test_tamper_detection_details() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -298,9 +293,7 @@ fn test_tamper_detection_details() {
 
 #[test]
 fn test_tamper_detection_previous_hash() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -332,9 +325,7 @@ fn test_tamper_detection_previous_hash() {
 
 #[test]
 fn test_tamper_detection_entry_hash() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -366,9 +357,7 @@ fn test_tamper_detection_entry_hash() {
 
 #[test]
 fn test_tamper_detection_hmac_signature() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -400,9 +389,7 @@ fn test_tamper_detection_hmac_signature() {
 
 #[test]
 fn test_tamper_detection_deletion_and_reordering() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let mut ledger = AuditLedger::default();
     ledger
         .record_event(
@@ -449,18 +436,14 @@ fn test_tamper_detection_deletion_and_reordering() {
 
 #[test]
 fn test_empty_ledger_integrity() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let ledger = AuditLedger::default();
     assert!(ledger.verify_integrity().unwrap());
 }
 
 #[test]
 fn test_export_vanta_evidence_pack_soc2_controls() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let dir = tempdir().unwrap();
     let ledger_path = dir.path().join("audit_ledger.json");
     let vanta_path = dir.path().join("vanta-evidence.json");
@@ -595,9 +578,7 @@ fn key_is_random_outside_repo_and_anchor_catches_truncation() {
 
 #[test]
 fn rotation_actions_chain_after_existing_actions_and_verify() {
-    let _g = crate::keystore::TEST_ENV_LOCK
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
+    let (_g, _state) = lock_state();
     let state = tempdir().unwrap();
     std::env::set_var("SENTRIS_STATE_DIR", state.path());
     let dir = tempdir().unwrap();
