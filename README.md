@@ -9,7 +9,7 @@
 [![Binary Size](https://img.shields.io/badge/binary-4.02MB%20static%20Rust-success.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![Benchmark](https://img.shields.io/badge/benchmark-reproducible-brightgreen.svg)](bench/results/latest.md)
 [![Throughput](https://img.shields.io/badge/throughput-83%2C333%20files%2Fsec-blueviolet.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
-[![Tests](https://img.shields.io/badge/tests-319%2F319%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
+[![Tests](https://img.shields.io/badge/tests-395%2F395%20passing-emerald.svg)](docs/BENCHMARKS-AND-ARCHITECTURE.md)
 [![MCP & LSP Ready](https://img.shields.io/badge/AI%20%26%20IDE-Native%20MCP%20%2B%20LSP-orange.svg)](#6-native-ai-agent-cli-mode---json-mcp-server--real-time-ide-lsp)
 
 ```text
@@ -32,16 +32,17 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 
 | Area | Today |
 |---|---|
-| Scanning (CLI, pre-commit, git history, workstation AI/MCP configs, SARIF, MCP, LSP) | Working. Single-pass Aho-Corasick literal prefilter + Structure-of-Arrays (SoA) rule layout + multi-layer Base64 (`k8s` `Secret` `data:` blocks) and URL-percent decoding. |
-| Remediation: move secret to `.env`, patch code, byte-exact rollback | Working for `.env`; atomic writes, `.env.example` contract sync, `.gitignore` hardening, signed rollback ledger. |
+| Scanning (CLI, `--stdin` stream, pre-commit, git history, workstation AI/MCP/transcripts, SARIF, MCP, LSP) | Working. **119 precision rules** (incl. 2026 AI/RAG & Cloud rules: Cloudflare, Tavily, Pinecone, Firecrawl) + Single-pass Aho-Corasick literal prefilter + Structure-of-Arrays (SoA) rule layout + multi-layer Base64 (`k8s` `Secret` `data:` blocks) and URL-percent decoding + streaming `--stdin` pipe scanner. |
+| Remediation: move secret to `.env`, patch code/IaC/MCP/transcripts, byte-exact rollback | Working for `.env`; atomic writes, `.env.example` contract sync, `.gitignore` hardening, signed rollback ledger. Includes **IaC, CI/CD, MCP & Transcript Smart Patching** (`.github/workflows/*.yml` → `${{ secrets.VAR }}`, `.tf`/`.tfvars` → `var.<var_lower>`, `Dockerfile`/`docker-compose*.yml`/`.mcp.json` → `"${VAR}"`, and `.jsonl`/shell history `[REDACTED_BY_SENTRIS:<VAR>]` scrubbing via `sentris fix --workstation`). |
 | Remediation into Vault / AWS Secrets Manager / Doppler / 1Password / Infisical | Working across all 6 backends (`env`, `vault`, `aws`, `doppler`, `1password`, `infisical`) via `stdin` or `0600` `SecretTempFile` templates so secret values never appear in `argv`. Tested against recorded CLI shims. |
 | **Zero-disk `.env` runtime runner (`sentris run`)** | Working across all 6 backends (`sentris run --backend <backend> --key <NAME>... -- <cmd>`). Fetches secrets into child process environment memory only, zeroizes parent buffers, and refuses `{{secret:...}}` placeholders in `argv`. |
 | **Guided & API credential revocation (`sentris revoke`)** | Maps findings to exact provider revocation console URLs, supports direct API revocation (`--api`) for GitHub tokens (`POST /credentials/revoke`), polls live verification (`--wait`) every 2s until `Revoked`, and records `KeyDeactivated` in `.sentris/audit_ledger.json`. |
-| **Provider key rotation (`--rotate`)** | **AWS IAM access keys only.** Creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Tested against a CLI stub. Every other provider: use `sentris revoke` to deactivate the leaked key after rotating. |
-| **Live verification (`scan --verify`) & Exposure probes (`scan --probe`)** | **10 live verifiers** (Stripe, GitHub, GitLab, Hugging Face, OpenAI, Anthropic, Groq, SendGrid, Slack, AWS) and **5 read-only capability exposure probes** (Stripe balance, GitHub scopes/orgs, AWS IAM policies, Hugging Face fine-grained org permissions, GitLab PAT scopes/expiry) executed in bounded 8-worker parallel batches. |
-| **AI Coding Agent Firewall (`sentris hook` + `scan --workstation`)** | `sentris hook` guards `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` (blocking tool output `stdout`/`stderr`/`output`/`content`/`text` containing secrets before they enter the AI context window). `sentris scan --workstation` audits `.mcp.json`, Cursor, Claude Code, Claude Desktop, Windsurf, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, and `~/.git-credentials`. |
+| **Provider key rotation (`--rotate`) & Secretless OIDC Upgrader** | **AWS IAM access keys only** for `--rotate`: creates a second key, stores it, patches the code; the old key stays active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Also includes AWS IAM OIDC trust policy & GitHub Actions `id-token: write` workflow generators (`GitManager::generate_aws_oidc_trust_policy`). |
+| **Live verification (`scan --verify`), Exposure probes (`scan --probe`) & Canary Immunity** | **12 live verifiers** (Stripe, GitHub, GitLab, Hugging Face, OpenAI, Anthropic, Groq, SendGrid, Slack, AWS, Cloudflare, DigitalOcean) and **5 read-only capability exposure probes** with **OWASP NHI5 Overprivileged Scope Advisory** and **Canary / Honeytoken Tripwire Immunity** (Thinkst Canary `canarytokens.com`/`.org`, GitGuardian `ggcanary`, `honeytoken`, `sentris-canary` bypassed before any network call). |
+| **AI Coding Agent Firewall (`sentris hook` + `scan/fix --workstation`)** | `sentris hook` guards `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` (plus phantom-token cloaking via `«sentris:<rule>:<fp8>»`). `sentris scan --workstation` & `sentris fix --workstation` audit and scrub `.mcp.json`, Cursor, Claude Code (`.claude/projects/**/*.jsonl` transcripts), Claude Desktop, Windsurf, Antigravity, Continue, `~/.zsh_history`, `~/.bash_history`, `~/.aws/credentials`, `~/.docker/config.json`, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, and `~/.git-credentials`. |
+| **Forensics & CODEOWNERS Attribution (`sentris investigate`)** | Identifies earliest git commit introducing the leaked credential, resolves owning engineering/security teams from `.github/CODEOWNERS` (`last-match-wins`), and inspects read-only AWS CloudTrail management events. |
 | Import from Betterleaks / Gitleaks (`--from-report`) | Working for `scan` and `fix`: JSON report in, entries re-verified against the file in a flat contiguous arena (`ImportedSecrets`) with bit-packed `u32` handles, then probe/rank/remediate/rollback as usual. |
-| Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). It is evidence input, not a SOC 2 attestation. |
+| Audit ledger / Vanta export | Tamper-evident on the developer machine (random local key + external head anchor). Exports **SOC 2 Type II (`CC6.1`, `CC6.7`, `CC6.8`)**, **ISO 27001:2022 (`A.8.24`)**, **OWASP Non-Human Identities Top 10:2025 (`NHI1`, `NHI2`, `NHI5`, `NHI7`)**, and **PCI-DSS v4.0 (`Req 3.5`, `Req 8.6`, `Req 10.3`)** control evidence packs. |
 | Cloud sync and blast radius | Beta, zero-knowledge fingerprints keyed by a team secret the server never sees. |
 | Benchmarks | Reproducible benchmark harness in `bench/run.sh` (`bench/results/latest.md`, `creddata.md`, `prowlbench.md`). |
 
@@ -126,7 +127,7 @@ Zero-Knowledge Multi-Repo Blast Radius Insight (0 Bytes Source Code Ingested):
 ```
 
 ### 5. The 10-Second Vanta / Drata SOC 2 Auditor Drop (`sentris audit --export-vanta`)
-Instead of paying `USD 25,000/yr` for enterprise compliance PDFs or taking 40 manual screenshots, export a cryptographically chained RFC 2104 HMAC-SHA256 evidence bundle mapped directly to **SOC 2 Type II** and **ISO 27001:2022**:
+Instead of paying `USD 25,000/yr` for enterprise compliance PDFs or taking 40 manual screenshots, export a cryptographically chained RFC 2104 HMAC-SHA256 evidence bundle mapped directly to **SOC 2 Type II**, **ISO 27001:2022**, **OWASP Non-Human Identities Top 10:2025 (`NHI1`, `NHI2`, `NHI5`, `NHI7`)**, and **PCI-DSS v4.0 (`Req 3.5`, `Req 8.6`, `Req 10.3`)**:
 ```text
 $ sentris audit --verify --export-vanta vanta-evidence.json
 
@@ -138,7 +139,8 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
       ├─ SOC 2 CC6.1 (Continuous Secret Scanning):    PASS (10 scans, 1842 files inspected)
       ├─ SOC 2 CC6.7 (Zero-Knowledge Transmission):   PASS (0 bytes plaintext exfiltrated)
       ├─ SOC 2 CC6.8 (Timely Credential Remediation): PASS (3 remediated, 1 quarantined)
-      └─ ISO 27001 A.8.24 (Cryptographic Hash Chain): PASS (HMAC-SHA256 verified)
+      ├─ ISO 27001 A.8.24 (Cryptographic Hash Chain): PASS (HMAC-SHA256 verified)
+      └─ OWASP NHI Top 10 (2025) & PCI-DSS v4.0:      PASS (NHI1/NHI2/NHI5/NHI7 + Req 3.5/8.6/10.3)
 ```
 
 ---
@@ -149,17 +151,17 @@ $ sentris audit --verify --export-vanta vanta-evidence.json
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Core Architecture** | **Rust (`3.8 MB` static, Parallel Walker + literal prefilter)** | Rust (Hyperscan C++ + Tree-sitter) | Python/Rust CLI + Cloud SaaS | Go (700+ detector workers) | Cloud SaaS (GitHub-only) | OCaml / Python CLI + Cloud | Go (Regexp CLI) | Go, no CGO, parallel git scanning |
 | **Scan speed** | **Measured, see [`bench/results/latest.md`](bench/results/latest.md)** | Not measured here | Not measured here | Not measured here | Push-time only | Not measured here | Measured in `bench/` | Measured in `bench/` |
-| **Detection Engine** | **115 Rules + Multi-Layer Base64/URL Decode + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules | 463 TOML rules + BPE token-efficiency filter + CEL filters |
-| **Live API Verification** | **Yes (10 Verifiers + 5 Exposure Probes, parallel 8-worker pool)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No | Yes (opt-in `--validation`, CEL rules; 218 rules carry validation) |
-| **Post-Detection Action** | **Extracts to `.env`/Vault/AWS/Doppler/1Password/Infisical + Patches Code + `sentris revoke`** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table | Prints report (json/csv/junit/sarif); no remediation |
+| **Detection Engine** | **119 Rules + Multi-Layer Base64/URL Decode + 6-Layer FP + `ContextKind`** | ~1,050 rules + Tree-sitter | 400+ rules + Cloud ML | 700+ rules + Keyword prefilter | 200+ Partner patterns | AST + Semantic taint | 150+ TOML regex rules | 463 TOML rules + BPE token-efficiency filter + CEL filters |
+| **Live API Verification** | **Yes (12 Verifiers + 5 Exposure Probes + Canary Tripwire Immunity)** | Yes | Yes (Cloud-side) | Yes | Partner tokens only | Limited | No | Yes (opt-in `--validation`, CEL rules; 218 rules carry validation) |
+| **Post-Detection Action** | **Extracts to `.env`/Vault/AWS/Doppler/1Password/Infisical + Patches Code/IaC/MCP + `sentris revoke`** | `kingfisher revoke` (**Kills key; breaks app**) | Opens Jira ticket / Slack alert | Prints JSON alert | Blocks push | Blocks PR | Prints terminal table | Prints report (json/csv/junit/sarif); no remediation |
 | **Local Dev App Safety** | **Safe Local Extraction + `sentris run` (Zero-Disk `.env` Runner) + `.env.example` Sync** | Destructive revocation only | Manual | Manual | Manual | Manual | Manual | Manual |
-| **Polyglot Code Patching** | **7+ Languages + Multi-Line PEM Block Replacement** | None | None | None | None | Partial (PR comment) | None | None |
+| **Polyglot Code Patching** | **10+ Languages + GitHub Actions / Terraform / Docker / `.mcp.json` / `.jsonl` + Multi-Line PEM** | None | None | None | None | Partial (PR comment) | None | None |
 | **Atomic Rollback (`undo`)** | **`sentris rollback` (Byte-exact restore)** | None | None | None | None | None | None | None |
 | **Zero-Knowledge Privacy** | **100% Local + Salted `zk_<sha256>` Only + RAM Zeroization** | Local CLI | Uploads code snippets to SaaS | Local OSS / Cloud Ent. | Hosted on GitHub Cloud | Cloud-dependent rules | 100% Local | 100% Local (validation calls go to providers) |
-| **SOC 2 / ISO 27001 Proof** | **HMAC-SHA256 Hash Chain + 1-Click Vanta JSON** | None | Enterprise PDF (`USD 20k+/yr`) | Enterprise Dashboard | GitHub Audit Log | Enterprise Dashboard | None | None |
+| **SOC 2 / ISO / OWASP NHI Proof** | **HMAC-SHA256 Hash Chain + 1-Click Vanta JSON (`SOC 2` + `ISO 27001` + `OWASP NHI` + `PCI-DSS v4.0`)** | None | Enterprise PDF (`USD 20k+/yr`) | Enterprise Dashboard | GitHub Audit Log | Enterprise Dashboard | None | None |
 | **Interactive Terminal UI** | **Split-Pane Ratatui TUI (`sentris review`) w/ Diff Preview** | None | None | None | None | None | None | None |
-| **AI Agent & IDE Native** | **MCP (`sentris mcp`) + LSP (`sentris lsp`) + Pre/Post Hook (`sentris hook`) + `--workstation`** | None | Cloud MCP (Requires SaaS) | None | Copilot-only | Editor plugin (Cloud) | None | CLI designed for agents; no MCP server or LSP in v1.9.0 |
-| **Historical Git Scrub** | **Zone 3 Quarantine Branch + Coordinated Playbook** | Manual | Guided docs only | Manual | Manual | Manual | Manual | Manual |
+| **AI Agent & IDE Native** | **MCP (`sentris mcp`) + LSP (`sentris lsp`) + Pre/Post Hook (`sentris hook`) + `scan/fix --workstation`** | None | Cloud MCP (Requires SaaS) | None | Copilot-only | Editor plugin (Cloud) | None | CLI designed for agents; no MCP server or LSP in v1.9.0 |
+| **Historical Git Scrub** | **Zone 3 Quarantine Branch + Coordinated Playbook + CODEOWNERS Forensics** | Manual | Guided docs only | Manual | Manual | Manual | Manual | Manual |
 | **Pricing** | **Free OSS • `USD 8/seat` Pro • `USD 2k/yr` Enterprise** | Free (Apache-2.0) | `USD 18–25+/dev/mo` | Free AGPLv3, `USD 25k+/yr` Ent. | `USD 19/committer/mo` | `USD 20–40/dev/mo` | Free (MIT) | Free (MIT) |
 
 ---
@@ -201,16 +203,21 @@ sentris scan --since HEAD~1
 # reporting commit hash, author and date (JSON: commit_hash, commit_author, commit_date)
 sentris scan --git-history
 
-# Verify detected credentials against 10 live provider APIs (Stripe, GitHub, GitLab, Hugging Face,
-# OpenAI, Anthropic, Groq, SendGrid, Slack, AWS) & map permission scopes in parallel
+# Stream arbitrary CI logs, container layers, or command outputs over stdin
+gh run view --log | sentris scan --stdin
+docker history --no-trunc my-image:latest | sentris scan --stdin
+
+# Verify detected credentials against 12 live provider APIs (Stripe, GitHub, GitLab, Hugging Face,
+# OpenAI, Anthropic, Groq, SendGrid, Slack, AWS, Cloudflare, DigitalOcean) & map permission scopes
+# in parallel (automatically bypasses Thinkst Canary & GitGuardian Honeytoken tripwires)
 sentris scan . --verify
 
 # Probe each Stripe / GitHub / AWS / Hugging Face / GitLab credential read-only for what it can reach,
-# ranked by risk tier. Makes network calls (not with --offline). AWS needs your own admin credentials, never the leaked key.
+# ranked by risk tier with OWASP NHI5 least-privilege advisories. Makes network calls (not with --offline).
 sentris scan . --probe --fail-on high   # exit 1 if anything is high or critical; unprobed findings count at their severity
 
-# Audit workstation AI coding agent & MCP configurations (.mcp.json, Cursor, Claude Code, Claude Desktop,
-# Windsurf, ~/.npmrc, ~/.pypirc, ~/.netrc, ~/.git-credentials) for plaintext credentials
+# Audit workstation AI coding agent configs, .jsonl transcripts & shell histories (.mcp.json, Cursor,
+# Claude Code ~/.claude/projects/**/*.jsonl, Windsurf, ~/.zsh_history, ~/.bash_history, ~/.aws/credentials, etc.)
 sentris scan --workstation
 
 # Launch Split-Pane Interactive Terminal UI (Ratatui) with live -/+ staged patch preview
@@ -268,6 +275,9 @@ backup_branch = true
 ```bash
 # Installs both .git/hooks/pre-commit (--staged) and .git/hooks/pre-push (--since HEAD~1)
 sentris install
+
+# Also scaffold workspace AI agent guardrails (.mcp.json, SKILL.md, and .claude/settings.local.json)
+sentris install --with-ai
 ```
 
 Or via Python `pre-commit` (`.pre-commit-config.yaml`):
@@ -289,11 +299,15 @@ repos:
 sentris remediate src/billing.ts --dry-run
 
 # Safe Local Extraction (default): moves working key to .env, syncs .env.example,
-# hardens .gitignore, and patches source code so local dev never breaks
+# hardens .gitignore, and patches source code / IaC (.github/workflows, .tf, Dockerfile, .mcp.json)
 sentris remediate src/billing.ts --yes
 
 # Batch-remediate ALL secrets across a file or directory in one atomic pass
 sentris remediate . --all --yes
+
+# Remediate workstation AI/MCP configs (.mcp.json -> "${VAR}") and scrub local AI .jsonl transcripts
+# and shell histories (~/.claude/projects/**/*.jsonl, ~/.zsh_history -> [REDACTED_BY_SENTRIS:<VAR>])
+sentris fix --workstation --yes
 
 # All 6 secret store backends work without ever placing secrets in process argv:
 # env (default), vault, aws, doppler, 1password (0600 JSON template), infisical (0600 --file).
@@ -316,7 +330,7 @@ sentris rotate status
 sentris rotate finish <rot_id>      # deactivates the old key; refuses inside the grace window
 sentris rotate undo <rot_id>        # reactivates the old key, deletes the new one
 
-# Was a leaked AWS key used? Read-only: first commit containing it + CloudTrail event history for it.
+# Was a leaked AWS key used? Read-only: first commit containing it + CODEOWNERS attribution + CloudTrail event history.
 # Needs cloudtrail:LookupEvents on your own AWS credentials. Management events only, last 90 days;
 # an empty result is not evidence the key went unused. Other providers: "no forensics yet".
 sentris investigate config/aws.py --known-ip 203.0.113.10

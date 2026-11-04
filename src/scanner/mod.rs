@@ -29,10 +29,7 @@ fn matches_trimmed_component(norm: &str, pat: &str) -> bool {
     {
         return true;
     }
-    if norm
-        .strip_suffix(pat)
-        .is_some_and(|pre| pre.ends_with('/'))
-    {
+    if norm.strip_suffix(pat).is_some_and(|pre| pre.ends_with('/')) {
         return true;
     }
     let bytes = norm.as_bytes();
@@ -461,9 +458,9 @@ impl Scanner {
         })
     }
 
-    /// Returns well-known workstation AI coding agent and developer credential config paths under `home` and cwd.
+    /// Returns well-known workstation AI coding agentconfigs, `.jsonl` transcripts, and developer credential paths under `home` and cwd.
     pub fn workstation_candidate_paths(home: &Path) -> Vec<std::path::PathBuf> {
-        vec![
+        let mut paths = vec![
             std::path::PathBuf::from(".mcp.json"),
             std::path::PathBuf::from(".cursor/mcp.json"),
             home.join(".cursor/mcp.json"),
@@ -472,14 +469,85 @@ impl Scanner {
             home.join("Library/Application Support/Claude/claude_desktop_config.json"),
             home.join(".config/claude/claude_desktop_config.json"),
             home.join(".codeium/windsurf/mcp_config.json"),
+            home.join(".gemini/antigravity/mcp_config.json"),
+            home.join(".continue/config.json"),
+            home.join(".aws/credentials"),
+            home.join(".docker/config.json"),
             home.join(".npmrc"),
             home.join(".pypirc"),
             home.join(".netrc"),
             home.join(".git-credentials"),
-        ]
+            home.join(".zsh_history"),
+            home.join(".bash_history"),
+        ];
+        Self::collect_jsonl_transcripts(&home.join(".claude/projects"), 0, &mut paths);
+        paths
     }
 
-    /// Audits well-known local AI agent (MCP, Claude Code, Cursor, Windsurf) and package manager config files for plaintext secrets.
+    fn collect_jsonl_transcripts(dir: &Path, depth: usize, out: &mut Vec<std::path::PathBuf>) {
+        if depth > 3 || !dir.is_dir() || crate::fsutil::reject_symlinks(dir).is_err() {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let p = entry.path();
+            if crate::fsutil::reject_symlinks(&p).is_err() {
+                continue;
+            }
+            if p.is_dir() {
+                Self::collect_jsonl_transcripts(&p, depth + 1, out);
+            } else if p.extension().and_then(|s| s.to_str()) == Some("jsonl") {
+                out.push(p);
+            }
+        }
+    }
+
+    /// Scans an arbitrary input stream (e.g. `stdin` from CI logs or `docker history`) bounded by `max_file_size_mb`.
+    pub fn scan_reader<R: Read>(
+        &self,
+        reader: R,
+        source_label: &str,
+    ) -> Result<ScanReport, SentrisError> {
+        let start_time = Instant::now();
+        let max_file_bytes = self
+            .config
+            .as_ref()
+            .map(|c| c.scanner.max_file_size_mb * 1024 * 1024)
+            .unwrap_or(10 * 1024 * 1024);
+
+        let mut buffer = Vec::new();
+        reader
+            .take(max_file_bytes + 1)
+            .read_to_end(&mut buffer)
+            .map_err(SentrisError::Io)?;
+        if buffer.len() as u64 > max_file_bytes {
+            return Err(SentrisError::Scan(format!(
+                "Input stream '{source_label}' exceeds max_file_size_mb limit ({max_file_bytes} bytes)"
+            )));
+        }
+
+        let content = String::from_utf8_lossy(&buffer);
+        let findings = self.detector.scan_text(&content, source_label);
+        let stats = ScanStats {
+            files_scanned: 1,
+            files_ignored: 0,
+            bytes_scanned: buffer.len() as u64,
+            findings_count: findings.len(),
+            duration_ms: start_time.elapsed().as_millis(),
+        };
+
+        Ok(ScanReport {
+            timestamp: now_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            stats,
+            findings,
+            exposures: Default::default(),
+        })
+    }
+
+    /// Audits well-known local AI agent (MCP, Claude Code, Cursor, Windsurf), `.jsonl` transcript, and shell history files for plaintext secrets.
     pub fn scan_workstation(&self) -> Result<ScanReport, SentrisError> {
         let home = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
@@ -496,6 +564,11 @@ impl Scanner {
     pub fn scan_workstation_in(&self, home: &Path) -> Result<ScanReport, SentrisError> {
         let start_time = Instant::now();
         let candidates = Self::workstation_candidate_paths(home);
+        let max_file_bytes = self
+            .config
+            .as_ref()
+            .map(|c| c.scanner.max_file_size_mb * 1024 * 1024)
+            .unwrap_or(10 * 1024 * 1024);
         let mut findings = Vec::new();
         let mut files_scanned = 0usize;
         let mut files_ignored = 0usize;
@@ -509,10 +582,17 @@ impl Scanner {
                 files_ignored += 1;
                 continue;
             }
-            match std::fs::read_to_string(&path) {
-                Ok(content) => {
+            if let Ok(meta) = std::fs::metadata(&path) {
+                if meta.len() > max_file_bytes {
+                    files_ignored += 1;
+                    continue;
+                }
+            }
+            match std::fs::read(&path) {
+                Ok(raw) => {
                     files_scanned += 1;
-                    bytes_scanned += content.len() as u64;
+                    bytes_scanned += raw.len() as u64;
+                    let content = String::from_utf8_lossy(&raw);
                     let path_str = path.to_string_lossy().to_string();
                     findings.extend(self.detector.scan_text(&content, &path_str));
                 }
@@ -632,6 +712,51 @@ mod tests {
         let report = scanner.scan_workstation_in(dir.path()).unwrap();
         assert!(report.stats.files_scanned >= 1);
         assert!(report.findings.iter().any(|f| f.rule_id == "github-pat"));
+    }
+
+    #[test]
+    fn workstation_scan_detects_claude_jsonl_transcript_and_shell_history() {
+        let dir = tempdir().unwrap();
+        let proj_dir = dir.path().join(".claude").join("projects").join("my-app");
+        fs::create_dir_all(&proj_dir).unwrap();
+        let tok = concat!("sk_live_", "51AbcDefGhIjKlMnOpQrStUvWxYz123456");
+        fs::write(
+            proj_dir.join("session.jsonl"),
+            format!(r#"{{"role":"user","content":"here is {tok}"}}"#),
+        )
+        .unwrap();
+        let gh = concat!("ghp_", "R8sT2vXq9LmN4pWz7KdJ3hYb6FcA1eUo5GtV");
+        fs::write(
+            dir.path().join(".zsh_history"),
+            format!(": 1700000000:0;export GITHUB_TOKEN={gh}\n"),
+        )
+        .unwrap();
+
+        let scanner = Scanner::new().unwrap();
+        let report = scanner.scan_workstation_in(dir.path()).unwrap();
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.rule_id == "stripe-secret-key"));
+        assert!(report.findings.iter().any(|f| f.rule_id == "github-pat"));
+    }
+
+    #[test]
+    fn scan_reader_detects_secrets_in_stream() {
+        let scanner = Scanner::new().unwrap();
+        let log_stream = concat!(
+            "2026-11-04T10:00:00Z INFO starting job\n",
+            "export PINECONE_KEY=pcsk_",
+            "R8sT2vXq9LmN4pWz7KdJ3hYb6FcA1eUo5GtV8xZ2mN9pQ4wR7kL3jH6y\n"
+        );
+        let report = scanner
+            .scan_reader(log_stream.as_bytes(), "<stdin>")
+            .unwrap();
+        assert_eq!(report.stats.files_scanned, 1);
+        assert!(report
+            .findings
+            .iter()
+            .any(|f| f.rule_id == "pinecone-api-key" && f.file_path == "<stdin>"));
     }
 }
 

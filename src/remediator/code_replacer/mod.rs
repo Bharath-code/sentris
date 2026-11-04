@@ -25,9 +25,40 @@ impl CodeReplacer {
             .unwrap_or("")
             .to_lowercase();
 
+        let norm_path = file_path.replace('\\', "/").to_ascii_lowercase();
+
         // Handle dotfiles like .env, .env.local, .env.production
         if file_name == ".env" || file_name.starts_with(".env.") || file_name.ends_with(".env") {
             return var_name.to_string();
+        }
+
+        // Handle AI agent session transcripts and shell histories (in-place scrubbing)
+        if ext == "jsonl" || matches!(file_name.as_str(), ".zsh_history" | ".bash_history") {
+            return format!("[REDACTED_BY_SENTRIS:{var_name}]");
+        }
+
+        // Handle GitHub Actions workflows (.github/workflows/*.yml)
+        if norm_path.contains(".github/workflows/") && matches!(ext.as_str(), "yml" | "yaml") {
+            return format!("${{{{ secrets.{var_name} }}}}");
+        }
+
+        // Handle Dockerfiles and Containerfiles
+        if file_name == "dockerfile"
+            || file_name.starts_with("dockerfile.")
+            || file_name == "containerfile"
+            || ext == "dockerfile"
+        {
+            return format!("\"${{{var_name}}}\"");
+        }
+
+        // Handle Docker Compose and Kubernetes manifest files
+        if (file_name.starts_with("docker-compose")
+            || file_name.starts_with("compose.")
+            || file_name.ends_with(".k8s.yml")
+            || file_name.ends_with(".k8s.yaml"))
+            && matches!(ext.as_str(), "yml" | "yaml")
+        {
+            return format!("\"${{{var_name}}}\"");
         }
 
         match ext.as_str() {
@@ -55,8 +86,11 @@ impl CodeReplacer {
             "php" => {
                 format!("getenv(\"{var_name}\")")
             }
-            "sh" | "bash" | "zsh" => {
+            "sh" | "bash" | "zsh" | "json" | "jsonc" => {
                 format!("\"${{{var_name}}}\"")
+            }
+            "tf" | "tfvars" => {
+                format!("var.{}", var_name.to_ascii_lowercase())
             }
             "env" | "yml" | "yaml" | "toml" | "ini" => var_name.to_string(),
             _ => format!("process.env.{var_name}"),
@@ -73,12 +107,24 @@ impl CodeReplacer {
     ) -> String {
         let accessor = Self::get_env_accessor(file_path, var_name);
         let path = Path::new(file_path);
+        let file_name = path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_lowercase();
         let ext = path
             .extension()
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_lowercase();
-        let is_shell = matches!(ext.as_str(), "sh" | "bash" | "zsh");
+
+        // In AI transcripts (.jsonl) and shell history files, scrub the raw secret token directly
+        // so surrounding JSON string quotes and escaping remain 100% intact.
+        if ext == "jsonl" || matches!(file_name.as_str(), ".zsh_history" | ".bash_history") {
+            return target_line.replace(secret, &accessor);
+        }
+
+        let uses_dollar_brace_quotes = accessor == format!("\"${{{var_name}}}\"");
 
         // Quoted patterns in descending order of specificity
         let r_hash_double = format!("r#\"{secret}\"#");
@@ -121,11 +167,11 @@ impl CodeReplacer {
             target_line.replace(&single_quoted, &accessor)
         } else if target_line.contains(&backtick_quoted) {
             target_line.replace(&backtick_quoted, &accessor)
-        } else if is_shell && is_inside_quotes(target_line, secret, '"') {
-            // In shell scripts, if secret is already embedded inside an existing double-quoted string,
-            // interpolate with ${VAR_NAME} without introducing redundant outer quotes.
-            let shell_interpolated = format!("${{{var_name}}}");
-            target_line.replace(secret, &shell_interpolated)
+        } else if uses_dollar_brace_quotes && is_inside_quotes(target_line, secret, '"') {
+            // In shell scripts, Dockerfiles, Compose/K8s manifests, and JSON configs, if secret is
+            // embedded inside an existing double-quoted string, interpolate with ${VAR_NAME} without outer quotes.
+            let interpolated = format!("${{{var_name}}}");
+            target_line.replace(secret, &interpolated)
         } else {
             target_line.replace(secret, &accessor)
         }

@@ -52,9 +52,8 @@ pub fn run_with_injected_env(
         Remediator::zeroize_secret_string(&mut v);
     }
 
-    let status = status_res.map_err(|e| {
-        SentrisError::Scan(format!("Failed to execute command '{program}': {e}"))
-    })?;
+    let status = status_res
+        .map_err(|e| SentrisError::Scan(format!("Failed to execute command '{program}': {e}")))?;
     Ok(status.code().unwrap_or(130))
 }
 

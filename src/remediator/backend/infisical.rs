@@ -101,8 +101,9 @@ impl SecretStoreBackend for InfisicalBackend {
         }
 
         // Stage a 0600 env file so the secret value never appears in argv (`ps`)
-        let secret_file = SecretTempFile::create(&format!("{key}={secret}\n"))
-            .map_err(|e| SentrisError::Scan(format!("Cannot stage secret for infisical CLI: {e}")))?;
+        let secret_file = SecretTempFile::create(&format!("{key}={secret}\n")).map_err(|e| {
+            SentrisError::Scan(format!("Cannot stage secret for infisical CLI: {e}"))
+        })?;
         let file_arg = format!("--file={}", secret_file.path().display());
         let env_arg = format!("--env={}", self.env_slug);
         let path_arg = format!("--path={}", self.secret_path);
@@ -134,11 +135,8 @@ impl SecretStoreBackend for InfisicalBackend {
 
     fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
         if self.mock {
-            let entry = read_mock_entry(
-                self.mock_ledger_path.as_deref(),
-                "infisical_mock.json",
-                key,
-            )?;
+            let entry =
+                read_mock_entry(self.mock_ledger_path.as_deref(), "infisical_mock.json", key)?;
             return entry["secretValue"]
                 .as_str()
                 .map(ToOwned::to_owned)

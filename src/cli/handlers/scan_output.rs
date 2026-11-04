@@ -103,6 +103,10 @@ fn live_status(
     let mut raw_secret = scanner
         .extract_raw_secret(target_line, &f.rule_id)
         .unwrap_or_default();
+    if let Some(reason) = crate::verifier::detect_canary_token(&raw_secret, Some(target_line)) {
+        Remediator::zeroize_secret_string(&mut raw_secret);
+        return LiveStatus::Unverified(reason);
+    }
     let res = verifier
         .verify_live(&raw_secret)
         .unwrap_or(LiveStatus::Unverified("Verification failed".to_string()));
@@ -197,6 +201,9 @@ pub(super) fn print_exposures(report: &ScanReport, no_color: bool) {
         }
         if let Some(usd) = e.measured_usd {
             println!("       - provider-reported available balance: ${usd:.2}");
+        }
+        if let Some(advisory) = crate::exposure::advise_least_privilege(&f.rule_id, e) {
+            println!("       - {advisory}");
         }
     }
     println!();

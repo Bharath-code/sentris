@@ -151,11 +151,8 @@ impl SecretStoreBackend for OnePasswordBackend {
     fn fetch_secret(&self, key: &str) -> Result<String, SentrisError> {
         let op_ref = self.format_op_reference(key);
         if self.mock {
-            let entry = read_mock_entry(
-                self.mock_ledger_path.as_deref(),
-                "1password_mock.json",
-                key,
-            )?;
+            let entry =
+                read_mock_entry(self.mock_ledger_path.as_deref(), "1password_mock.json", key)?;
             return entry["secret"]
                 .as_str()
                 .map(ToOwned::to_owned)

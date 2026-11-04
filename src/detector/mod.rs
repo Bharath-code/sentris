@@ -353,7 +353,7 @@ impl DetectorEngine {
         findings
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
     fn scan_line_with_candidates(
         &self,
         line: &str,
@@ -886,13 +886,7 @@ mod tests {
                 "stripe-secret-key",
                 &findings[0].fingerprint
             ),
-            Some(
-                concat!(
-                    "sk_live_",
-                    "51AbcDefGhIjKlMnOpQrStUvwxYz123456"
-                )
-                .to_string()
-            )
+            Some(concat!("sk_live_", "51AbcDefGhIjKlMnOpQrStUvwxYz123456").to_string())
         );
 
         // URL percent-encoded Postgres connection URI

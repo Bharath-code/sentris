@@ -271,14 +271,20 @@ impl SecretStoreBackend for VaultBackend {
             .vault_token
             .as_deref()
             .ok_or_else(|| SentrisError::Scan("VAULT_TOKEN is not set".into()))?;
-        let full_url = format!("{}{}", base_addr.trim_end_matches('/'), self.endpoint_path());
+        let full_url = format!(
+            "{}{}",
+            base_addr.trim_end_matches('/'),
+            self.endpoint_path()
+        );
         let timeout = std::time::Duration::from_secs(5);
         let res = ureq::get(&full_url)
             .set("X-Vault-Token", token)
             .timeout(timeout)
             .call()
             .map_err(|e| {
-                SentrisError::Scan(format!("Failed to read Vault secret '{key}' at {full_url}: {e}"))
+                SentrisError::Scan(format!(
+                    "Failed to read Vault secret '{key}' at {full_url}: {e}"
+                ))
             })?;
         let body: serde_json::Value = res.into_json().map_err(|e| {
             SentrisError::Scan(format!("Unreadable Vault response from {full_url}: {e}"))

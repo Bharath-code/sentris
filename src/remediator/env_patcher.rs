@@ -59,6 +59,41 @@ impl EnvPatcher {
             .find_map(|l| l.trim().strip_prefix(&prefix).map(str::to_string))
     }
 
+    /// Removes `var_name` from `<base_dir>/.env` only when its current value equals `expected_value`.
+    /// Used when rotating a credential that was previously extracted into `.env`.
+    pub fn remove_if_value_matches_in(
+        base_dir: &Path,
+        var_name: &str,
+        expected_value: &str,
+    ) -> bool {
+        let env_path = base_dir.join(".env");
+        let Ok(content) = fs::read_to_string(&env_path) else {
+            return false;
+        };
+        let target = format!("{var_name}={expected_value}");
+        let mut removed = false;
+        let kept: Vec<&str> = content
+            .lines()
+            .filter(|line| {
+                if !removed && line.trim() == target {
+                    removed = true;
+                    false
+                } else {
+                    true
+                }
+            })
+            .collect();
+        if removed {
+            let new_body = if kept.is_empty() {
+                String::new()
+            } else {
+                format!("{}\n", kept.join("\n"))
+            };
+            let _ = fs::write(&env_path, new_body);
+        }
+        removed
+    }
+
     /// Injects or updates an environment variable inside `.env`
     pub fn inject_env_variable(var_name: &str, secret_value: &str) -> Result<(), SentrisError> {
         Self::inject_env_variable_in(Path::new("."), var_name, secret_value)

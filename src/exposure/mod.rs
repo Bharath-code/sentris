@@ -125,6 +125,18 @@ pub fn probe_report(
             );
             continue;
         };
+        if let Some(canary_reason) = crate::verifier::detect_canary_token(&secret, None) {
+            Remediator::zeroize_secret_string(&mut secret);
+            exposures.insert(
+                f.fingerprint.clone(),
+                Exposure::undecided(
+                    probe.provider(),
+                    format!("canary tripwire bypassed — {canary_reason}"),
+                    fallback,
+                ),
+            );
+            continue;
+        }
         on_probe(f, probe.provider());
         let result = probe.probe(&secret);
         Remediator::zeroize_secret_string(&mut secret);
@@ -136,6 +148,77 @@ pub fn probe_report(
         exposures.insert(f.fingerprint.clone(), exposure);
     }
     report.exposures = exposures;
+}
+
+/// Evaluates an active `Exposure` for OWASP NHI5 (Overprivileged Non-Human Identity) risks
+/// and returns a concrete least-privilege remediation recommendation when broad or administrative scopes are observed.
+pub fn advise_least_privilege(rule_id: &str, exposure: &Exposure) -> Option<String> {
+    let LiveStatus::Active { scopes } = &exposure.live else {
+        return None;
+    };
+    match rule_id {
+        "stripe-secret-key" => Some(
+            "OWASP NHI5 advisory: unrestricted sk_live_ key grants full account access; downgrade to a Stripe restricted key (rk_live_) scoped only to required resources".to_string(),
+        ),
+        "github-pat" | "github-oauth-access-token" => {
+            let dangerous: Vec<&str> = scopes
+                .iter()
+                .map(String::as_str)
+                .filter(|s| {
+                    matches!(
+                        *s,
+                        "admin:org"
+                            | "delete_repo"
+                            | "admin:public_key"
+                            | "admin:repo_hook"
+                            | "admin:org_hook"
+                            | "admin:gpg_key"
+                            | "site_admin"
+                            | "repo"
+                            | "workflow"
+                    )
+                })
+                .collect();
+            if dangerous.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "OWASP NHI5 advisory: classic token carries broad scopes ({}); migrate to a repository-scoped fine-grained PAT (github_pat_) or short-lived GitHub App token",
+                    dangerous.join(", ")
+                ))
+            }
+        }
+        "gitlab-pat" => {
+            let dangerous: Vec<&str> = scopes
+                .iter()
+                .map(String::as_str)
+                .filter(|s| matches!(*s, "api" | "sudo" | "admin_mode" | "write_repository"))
+                .collect();
+            if dangerous.is_empty() {
+                None
+            } else {
+                Some(format!(
+                    "OWASP NHI5 advisory: token carries broad GitLab scopes ({}); restrict to read_api/read_repository or use a project-scoped access token",
+                    dangerous.join(", ")
+                ))
+            }
+        }
+        "aws-access-key-id" => {
+            let is_admin = exposure.capabilities.iter().any(|c| {
+                c.contains("AdministratorAccess")
+                    || c.contains("PowerUserAccess")
+                    || c.contains("IAMFullAccess")
+            });
+            if is_admin {
+                Some(
+                    "OWASP NHI5 advisory: long-lived IAM key carries administrative policy; migrate to secretless OIDC federation (sts:AssumeRoleWithWebIdentity) with least-privilege IAM permissions".to_string(),
+                )
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
 }
 
 /// The tier a finding is ranked and gated at: the probe's verdict when there is one, else its severity.
@@ -416,5 +499,41 @@ mod tests {
                 assert!(!prod.contains(banned), "{name} uses {banned}");
             }
         }
+    }
+
+    #[test]
+    fn canary_token_bypasses_network_probe_and_audit() {
+        let mut r = report_of(vec![finding("github-pat", "fp_canary", Severity::High)]);
+        let noted = RefCell::new(0);
+        probe_report(
+            &mut r,
+            |_| Some("ghp_canarytokens_org_tripwire_1234567890".to_string()),
+            |_| Some(Box::new(Canned(Ok(live(RiskTier::Low)))) as _),
+            |_, _| *noted.borrow_mut() += 1,
+        );
+        assert_eq!(noted.into_inner(), 0);
+        let e = &r.exposures["fp_canary"];
+        assert_eq!(e.tier, RiskTier::High);
+        assert!(matches!(&e.live, LiveStatus::Unverified(m) if m.contains("canary tripwire")));
+    }
+
+    #[test]
+    fn advise_least_privilege_flags_owasp_nhi5_overprivilege() {
+        let stripe_exp = live(RiskTier::Critical);
+        let adv = advise_least_privilege("stripe-secret-key", &stripe_exp).unwrap();
+        assert!(adv.contains("OWASP NHI5") && adv.contains("rk_live_"));
+
+        let mut gh_exp = live(RiskTier::Critical);
+        gh_exp.live = LiveStatus::Active {
+            scopes: vec!["repo".to_string(), "admin:org".to_string()],
+        };
+        let gh_adv = advise_least_privilege("github-pat", &gh_exp).unwrap();
+        assert!(gh_adv.contains("admin:org") && gh_adv.contains("github_pat_"));
+
+        let mut aws_exp = live(RiskTier::Critical);
+        aws_exp.capabilities =
+            vec!["attached policy AdministratorAccess (AWS managed)".to_string()];
+        let aws_adv = advise_least_privilege("aws-access-key-id", &aws_exp).unwrap();
+        assert!(aws_adv.contains("sts:AssumeRoleWithWebIdentity"));
     }
 }
