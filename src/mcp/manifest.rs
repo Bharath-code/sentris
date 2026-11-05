@@ -152,6 +152,7 @@ impl McpServer {
     }
 
     /// Generates the universal AI Agent capability & schema manifest (`sentris agent`).
+    #[allow(clippy::too_many_lines)]
     pub fn generate_agent_manifest() -> Value {
         json!({
             "schema_version": "2026-04-01",
@@ -171,16 +172,28 @@ impl McpServer {
                     "name": "scan",
                     "command": "sentris scan <path> --json",
                     "staged_command": "sentris scan --staged --json",
+                    "staged_fix_command": "sentris scan --staged --fix --json",
+                    "ignore_tests_command": "sentris scan <path> --ignore-tests --json",
+                    "docker_command": "sentris scan --docker <image-or-tar> --json",
+                    "stdin_command": "sentris scan --stdin --json",
                     "workstation_command": "sentris scan --workstation --json",
                     "verify_command": "sentris scan <path> --verify --json",
                     "probe_command": "sentris scan <path> --probe --json",
-                    "description": "Scans files, staged git diff hunks, or workstation AI/MCP configs. Each finding in JSON includes `context_kind` (PRODUCTION | TEST_FIXTURE), `recommended_env_var`, and `remediate_command`."
+                    "from_report_command": "sentris scan --from-report <report.json> --json",
+                    "description": "Scans files, staged git diff hunks (with optional --fix), Docker/OCI container layers (with Ghost Layer detection), stdin streams, or workstation AI/MCP configs & .jsonl transcripts. Each finding in JSON includes `context_kind` (PRODUCTION | TEST_FIXTURE), `recommended_env_var`, and `remediate_command`."
+                },
+                {
+                    "name": "drift",
+                    "command": "sentris drift <path> [--fail-on-drift] --json",
+                    "description": "Audits code environment variable references against `.env.example` and `.env`/vault to compute `vault_coverage_pct`, missing runtime keys, undocumented keys, and hardcoded leaks."
                 },
                 {
                     "name": "remediate (alias: fix)",
                     "command": "sentris fix <path_or_rule_or_fingerprint> --all --yes --backend <env|vault|aws|doppler|1password|infisical> --json",
+                    "workstation_command": "sentris fix --workstation --yes --json",
+                    "rotate_command": "sentris fix <path> --rotate --yes --json",
                     "dry_run_command": "sentris fix <path> --all --dry-run --json",
-                    "description": "Autonomously patches hardcoded literals in source code (.py, .ts, .js, .rs, .go, .java, .rb, .php, .sh, multi-line PEM) and injects secrets into the target backend without argv exposure."
+                    "description": "Autonomously patches hardcoded literals in source code (.py, .ts, .js, .rs, .go, .java, .rb, .php, .sh, multi-line PEM), IaC (.github/workflows, .tf, Dockerfile, .mcp.json), and AI transcripts (.jsonl, .zsh_history) and injects secrets into the target backend without argv exposure."
                 },
                 {
                     "name": "run",
@@ -190,11 +203,21 @@ impl McpServer {
                 {
                     "name": "revoke",
                     "command": "sentris revoke [finding_id_or_path] [--api] [--wait] --json",
-                    "description": "Guided or API-driven credential revocation with 2-second live verification polling (--wait) and SOC 2 KeyDeactivated audit logging."
+                    "description": "Guided or API-driven credential revocation with 2-second live verification polling (--wait), post-remediation historical secret lookup, and SOC 2 KeyDeactivated audit logging."
+                },
+                {
+                    "name": "investigate",
+                    "command": "sentris investigate [finding_id_or_path] [--known-ip <IP>...] --json",
+                    "description": "Read-only forensics for a leaked credential: earliest git commit introduction (even after remediation), `.github/CODEOWNERS` owner attribution, and AWS CloudTrail event history."
+                },
+                {
+                    "name": "rotate",
+                    "command": "sentris rotate <status|finish|undo> [rotation_id] [--force] [--delete-old] --json",
+                    "description": "Inspects, completes, or reverts live provider key rotations started with `sentris fix --rotate` (AWS IAM access keys and Cloudflare API tokens)."
                 },
                 {
                     "name": "rollback",
-                    "command": "sentris rollback --session <session_id> --json",
+                    "command": "sentris rollback [--session <session_id>] --json",
                     "description": "Atomically reverts a remediation session and restores the original source file byte-for-byte."
                 },
                 {
@@ -205,7 +228,22 @@ impl McpServer {
                 {
                     "name": "audit",
                     "command": "sentris audit --verify --export-vanta vanta-evidence.json --json",
-                    "description": "Verifies the RFC 2104 HMAC-SHA256 tamper-evident audit chain and exports SOC 2 CC6.1/CC6.7/CC6.8 & ISO 27001 A.8.24 evidence."
+                    "description": "Verifies the RFC 2104 HMAC-SHA256 tamper-evident audit chain and exports SOC 2 CC6.1/CC6.7/CC6.8, ISO 27001 A.8.24, OWASP NHI Top 10:2025 (with live Vault Coverage %), and PCI-DSS v4.0 evidence."
+                },
+                {
+                    "name": "install",
+                    "command": "sentris install [--with-ai] [--auto-fix] [--force] --json",
+                    "description": "Installs sub-35ms pre-commit & pre-push git hooks (with optional `--auto-fix` self-healing mode and `--with-ai` MCP/Claude Code hook scaffolding)."
+                },
+                {
+                    "name": "hook",
+                    "command": "sentris hook [--print-config] [--fail-closed]",
+                    "description": "Claude Code / AI Agent stdin hook firewall blocking plaintext secrets and invisible Unicode tag injection across UserPromptSubmit, PreToolUse, and PostToolUse."
+                },
+                {
+                    "name": "sync",
+                    "command": "sentris sync [path] [--repo <name>] [--branch <name>] --json",
+                    "description": "Synchronizes zero-knowledge organization-salted HMAC-SHA256 (`zk_`) findings to Sentris Pro Cloud with 0 bytes of source code transmitted."
                 },
                 {
                     "name": "team",
@@ -213,9 +251,14 @@ impl McpServer {
                     "description": "Returns organization seat utilization and Zero-Knowledge Multi-Repo Blast Radius correlations."
                 },
                 {
+                    "name": "auth",
+                    "command": "sentris auth <login|status|logout> [--token <sp_live_...>] [--team-secret <hex>] --json",
+                    "description": "Manages Sentris Pro Cloud developer authentication and zero-knowledge 64-hex team secret configuration."
+                },
+                {
                     "name": "mcp",
-                    "command": "sentris mcp",
-                    "description": "Starts the JSON-RPC 2.0 Model Context Protocol server over stdio (tools, resources, and prompts)."
+                    "command": "sentris mcp [--print-config]",
+                    "description": "Starts the JSON-RPC 2.0 Model Context Protocol server over stdio (14 tools, 3 resources, and 2 prompts)."
                 },
                 {
                     "name": "lsp",
@@ -295,23 +338,31 @@ sentris scan . --json
   - `recommended_env_var`: e.g. `"STRIPE_SECRET_KEY"`
   - `remediate_command`: exact command to fix the finding
 
-### Scan Staged Pre-Commit Diff Hunks (`<15ms`) or Workstation AI/MCP Configs
+### Scan Staged Pre-Commit Diff Hunks (`<15ms`), Docker Images, Stdin Streams, or Workstation AI/MCP Configs & Transcripts
 ```bash
 sentris scan --staged --json
+sentris scan --staged --fix --json
+sentris scan . --ignore-tests --json
+sentris scan --docker <image-or-tar> --json
 sentris scan --workstation --json
+gh run view --log | sentris scan --stdin --json
 sentris scan . --probe --json
+sentris drift . --json
 ```
 
-### Autonomously Remediate Secrets (Code Rewrite + Secret Store Injection)
+### Autonomously Remediate Secrets (Code / IaC / MCP Rewrite + Secret Store Injection + Transcript Scrubbing)
 ```bash
-# Remediate a single file or finding into .env (safe local extraction)
+# Remediate a single file or finding into .env (safe local extraction; supports source code, .github/workflows, .tf, Dockerfile, .mcp.json)
 sentris fix <file_path> --yes --json
+
+# Remediate workstation AI/MCP configs (.mcp.json) and scrub local AI .jsonl transcripts & shell histories
+sentris fix --workstation --yes --json
 
 # Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler (zero argv leaks)
 sentris fix . --all --yes --backend 1password --json
 
-# Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key with `sentris revoke <target> --wait --json`
-# Forensics for a leaked key (read-only): sentris investigate <file> --json [--known-ip <ip>]
+# Key rotation is supported for AWS IAM access keys and Cloudflare API tokens (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key with `sentris revoke <target> --wait --json`
+# Forensics for a leaked key (read-only, including CODEOWNERS attribution & post-remediation lookup): sentris investigate <file> --json [--known-ip <ip>]
 ```
 
 ### Run Commands Without `.env` on Disk (`sentris run`)

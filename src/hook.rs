@@ -336,6 +336,12 @@ pub fn evaluate(scanner: &Scanner, input: &Value) -> Verdict {
     match input.get("hook_event_name").and_then(Value::as_str) {
         Some("UserPromptSubmit") => {
             let prompt = input.get("prompt").and_then(Value::as_str).unwrap_or("");
+            if crate::detector::has_hidden_unicode_injection(prompt) {
+                return Verdict::Deny(
+                    "Sentris blocked this prompt: hidden Unicode tag or bidirectional override characters detected (prompt-injection risk)."
+                        .to_string(),
+                );
+            }
             let rules = secret_rules(scanner, prompt);
             if rules.is_empty() {
                 Verdict::Allow
@@ -356,7 +362,14 @@ pub fn evaluate(scanner: &Scanner, input: &Value) -> Verdict {
                 .get("tool_response")
                 .or_else(|| input.get("tool_output"))
                 .unwrap_or(&Value::Null);
-            let rules = secret_rules(scanner, &response_text(resp));
+            let text = response_text(resp);
+            if crate::detector::has_hidden_unicode_injection(&text) {
+                return Verdict::Deny(
+                    "Sentris blocked this tool output: hidden Unicode tag or bidirectional override characters detected (MCP tool-poisoning risk)."
+                        .to_string(),
+                );
+            }
+            let rules = secret_rules(scanner, &text);
             if rules.is_empty() {
                 Verdict::Allow
             } else {

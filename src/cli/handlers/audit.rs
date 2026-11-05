@@ -9,8 +9,8 @@ use crate::cli::Cli;
 use crate::config::{Config, GitleaksMigrator};
 use crate::git::GitManager;
 
-pub fn handle_install(force: bool, with_ai: bool) {
-    match GitManager::install_pre_commit_hook(force) {
+pub fn handle_install(force: bool, with_ai: bool, auto_fix: bool) {
+    match GitManager::install_pre_commit_hook_with_mode(force, auto_fix) {
         Ok(msg) => println!("{}", msg.green()),
         Err(err) => {
             eprintln!(
@@ -39,6 +39,90 @@ pub fn handle_install(force: bool, with_ai: bool) {
                 process::exit(1);
             }
         }
+    }
+}
+
+pub fn handle_drift(cli: &Cli, path: PathBuf, fail_on_drift: bool) {
+    let report = match crate::drift::analyze_drift(&path) {
+        Ok(rep) => rep,
+        Err(err) => {
+            eprintln!(
+                "{} Failed to analyze secrets drift: {}",
+                "ERROR:".red().bold(),
+                err
+            );
+            process::exit(1);
+        }
+    };
+    if cli.is_agent_mode() {
+        print_json(serde_json::json!({
+            "ok": !report.has_drift,
+            "command": "drift",
+            "report": report,
+        }));
+    } else if !cli.quiet {
+        println!();
+        println!(
+            "{} {}",
+            "🧭 Sentris Vault Coverage & Secrets Drift Audit:"
+                .cyan()
+                .bold(),
+            path.display().to_string().bold()
+        );
+        println!(
+            "   Vault Coverage:          {}%",
+            format!("{:.1}", report.vault_coverage_pct).green().bold()
+        );
+        println!(
+            "   Env Vars Referenced:     {}",
+            report.code_referenced_vars.len().to_string().cyan()
+        );
+        println!(
+            "   Hardcoded Leaks Found:   {}",
+            if report.hardcoded_leaks_count == 0 {
+                "0".green().to_string()
+            } else {
+                report
+                    .hardcoded_leaks_count
+                    .to_string()
+                    .red()
+                    .bold()
+                    .to_string()
+            }
+        );
+        if !report.missing_from_env_example.is_empty() {
+            println!(
+                "   {} Missing from .env.example ({}): {}",
+                "⚠".yellow().bold(),
+                report.missing_from_env_example.len(),
+                report.missing_from_env_example.join(", ")
+            );
+        }
+        if !report.missing_from_env.is_empty() {
+            println!(
+                "   {} Referenced in code but missing from .env ({}): {}",
+                "⚠".yellow().bold(),
+                report.missing_from_env.len(),
+                report.missing_from_env.join(", ")
+            );
+        }
+        if !report.shadow_env_vars.is_empty() {
+            println!(
+                "   • Unreferenced keys in .env ({}): {}",
+                report.shadow_env_vars.len(),
+                report.shadow_env_vars.join(", ")
+            );
+        }
+        if !report.has_drift {
+            println!(
+                "   {} Zero drift detected (100% Vault Coverage & synced .env.example)",
+                "✔".green().bold()
+            );
+        }
+        println!();
+    }
+    if fail_on_drift && report.has_drift {
+        process::exit(1);
     }
 }
 

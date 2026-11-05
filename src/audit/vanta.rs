@@ -63,6 +63,9 @@ impl AuditLedger {
         };
 
         let status_str = if chain_valid { "PASS" } else { "FAIL" };
+        let vault_coverage_pct = crate::drift::analyze_drift(Path::new("."))
+            .map(|d| d.vault_coverage_pct)
+            .unwrap_or(100.0);
 
         let pack = serde_json::json!({
             "schema": "sentris.vanta.drata.compliance.v1",
@@ -109,6 +112,7 @@ impl AuditLedger {
                 "OWASP_NHI_2025": {
                     "control_name": "OWASP Non-Human Identities Top 10 (NHI1 Offboarding, NHI2 Secret Leakage, NHI5 Overprivilege, NHI7 Rotation)",
                     "status": status_str,
+                    "vault_coverage_pct": vault_coverage_pct,
                     "nhi1_deactivated_keys": keys_deactivated,
                     "nhi2_secrets_remediated": secrets_remediated,
                     "nhi5_exposure_probes_executed": exposure_probes_run,

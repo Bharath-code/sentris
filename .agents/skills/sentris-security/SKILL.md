@@ -19,12 +19,16 @@ sentris scan . --json
   - `recommended_env_var`: e.g. `"STRIPE_SECRET_KEY"`
   - `remediate_command`: exact command to fix the finding
 
-### Scan Staged Pre-Commit Diff Hunks (`<15ms`), Stdin Streams, or Workstation AI/MCP Configs & Transcripts
+### Scan Staged Pre-Commit Diff Hunks (`<15ms`), Docker Images, Stdin Streams, or Workstation AI/MCP Configs & Transcripts
 ```bash
 sentris scan --staged --json
+sentris scan --staged --fix --json
+sentris scan . --ignore-tests --json
+sentris scan --docker <image-or-tar> --json
 sentris scan --workstation --json
 gh run view --log | sentris scan --stdin --json
 sentris scan . --probe --json
+sentris drift . --json
 ```
 
 ### Autonomously Remediate Secrets (Code / IaC / MCP Rewrite + Secret Store Injection + Transcript Scrubbing)
@@ -38,8 +42,8 @@ sentris fix --workstation --yes --json
 # Batch-remediate all findings across a directory into 1Password / Infisical / Vault / AWS / Doppler (zero argv leaks)
 sentris fix . --all --yes --backend 1password --json
 
-# Key rotation exists for AWS IAM access keys only (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>)
-# For other providers, use guided or API-driven revocation with live polling:
+# Key rotation is supported for AWS IAM access keys and Cloudflare API tokens (sentris fix <file> --rotate --yes --json, then sentris rotate finish <id>); for every other provider revoke the old key with `sentris revoke <target> --wait --json`
+# Forensics for a leaked key (read-only, including CODEOWNERS attribution & post-remediation lookup): sentris investigate <file> --json [--known-ip <ip>]
 sentris revoke <file_path_or_rule_id> --wait --json
 sentris revoke github-pat --api --wait --json
 ```

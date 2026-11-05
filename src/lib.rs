@@ -3,6 +3,7 @@ pub mod cli;
 pub mod cloud;
 pub mod config;
 pub mod detector;
+pub mod drift;
 pub mod error;
 pub mod exposure;
 pub mod fsutil;

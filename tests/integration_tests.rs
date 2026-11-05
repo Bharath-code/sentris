@@ -216,13 +216,16 @@ fn test_cli_format_github() {
 fn test_cli_help_flags_discovery() {
     let bin = get_sentris_bin();
 
-    // Global --offline
+    // Global --help & QUICKSTART EXAMPLES
     let out = Command::new(&bin).arg("--help").output().unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("--offline"));
+    assert!(stdout.contains("--json"));
+    assert!(stdout.contains("drift"));
+    assert!(stdout.contains("QUICKSTART EXAMPLES"));
 
-    // Scan --webhook
+    // Scan --help
     let out = Command::new(&bin)
         .args(["scan", "--help"])
         .output()
@@ -230,8 +233,32 @@ fn test_cli_help_flags_discovery() {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("--webhook"));
+    assert!(stdout.contains("--docker"));
+    assert!(stdout.contains("--fix"));
+    assert!(stdout.contains("--ignore-tests"));
+    assert!(stdout.contains("--workstation"));
+    assert!(stdout.contains("--stdin"));
 
-    // Remediate --backend
+    // Drift --help
+    let out = Command::new(&bin)
+        .args(["drift", "--help"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--fail-on-drift"));
+
+    // Install --help
+    let out = Command::new(&bin)
+        .args(["install", "--help"])
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--with-ai"));
+    assert!(stdout.contains("--auto-fix"));
+
+    // Remediate --help
     let out = Command::new(&bin)
         .args(["remediate", "--help"])
         .output()
@@ -239,6 +266,8 @@ fn test_cli_help_flags_discovery() {
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("--backend"));
+    assert!(stdout.contains("--workstation"));
+    assert!(stdout.contains("Cloudflare API tokens"));
 }
 
 #[test]
@@ -610,8 +639,18 @@ fn test_cli_agent_manifest_and_json_mode() {
     let manifest: serde_json::Value =
         serde_json::from_slice(&agent_out.stdout).expect("Valid JSON manifest");
     assert_eq!(manifest["tool"], "sentris");
-    assert!(manifest["cli_commands"].is_array());
-    assert!(manifest["mcp_tools"].is_array());
+    let cmds = manifest["cli_commands"].as_array().unwrap();
+    assert!(cmds.iter().any(|c| c["name"].as_str() == Some("drift")));
+    assert!(cmds
+        .iter()
+        .any(|c| c["name"].as_str() == Some("investigate")));
+    assert!(cmds.iter().any(|c| c["name"].as_str() == Some("rotate")));
+    assert!(cmds.iter().any(|c| c["name"].as_str() == Some("install")));
+    let mcp_tools = manifest["mcp_tools"].as_array().unwrap();
+    assert_eq!(mcp_tools.len(), 14);
+    assert!(mcp_tools
+        .iter()
+        .any(|t| t["name"].as_str() == Some("sentris_drift_audit")));
 
     // 2. Test `sentris scan <path> --json` (and `--agent` alias)
     let scan_out = Command::new(&bin)

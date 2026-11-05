@@ -15,7 +15,7 @@ cargo fmt --check
 # 2. Strict Clippy lint check (0 warnings allowed across all targets)
 cargo clippy --offline --all-targets -- -D warnings
 
-# 3. Full test suite (395 tests: 333 unit + 62 e2e/integration/corpus/benchmark)
+# 3. Full test suite (401 tests: 339 unit + 62 e2e/integration/corpus/benchmark)
 cargo test --offline
 
 # 4. Run a single unit or integration test
@@ -30,11 +30,16 @@ cargo test --offline --test exposure_e2e_test
 When running `sentris` to scan or remediate secrets in a project, **always pass `--json`** (or set `SENTRIS_AGENT=1`) so output is deterministic JSON and interactive `[y/N]` prompts are auto-approved:
 
 ```bash
-# Scan working tree, staged diff hunks, stdin stream, or workstation AI/MCP configs & .jsonl transcripts
+# Scan working tree, staged diff hunks (with optional --fix), Docker tarballs, stdin stream, or workstation AI/MCP configs & .jsonl transcripts
 sentris scan . --json
-sentris scan --staged --json
+sentris scan . --ignore-tests --json
+sentris scan --staged --fix --json
+sentris scan --docker app:latest --json
 gh run view --log | sentris scan --stdin --json
 sentris scan --workstation --json
+
+# Audit Vault Coverage % & secrets configuration drift between code, .env.example, and .env
+sentris drift . --json
 
 # Probe live provider capabilities & OWASP NHI5 overprivilege advisories (skips Canary/Honeytoken tripwires)
 sentris scan . --probe --json
@@ -89,5 +94,5 @@ When modifying the Rust codebase, preserve these invariants (enforced by tests):
 - `src/verifier/` & `src/exposure/`: 12 live provider verifiers, canary tripwire detector (`detect_canary_token`), 5 read-only capability exposure probes, and `OWASP NHI5` least-privilege scope advisor (`advise_least_privilege`).
 - `src/remediator/`: 7-step remediation pipeline, 6 secret store backends (`env`, `vault`, `aws`, `doppler`, `1password`, `infisical`), polyglot/IaC/transcript replacer (`code_replacer/`), and byte-exact rollback ledger (`rollback.rs`).
 - `src/git/` & `src/investigate/`: Diff-hunk parser, history scanner, Zone 3 quarantine playbook generator, `.github/CODEOWNERS` attribution (`resolve_codeowners`), AWS OIDC trust policy generators (`generate_aws_oidc_trust_policy`), and CloudTrail forensics.
-- `src/mcp/`, `src/lsp/`, `src/hook.rs`, `src/redact.rs`: JSON-RPC 2.0 MCP server (10 tools), LSP 3.17 server, Claude Code `PreToolUse`/`PostToolUse`/`UserPromptSubmit` hook guardrails, and `«sentris:<rule>:<fp8>»` phantom-token redaction.
+- `src/mcp/`, `src/lsp/`, `src/hook.rs`, `src/redact.rs`: JSON-RPC 2.0 MCP server (14 tools), LSP 3.17 server, Claude Code `PreToolUse`/`PostToolUse`/`UserPromptSubmit` hook guardrails, and `«sentris:<rule>:<fp8>»` phantom-token redaction.
 - `src/audit/`: Tamper-evident RFC 2104 HMAC-SHA256 hash chain and Vanta/Drata compliance pack exporter (`SOC 2`, `ISO 27001`, `OWASP NHI Top 10:2025`, `PCI-DSS v4.0`).
