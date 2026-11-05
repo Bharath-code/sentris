@@ -239,14 +239,14 @@ fn test_cli_help_flags_discovery() {
     assert!(stdout.contains("--workstation"));
     assert!(stdout.contains("--stdin"));
 
-    // Drift --help
-    let out = Command::new(&bin)
-        .args(["drift", "--help"])
-        .output()
-        .unwrap();
+    // Drift / Rot --help
+    let out = Command::new(&bin).args(["rot", "--help"]).output().unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(stdout.contains("--fail-on-drift"));
+    assert!(stdout.contains("--fail-on-rot"));
+    assert!(stdout.contains("--max-age-days"));
+    assert!(stdout.contains("--webhook"));
 
     // Install --help
     let out = Command::new(&bin)
@@ -640,7 +640,9 @@ fn test_cli_agent_manifest_and_json_mode() {
         serde_json::from_slice(&agent_out.stdout).expect("Valid JSON manifest");
     assert_eq!(manifest["tool"], "sentris");
     let cmds = manifest["cli_commands"].as_array().unwrap();
-    assert!(cmds.iter().any(|c| c["name"].as_str() == Some("drift")));
+    assert!(cmds
+        .iter()
+        .any(|c| c["name"].as_str().unwrap_or("").starts_with("drift")));
     assert!(cmds
         .iter()
         .any(|c| c["name"].as_str() == Some("investigate")));

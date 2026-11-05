@@ -28,7 +28,8 @@ sentris scan --docker <image-or-tar> --json
 sentris scan --workstation --json
 gh run view --log | sentris scan --stdin --json
 sentris scan . --probe --json
-sentris drift . --json
+sentris rot . --verify --json
+sentris drift . --max-age-days 90 --fail-on-drift --json
 ```
 
 ### Autonomously Remediate Secrets (Code / IaC / MCP Rewrite + Secret Store Injection + Transcript Scrubbing)

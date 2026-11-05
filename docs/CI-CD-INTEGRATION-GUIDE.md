@@ -245,3 +245,32 @@ sentris scan . --webhook "https://hooks.slack.com/services/T00/B00/X00"
 ```
 
 In air-gapped environments or restricted egress environments, pass `--offline` to ensure zero network calls are attempted.
+
+---
+
+## 10. Post-Deploy "Secret Rot" & Configuration Drift Watchdog (`sentris rot` / `sentris drift`)
+
+Run `sentris rot` (or `sentris drift`) as a post-deploy step in GitHub Actions or GitLab CI to verify that:
+1. Every environment variable referenced in code (`process.env.*`, `os.getenv(...)`, `std::env::var(...)`, `${{ secrets.* }}`, `var.*`) is documented in `.env.example` and provisioned in `.env`/vault (`vault_coverage_pct`).
+2. No keys in `.env` have rotted past your rotation SLA (`--max-age-days 90` for PCI-DSS v4.0 Req 8.6 / OWASP NHI1).
+3. No live vendor keys (`OpenAI`, `Anthropic`, `Stripe`, `AWS`, `GitHub`, `Cloudflare`, etc.) have been revoked or expired (`--verify`).
+4. Any drift or rot immediately alerts Slack or Discord (`--webhook`).
+
+```yaml
+      - name: Post-Deploy Secret Rot & Drift Watchdog
+        run: |
+          sentris rot . --max-age-days 90 --verify --fail-on-rot --webhook "${{ secrets.SLACK_SECURITY_WEBHOOK }}"
+```
+
+---
+
+## 11. Docker / OCI Container Image & "Ghost Layer" Scanning (`sentris scan --docker`)
+
+Before pushing a built container image to ECR, GHCR, or Docker Hub, scan the image or exported `.tar` archive across all layers. Sentris inspects `manifest.json`, image config history, and nested layer tarballs, flagging **Ghost Layer Secrets** (`[GHOST LAYER SECRET]`) that were committed in a lower `RUN`/`COPY` layer and deleted (`rm .env`) in a later layer:
+
+```yaml
+      - name: Build & Scan Container Image for Ghost Layer Secrets
+        run: |
+          docker build -t acme/api:${{ github.sha }} .
+          sentris scan --docker acme/api:${{ github.sha }} --fail-on-secret
+```

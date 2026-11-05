@@ -35,7 +35,7 @@ Fixing the code, moving the credential into `.env` / `Vault` / `1Password` / `In
 | Scanning (CLI, `--stdin` stream, `--docker` container/ghost-layer tarballs, pre-commit `--staged --fix`, git history, workstation AI/MCP/transcripts, `--ignore-tests`, SARIF, MCP, LSP) | Working. **119 precision rules** (incl. 2026 AI/RAG & Cloud rules: Cloudflare, Tavily, Pinecone, Firecrawl + **MCP supply-chain & prompt-injection rules**: `mcp-unpinned-npx-server`, `unicode-prompt-injection`, `ai-prompt-injection-exfil`) + Single-pass Aho-Corasick literal prefilter + Structure-of-Arrays (SoA) rule layout + multi-layer Base64 (`k8s` `Secret` `data:` blocks) and URL-percent decoding + streaming `--stdin` pipe scanner + OCI/Docker `--docker` ghost-layer scanner. |
 | Remediation: move secret to `.env`, patch code/IaC/MCP/transcripts, pre-commit auto-fix (`scan --staged --fix` / `install --auto-fix`), byte-exact rollback | Working for `.env`; atomic writes, `.env.example` contract sync, `.gitignore` hardening, signed rollback ledger. Includes **IaC, CI/CD, MCP & Transcript Smart Patching** (`.github/workflows/*.yml` → `${{ secrets.VAR }}`, `.tf`/`.tfvars` → `var.<var_lower>`, `Dockerfile`/`docker-compose*.yml`/`.mcp.json` → `"${VAR}"`, and `.jsonl`/shell history `[REDACTED_BY_SENTRIS:<VAR>]` scrubbing via `sentris fix --workstation`). |
 | Remediation into Vault / AWS Secrets Manager / Doppler / 1Password / Infisical | Working across all 6 backends (`env`, `vault`, `aws`, `doppler`, `1password`, `infisical`) via `stdin` or `0600` `SecretTempFile` templates so secret values never appear in `argv`. Tested against recorded CLI shims. |
-| **Vault Coverage % & Secrets Drift Auditor (`sentris drift`)** | Audits source code environment variable references (`process.env.*`, `os.environ.get(...)`, `std::env::var(...)`, `${{ secrets.* }}`, `var.*`) against `.env.example`, `.env`, and rollback ledgers to compute **Vault Coverage %** and surface undocumented shadow secrets or missing runtime vars (`--fail-on-drift`). |
+| **Secret Rot, Vault Coverage % & Drift Auditor (`sentris rot` / `sentris drift`)** | Audits source code environment variable references (`process.env.*`, `os.environ.get(...)`, `std::env::var(...)`, `${{ secrets.* }}`, `var.*`) against `.env.example`, `.env`, and rollback ledgers to compute **Vault Coverage %** and **Secret Rot Score %**, surfacing stale unrotated keys (`--max-age-days 90`), dead/revoked vendor keys (`--verify`), orphaned shadow keys in `.env`, and missing runtime vars (`--fail-on-rot` / `--fail-on-drift`, `--webhook`). |
 | **Zero-disk `.env` runtime runner (`sentris run`)** | Working across all 6 backends (`sentris run --backend <backend> --key <NAME>... -- <cmd>`). Fetches secrets into child process environment memory only, zeroizes parent buffers, and refuses `{{secret:...}}` placeholders in `argv`. |
 | **Guided & API credential revocation (`sentris revoke`)** | Maps findings to exact provider revocation console URLs, supports direct API revocation (`--api`) for GitHub tokens (`POST /credentials/revoke`), polls live verification (`--wait`) every 2s until `Revoked`, and records `KeyDeactivated` in `.sentris/audit_ledger.json`. |
 | **Provider key rotation (`--rotate`) & Secretless OIDC Upgrader** | **AWS IAM access keys** (`aws-access-key-id`) and **Cloudflare API tokens** (`cloudflare-api-token`, via `PUT /user/tokens/{id}/value`) for `--rotate`: provisions/rolls the credential, stores it, patches the code; AWS old keys stay active until `sentris rotate finish` (24 h grace, refuses while the old key is still being used). Also includes AWS IAM OIDC trust policy & GitHub Actions `id-token: write` workflow generators (`GitManager::generate_aws_oidc_trust_policy`). |
@@ -73,7 +73,7 @@ flowchart LR
     end
 
     subgraph Govern["3. Zero-Knowledge & SOC 2 Proof"]
-        F["Native MCP Server (9 Tools) + Real-Time IDE LSP 3.17"]
+        F["Native MCP Server (14 Tools) + Real-Time IDE LSP 3.17"]
         G["Salted HMAC-SHA256 Multi-Repo Blast Radius + 1-Click Vanta Export"]
         F --> G
     end
@@ -191,11 +191,22 @@ cargo install sentris
 ### 2. Core Scanning & Interactive TUI
 
 ```bash
-# Scan working directory recursively (Work-Stealing Parallel Walker + Whole-File RegexSet DFA)
+# Scan working directory recursively (Work-Stealing Parallel Walker + Aho-Corasick Prefilter)
 sentris scan .
 
-# Scan only staged git index diff hunks (pre-commit mode)
+# Production-only triage: ignore unit/integration test files & fixtures (tests/, __tests__/, *.spec.*, *.test.*)
+sentris scan . --ignore-tests
+
+# Scan only staged git index diff hunks (pre-commit mode) — or auto-remediate & re-stage in-place (--fix)
 sentris scan --staged
+sentris scan --staged --fix
+
+# Scan a Docker/OCI container image or exported .tar archive across all layers (detects Ghost Layer secrets deleted in later layers)
+sentris scan --docker my-image:latest
+
+# Audit Secret Rot & Configuration Drift (.env vs .env.example vs code + stale >90d keys + live vendor key check + Slack alert)
+sentris rot . --verify --webhook https://hooks.slack.com/services/...
+sentris drift . --max-age-days 90 --fail-on-drift
 
 # Scan commits in a branch or push range (e.g. origin/main..HEAD)
 sentris scan --since HEAD~1
@@ -277,8 +288,11 @@ backup_branch = true
 # Installs both .git/hooks/pre-commit (--staged) and .git/hooks/pre-push (--since HEAD~1)
 sentris install
 
+# Self-healing pre-commit hook: automatically extracts staged secrets to .env, patches code, and `git add`s fixed files
+sentris install --auto-fix
+
 # Also scaffold workspace AI agent guardrails (.mcp.json, SKILL.md, and .claude/settings.local.json)
-sentris install --with-ai
+sentris install --with-ai --auto-fix
 ```
 
 Or via Python `pre-commit` (`.pre-commit-config.yaml`):
@@ -324,16 +338,17 @@ sentris run --backend 1password --key STRIPE_SECRET_KEY --key DATABASE_URL -- np
 sentris revoke src/billing.ts --wait
 sentris revoke github-pat --api --wait
 
-# Rotate an AWS IAM access key (other providers exit with an error before changing anything).
-# Uses your own AWS CLI credentials, never the leaked key. Old key stays active.
+# Rotate an AWS IAM access key or Cloudflare API token at the provider.
+# For AWS IAM: creates a replacement key and keeps the old key active until `sentris rotate finish` (24h grace).
+# For Cloudflare API tokens: rolls the token secret value in-place via PUT /client/v4/user/tokens/{id}/value.
 sentris remediate config/aws.py --rotate --yes
 sentris rotate status
 sentris rotate finish <rot_id>      # deactivates the old key; refuses inside the grace window
 sentris rotate undo <rot_id>        # reactivates the old key, deletes the new one
 
-# Was a leaked AWS key used? Read-only: first commit containing it + CODEOWNERS attribution + CloudTrail event history.
+# Was a leaked key used? Read-only: first commit containing it (works even after `sentris fix`) + CODEOWNERS attribution + AWS CloudTrail event history.
 # Needs cloudtrail:LookupEvents on your own AWS credentials. Management events only, last 90 days;
-# an empty result is not evidence the key went unused. Other providers: "no forensics yet".
+# an empty result is not evidence the key went unused. Other providers: git + CODEOWNERS attribution + "no forensics yet".
 sentris investigate config/aws.py --known-ip 203.0.113.10
 ```
 
@@ -356,9 +371,11 @@ sentris agent
 # 2. Scaffold .mcp.json and .agents/skills/sentris-security/SKILL.md in the workspace
 sentris agent --setup
 
-# 3. Scan any path or staged diff in Agent Mode (each finding includes recommended_env_var & remediate_command)
-sentris scan . --json
-sentris scan --staged --json
+# 3. Scan any path, staged diff, Docker image, or Secret Rot in Agent Mode (each finding includes recommended_env_var & remediate_command)
+sentris scan . --ignore-tests --json
+sentris scan --staged --fix --json
+sentris scan --docker app:latest --json
+sentris rot . --verify --json
 
 # 4. Non-interactive autonomous remediation, rollback, quarantine, audit & blast-radius in pure JSON
 sentris fix src/billing.ts --json
@@ -368,8 +385,8 @@ sentris audit --verify --export-vanta vanta-evidence.json --json
 sentris team --json
 ```
 
-#### Model Context Protocol (`sentris mcp`) — 9 Tools, 3 Resources & 2 Prompts
-Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_remediate_finding`, `sentris_audit_verify`, `sentris_rollback_session`, `sentris_redact_text`, `sentris_rotate_status`, `sentris_rotate_finish`, `sentris_investigate`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
+#### Model Context Protocol (`sentris mcp`) — 14 Tools, 3 Resources & 2 Prompts
+Exposes `sentris_scan_path`, `sentris_scan_staged`, `sentris_scan_workstation`, `sentris_probe_exposure`, `sentris_drift_audit`, `sentris_remediate_finding`, `sentris_revoke_credential`, `sentris_audit_verify`, `sentris_rollback_session`, `sentris_redact_text`, `sentris_rotate_status`, `sentris_rotate_finish`, `sentris_investigate`, and `sentris_team_blast_radius` plus `resources/list` (`sentris://agent/manifest`, `sentris://audit/ledger`, `sentris://team/blast-radius`) and `prompts/list` (`remediate-repo-secrets`, `pre-commit-security-gate`) over `stdio`:
 ```bash
 # Print ready-to-paste mcpServers JSON for Claude Code, Cursor, Windsurf & Antigravity
 sentris mcp --print-config

@@ -10,8 +10,8 @@ use std::path::PathBuf;
     author = "Sentris Contributors",
     version = env!("CARGO_PKG_VERSION"),
     about = "High-performance, memory-safe, zero-knowledge secret scanner with autonomous remediation.",
-    long_about = "Sentris scans repositories, git history, Docker/OCI images, stdin streams, and workstation AI/MCP configs at native speed (>10,000 files/sec), verifies live credentials across 12 provider APIs with Canary tripwire immunity, audits Vault Coverage % & secrets drift, and performs safe autonomous remediation across source code, IaC, and 6 secret backends with tamper-evident SOC 2 / ISO 27001 / OWASP NHI 2025 / PCI-DSS v4.0 audit logging.",
-    after_help = "QUICKSTART EXAMPLES (Human & AI Agent Mode):\n  # 1. Scan repository, staged git hunks (with auto-fix), Docker images, or stdin streams\n  sentris scan . --verify --probe\n  sentris scan --staged --fix\n  sentris scan --docker app:latest\n  gh run view --log | sentris scan --stdin\n\n  # 2. Audit Vault Coverage % & configuration drift (.env.example vs .env vs code)\n  sentris drift . --fail-on-drift\n\n  # 3. Autonomously remediate secrets into .env / Vault / AWS / Doppler / 1Password / Infisical\n  sentris fix src/config.ts --yes\n  sentris fix . --all --backend 1password --yes\n  sentris fix --workstation --yes\n\n  # 4. Run commands with secrets in child memory only (zero .env on disk) & export Vanta SOC 2 evidence\n  sentris run --backend env --key STRIPE_SECRET_KEY -- npm start\n  sentris audit --verify --export-vanta vanta-evidence.json\n\n  # 5. AI Coding Agent CLI Mode (deterministic JSON on stdout, zero interactive prompts)\n  sentris scan . --ignore-tests --json\n  sentris agent                  # Emit full AI Agent CLI & MCP tool schema manifest\n  sentris agent --setup          # Auto-configure .mcp.json, SKILL.md & Claude Code hooks"
+    long_about = "Sentris scans repositories, git history, Docker/OCI images, stdin streams, and workstation AI/MCP configs at native speed (>10,000 files/sec), verifies live credentials across 12 provider APIs with Canary tripwire immunity, audits Secret Rot & Vault Coverage % (`sentris rot` / `sentris drift`), and performs safe autonomous remediation across source code, IaC, and 6 secret backends with tamper-evident SOC 2 / ISO 27001 / OWASP NHI 2025 / PCI-DSS v4.0 audit logging.",
+    after_help = "QUICKSTART EXAMPLES (Human & AI Agent Mode):\n  # 1. Scan repository, staged git hunks (with auto-fix), Docker images, or stdin streams\n  sentris scan . --verify --probe\n  sentris scan --staged --fix\n  sentris scan --docker app:latest\n  gh run view --log | sentris scan --stdin\n\n  # 2. Audit Secret Rot, Vault Coverage % & configuration drift (.env.example vs .env vs vendor keys)\n  sentris rot . --verify --webhook https://hooks.slack.com/services/...\n  sentris drift . --max-age-days 90 --fail-on-drift\n\n  # 3. Autonomously remediate secrets into .env / Vault / AWS / Doppler / 1Password / Infisical\n  sentris fix src/config.ts --yes\n  sentris fix . --all --backend 1password --yes\n  sentris fix --workstation --yes\n\n  # 4. Run commands with secrets in child memory only (zero .env on disk) & export Vanta SOC 2 evidence\n  sentris run --backend env --key STRIPE_SECRET_KEY -- npm start\n  sentris audit --verify --export-vanta vanta-evidence.json\n\n  # 5. AI Coding Agent CLI Mode (deterministic JSON on stdout, zero interactive prompts)\n  sentris scan . --ignore-tests --json\n  sentris agent                  # Emit full AI Agent CLI & MCP tool schema manifest\n  sentris agent --setup          # Auto-configure .mcp.json, SKILL.md & Claude Code hooks"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -129,15 +129,28 @@ pub enum Commands {
         ignore_tests: bool,
     },
 
-    /// Audit code environment variable references against `.env.example` and `.env`/vault to compute Vault Coverage % and secrets drift
+    /// Audit Secret Rot & Configuration Drift: watches `.env`, `.env.example`, CI workflows, and vendor keys for stale (>90d), dead/revoked, orphaned, or leaked keys
+    #[command(visible_alias = "rot", visible_alias = "doctor")]
     Drift {
         /// Target repository directory to audit (defaults to current directory)
         #[arg(default_value = ".")]
         path: PathBuf,
 
-        /// Exit with non-zero code (1) if any configuration drift, missing keys, or hardcoded secrets are detected
-        #[arg(long, default_value_t = false)]
+        /// Exit with non-zero code (1) if any configuration drift, secret rot, missing keys, or hardcoded secrets are detected
+        #[arg(long, visible_alias = "fail-on-rot", default_value_t = false)]
         fail_on_drift: bool,
+
+        /// Maximum credential age in days before a key in `.env` is flagged as stale Secret Rot (PCI-DSS v4.0 / OWASP NHI1 default: 90 days)
+        #[arg(long, default_value_t = 90)]
+        max_age_days: u64,
+
+        /// Verify vendor keys in `.env` against 12 live provider APIs to catch dead/revoked keys after deploy
+        #[arg(long, default_value_t = false)]
+        verify: bool,
+
+        /// Dispatch a Secret Rot & Drift alert card to a Slack or Discord webhook URL when rot or drift is detected
+        #[arg(long)]
+        webhook: Option<String>,
     },
 
     /// Install the Sentris pre-commit & pre-push hooks (and optionally AI agent MCP/hook configs)

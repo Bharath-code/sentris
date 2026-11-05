@@ -4,7 +4,7 @@
 
 > **Binary Target:** `target/release/sentris` (`Mach-O 64-bit arm64` / `ELF x86_64`, `opt-level = 3`, `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`)  
 > **Binary Size:** `4,213,280 bytes` (`4.02 MB`) — zero C/C++/OpenSSL/Python/Node runtime dependencies  
-> **Test Suite:** **319 / 319 Unit Tests Passing (`100%`)** + CLI integration, corpus recall/FP & throughput SLA benchmarks  
+> **Test Suite:** **401 / 401 Automated Tests Passing (`100%`)** (`339` unit tests + `62` CLI integration, exposure, rotation, hook, import, investigate, corpus & SLA tests)  
 > **Static Analysis:** **`0` Clippy warnings** (`--all-targets -- -D warnings`), **`0` `#[allow(dead_code)]` suppressions**, `100%` `rustfmt` compliant
 
 ---
@@ -85,25 +85,25 @@ The Rust codebase is structured into **single-responsibility source files** acro
 ```mermaid
 flowchart TD
     Main["src/main.rs (7 LOC)\nThin CLI Entry Point"] --> Handlers["src/cli/handlers/*\nModular Subcommand Routers"]
-    Handlers --> Scanner["src/scanner/\nWork-Stealing Parallel Walker + --workstation"]
+    Handlers --> Scanner["src/scanner/\nWork-Stealing Parallel Walker + --docker + --stdin + --workstation"]
+    Handlers --> Drift["src/drift.rs\nSecret Rot & Vault Coverage % Auditor (sentris rot / drift)"]
     Handlers --> Remediator["src/remediator/\n7-Step Self-Healing + sentris run"]
-    Handlers --> Revoke["src/cli/handlers/revoke.rs & src/rotator/\nRevocation + AWS IAM Dual-Key Rotation"]
-    Handlers --> Audit["src/audit/\nRFC 2104 HMAC-SHA256 & Vanta SOC 2"]
-    Handlers --> Protocols["src/mcp/, src/lsp/, src/hook.rs\nAI Agent MCP + IDE LSP 3.17 + Pre/Post Hook"]
+    Handlers --> Revoke["src/cli/handlers/revoke.rs & src/rotator/\nRevocation + AWS IAM & Cloudflare Rotation"]
+    Handlers --> Audit["src/audit/\nRFC 2104 HMAC-SHA256 & Vanta SOC 2 / ISO / OWASP NHI / PCI-DSS"]
+    Handlers --> Protocols["src/mcp/ (14 Tools), src/lsp/, src/hook.rs\nAI Agent MCP + IDE LSP 3.17 + Pre/Post Hook"]
     Handlers --> Cloud["src/cloud/\nZero-Knowledge zk_<sha256> Blast Radius"]
-    Scanner --> Detector["src/detector/\nSingle-Pass Aho-Corasick + SoA Rules + Base64/URL Decode"]
-    Scanner --> Exposure["src/verifier/ (10) & src/exposure/ (5)\nParallel 8-Worker Live Verifiers & Probes"]
+    Scanner --> Detector["src/detector/\nSingle-Pass Aho-Corasick + 119 Rules + MCP/Unicode Guard + Base64/URL Decode"]
+    Scanner --> Exposure["src/verifier/ (12) & src/exposure/ (5)\nParallel 8-Worker Live Verifiers, Probes & Canary Immunity"]
     Remediator --> Backends["src/remediator/backend/\nEnv • Vault • AWS • Doppler • 1Password • Infisical (Zero argv)"]
-    Remediator --> Replacer["src/remediator/code_replacer/\nPolyglot Code & Multi-Line PEM Patcher"]
+    Remediator --> Replacer["src/remediator/code_replacer/\nPolyglot Code, IaC, MCP & Transcript Patcher"]
 ```
 
 ### Automated Test & Quality Summary
 
 | Verification Suite | Test Count | Release Execution Time | Result |
 | :--- | :---: | :---: | :---: |
-| **Library Unit Tests (`src/lib.rs`)** | `319` | **`2.92 s`** | **319 / 319 PASS** |
-| **End-to-End CLI Integration Tests (`tests/integration_tests.rs`)** | `24` | **`1.05 s`** | **24 / 24 PASS** |
-| **Throughput SLA Microbenchmark (`tests/benchmark_test.rs`)** | `1` | **`0.04 s`** | **1 / 1 PASS** |
+| **Library Unit Tests (`src/lib.rs`)** | `339` | **`2.92 s`** | **339 / 339 PASS** |
+| **End-to-End Integration, Exposure, Rotation, Hook, Forensics & Corpus Suites (`tests/*.rs`)** | `62` | **`4.10 s`** | **62 / 62 PASS** |
 | **Clippy Linter (`cargo clippy --all-targets -- -D warnings`)** | All targets | — | **`0` warnings, `0` errors** |
 | **Rustfmt Check (`cargo fmt --check`)** | All files | — | **100% compliant** |
 

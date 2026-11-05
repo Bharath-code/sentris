@@ -114,6 +114,50 @@ impl WebhookReporter {
         }
         target.post(trimmed_url, &payload)
     }
+
+    /// Dispatches a Secret Rot & Configuration Drift alert card to Slack or Discord webhook.
+    pub fn post_drift_rot_card(
+        webhook_url: &str,
+        report: &crate::drift::DriftReport,
+        dry_run: bool,
+    ) -> Result<String, SentrisError> {
+        let trimmed_url = webhook_url.trim();
+        let target = Target::parse(trimmed_url)?;
+        let status_label = if report.has_rot {
+            "🚨 Secret Rot Detected"
+        } else if report.has_drift {
+            "⚠️ Configuration Drift Detected"
+        } else {
+            "✅ Zero Secret Rot & 100% Healthy"
+        };
+        let summary_text = format!(
+            "{status_label} | Vault Coverage: {:.1}% | Rot Score: {:.1}% | Leaked: {} | Stale (>max age): {} | Dead/Revoked: {} | Orphaned (.env): {} | Missing (.env): {}",
+            report.vault_coverage_pct,
+            report.rot_score_pct,
+            report.hardcoded_leaks_count,
+            report.stale_keys.len(),
+            report.dead_or_revoked_keys.len(),
+            report.shadow_env_vars.len(),
+            report.missing_from_env.len(),
+        );
+        let payload = if target.is_discord {
+            serde_json::json!({
+                "content": summary_text,
+            })
+        } else {
+            serde_json::json!({
+                "text": summary_text,
+            })
+        };
+        if dry_run {
+            return Ok(format!(
+                "[DRY RUN] Secret Rot webhook alert card simulated for {} ({})",
+                target.provider(),
+                target.shown
+            ));
+        }
+        target.post(trimmed_url, &payload)
+    }
 }
 
 /// Where a card is going, with a form of the URL that is safe to print.

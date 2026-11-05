@@ -42,29 +42,71 @@ pub fn handle_install(force: bool, with_ai: bool, auto_fix: bool) {
     }
 }
 
-pub fn handle_drift(cli: &Cli, path: PathBuf, fail_on_drift: bool) {
-    let report = match crate::drift::analyze_drift(&path) {
+#[allow(clippy::too_many_lines)]
+pub fn handle_drift(
+    cli: &Cli,
+    path: PathBuf,
+    fail_on_drift: bool,
+    max_age_days: u64,
+    verify: bool,
+    webhook: Option<String>,
+) {
+    let verify_live = verify && !cli.offline;
+    let report = match crate::drift::analyze_drift_with_options(&path, max_age_days, verify_live) {
         Ok(rep) => rep,
         Err(err) => {
             eprintln!(
-                "{} Failed to analyze secrets drift: {}",
+                "{} Failed to analyze secrets drift & rot: {}",
                 "ERROR:".red().bold(),
                 err
             );
             process::exit(1);
         }
     };
+
+    let mut webhook_status: Option<String> = None;
+    if let Some(ref url) = webhook {
+        if cli.offline {
+            webhook_status = Some("skipped_offline".to_string());
+            if !cli.is_agent_mode() && !cli.quiet {
+                println!(
+                    "{}",
+                    "⚠ Zero-egress offline mode active — skipping webhook dispatch".yellow()
+                );
+            }
+        } else {
+            match crate::reporter::webhook::WebhookReporter::post_drift_rot_card(
+                url, &report, false,
+            ) {
+                Ok(msg) => {
+                    webhook_status = Some(msg.clone());
+                    if !cli.is_agent_mode() && !cli.quiet {
+                        println!("{} {}", "✔".green().bold(), msg);
+                    }
+                }
+                Err(err) => {
+                    webhook_status = Some(format!("error: {err}"));
+                    if !cli.is_agent_mode() && !cli.quiet {
+                        eprintln!("{} Webhook dispatch failed: {}", "⚠".yellow().bold(), err);
+                    }
+                }
+            }
+        }
+    }
+
     if cli.is_agent_mode() {
         print_json(serde_json::json!({
             "ok": !report.has_drift,
             "command": "drift",
+            "aliases": ["rot", "doctor"],
+            "webhook_status": webhook_status,
             "report": report,
         }));
     } else if !cli.quiet {
         println!();
         println!(
             "{} {}",
-            "🧭 Sentris Vault Coverage & Secrets Drift Audit:"
+            "🧭 Sentris Secret Rot & Vault Coverage Audit:"
                 .cyan()
                 .bold(),
             path.display().to_string().bold()
@@ -72,6 +114,17 @@ pub fn handle_drift(cli: &Cli, path: PathBuf, fail_on_drift: bool) {
         println!(
             "   Vault Coverage:          {}%",
             format!("{:.1}", report.vault_coverage_pct).green().bold()
+        );
+        println!(
+            "   Secret Rot Score:        {}%",
+            if report.rot_score_pct == 0.0 {
+                "0.0 (Healthy)".green().bold().to_string()
+            } else {
+                format!("{:.1}", report.rot_score_pct)
+                    .yellow()
+                    .bold()
+                    .to_string()
+            }
         );
         println!(
             "   Env Vars Referenced:     {}",
@@ -90,6 +143,45 @@ pub fn handle_drift(cli: &Cli, path: PathBuf, fail_on_drift: bool) {
                     .to_string()
             }
         );
+        if !report.stale_keys.is_empty() {
+            let formatted: Vec<String> = report
+                .stale_keys
+                .iter()
+                .map(|s| format!("{} ({}d > {}d max)", s.key_name, s.age_days, s.max_age_days))
+                .collect();
+            println!(
+                "   {} Stale Unrotated Keys ({}): {}",
+                "⏳".yellow().bold(),
+                report.stale_keys.len(),
+                formatted.join(", ")
+            );
+        }
+        if !report.dead_or_revoked_keys.is_empty() {
+            let formatted: Vec<String> = report
+                .dead_or_revoked_keys
+                .iter()
+                .map(|k| format!("{} ({} - {})", k.key_name, k.provider, k.status))
+                .collect();
+            println!(
+                "   {} Dead / Revoked Vendor Keys ({}): {}",
+                "💀".red().bold(),
+                report.dead_or_revoked_keys.len(),
+                formatted.join(", ")
+            );
+        }
+        if !report.active_vendor_keys.is_empty() {
+            let formatted: Vec<String> = report
+                .active_vendor_keys
+                .iter()
+                .map(|k| format!("{} ({})", k.key_name, k.provider))
+                .collect();
+            println!(
+                "   {} Live Verified Vendor Keys ({}): {}",
+                "✔".green().bold(),
+                report.active_vendor_keys.len(),
+                formatted.join(", ")
+            );
+        }
         if !report.missing_from_env_example.is_empty() {
             println!(
                 "   {} Missing from .env.example ({}): {}",
@@ -108,14 +200,14 @@ pub fn handle_drift(cli: &Cli, path: PathBuf, fail_on_drift: bool) {
         }
         if !report.shadow_env_vars.is_empty() {
             println!(
-                "   • Unreferenced keys in .env ({}): {}",
+                "   • Orphaned keys rotting in .env ({}): {}",
                 report.shadow_env_vars.len(),
                 report.shadow_env_vars.join(", ")
             );
         }
         if !report.has_drift {
             println!(
-                "   {} Zero drift detected (100% Vault Coverage & synced .env.example)",
+                "   {} Zero secret rot or drift detected (100% Vault Coverage & healthy keys)",
                 "✔".green().bold()
             );
         }

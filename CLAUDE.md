@@ -38,8 +38,9 @@ sentris scan --docker app:latest --json
 gh run view --log | sentris scan --stdin --json
 sentris scan --workstation --json
 
-# Audit Vault Coverage % & secrets configuration drift between code, .env.example, and .env
-sentris drift . --json
+# Audit Secret Rot, Vault Coverage % & secrets configuration drift between code, .env.example, and .env
+sentris rot . --verify --json
+sentris drift . --max-age-days 90 --fail-on-drift --json
 
 # Probe live provider capabilities & OWASP NHI5 overprivilege advisories (skips Canary/Honeytoken tripwires)
 sentris scan . --probe --json

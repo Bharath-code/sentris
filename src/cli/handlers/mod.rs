@@ -91,7 +91,10 @@ pub fn execute(cli: Cli) {
         Commands::Drift {
             path,
             fail_on_drift,
-        } => audit::handle_drift(&cli, path, fail_on_drift),
+            max_age_days,
+            verify,
+            webhook,
+        } => audit::handle_drift(&cli, path, fail_on_drift, max_age_days, verify, webhook),
         Commands::Install {
             force,
             with_ai,

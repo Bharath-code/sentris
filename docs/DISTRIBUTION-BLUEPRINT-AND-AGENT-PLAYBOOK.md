@@ -185,3 +185,53 @@ Keep vanity engagement metrics (impressions, likes) strictly separate from adopt
 - [ ] **Day 8 (Stage 1/2 — Launch):** Execute the **Show HN** launch ([`docs/HACKER-NEWS-LAUNCH.md`](HACKER-NEWS-LAUNCH.md)) and publish the founder build-in-public thread on X/LinkedIn.
 - [ ] **Day 9–11 (Stage 3 — Partner):** Send live 60-second GIF demos of `sentris fix --backend doppler` / `infisical` / `1password` to partner DevRel teams for co-marketing guides.
 - [ ] **Day 12–14 (Agent Loop):** Run the first weekly **AI Answer Citation Monitor** battery across ChatGPT, Claude, and Perplexity to baseline Sentris's citation share against Gitleaks and TruffleHog.
+
+---
+
+## 8. Viral Category Hook: "Secret Rot" Scanner for AI Startups (`sentris rot` / `sentris drift`)
+
+### 8.1 Why "Secret Rot" Wins Attention While "Secret Scanner" Gets Ignored
+- When AI startup founders hear *"secret scanner"*, they think: *"GitHub already blocks pushed AWS keys."*
+- When they hear **"Secret Rot"**, they immediately recognize the real problem sitting in their repo right now:
+  1. **Stale / Unrotated Keys (`>90 days`):** `sk-ant-`, `sk-proj-`, `tvly-`, `pcsk_`, `AWS`, or `Cloudflare` keys sitting in `.env` or `.mcp.json` since the hackathon 6 months ago (`OWASP NHI1` / `PCI-DSS v4.0 Req 8.6`).
+  2. **Dead / Revoked Vendor Keys:** A vendor API key in `.env` that was revoked or expired in the dashboard and breaks production silently after a deploy.
+  3. **Orphaned Shadow Keys:** Old API keys sitting in `.env` that code no longer references (`shadow_env_vars`).
+  4. **Escaped Keys Across Repos / Layers:** Keys that leaked into a deleted Docker layer (`sentris scan --docker`), a Claude Code `.jsonl` transcript (`sentris scan --workstation`), or a second microservice repo (`sentris sync`).
+
+### 8.2 Ready-to-Post Copywriting (X / LinkedIn / Show HN / Cold Outbound)
+
+#### Hook 1 — Short Viral X / LinkedIn Post
+> **"Secret rot" scanner for AI startups.**
+>
+> Watches `.env`, CI workflows, Docker layers, and vendor keys after every deploy.
+> Pings Slack the second a key rots, drifts, or leaves the repo.
+>Fixes the code and rotates the key in 15 seconds.
+>
+> ```bash
+> sentris rot . --verify --webhook https://hooks.slack.com/services/...
+> ```
+
+#### Hook 2 — Founder / CTO Cold DM (Seed – Series B AI Startups)
+> **Subject:** quick check on `.env` / MCP secret rot across `{{company}}`'s repos
+>
+> Hey `{{first_name}}` — noticed you're scaling the AI stack at `{{company}}`.
+>
+> Most AI teams we talk to aren't getting hit by zero-days — they're getting hit by **Secret Rot**:
+> - `OpenAI` / `Anthropic` / `AWS` keys sitting unrotated in `.env` or `~/.claude/projects/*.jsonl` for `>90 days`
+> - Vendor keys drifting between `.env.example`, `.env`, and GitHub Actions after a deploy
+> - One shared Postgres or Stripe key copied across 10 microservices
+>
+> We built **Sentris** (a single `3.8 MB` Rust binary, MIT open-source) so you can run one command after every deploy:
+> ```bash
+> sentris rot . --verify --webhook $SLACK_WEBHOOK
+> ```
+> It flags stale (`>90d`), dead/revoked, orphaned, or leaked keys, pings Slack the second a key leaves the repo, and `sentris fix` rewrites the code + injects the key into 1Password/Doppler/Vault/AWS in 15 seconds.
+>
+> Worth running `sentris rot` on one repo today? Zero code ever leaves your machine.
+
+#### Hook 3 — Post-Deploy CI Snippet (Copy-Paste for GitHub Actions)
+```yaml
+- name: Post-Deploy Secret Rot & Drift Watchdog
+  run: |
+    sentris rot . --max-age-days 90 --verify --fail-on-rot --webhook ${{ secrets.SLACK_SECURITY_WEBHOOK }}
+```
