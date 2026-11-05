@@ -183,9 +183,10 @@ impl McpServer {
                     "description": "Scans files, staged git diff hunks (with optional --fix), Docker/OCI container layers (with Ghost Layer detection), stdin streams, or workstation AI/MCP configs & .jsonl transcripts. Each finding in JSON includes `context_kind` (PRODUCTION | TEST_FIXTURE), `recommended_env_var`, and `remediate_command`."
                 },
                 {
-                    "name": "drift",
-                    "command": "sentris drift <path> [--fail-on-drift] --json",
-                    "description": "Audits code environment variable references against `.env.example` and `.env`/vault to compute `vault_coverage_pct`, missing runtime keys, undocumented keys, and hardcoded leaks."
+                    "name": "drift (aliases: rot, doctor)",
+                    "command": "sentris drift <path> [--max-age-days 90] [--verify] [--webhook <url>] [--fail-on-drift] --json",
+                    "rot_command": "sentris rot <path> [--verify] [--webhook <url>] [--fail-on-rot] --json",
+                    "description": "Audits Secret Rot & Configuration Drift across code, `.env.example`, and `.env`/vault: computes `vault_coverage_pct`, `rot_score_pct`, `stale_keys` (>90d unrotated), `dead_or_revoked_keys` (live provider check), `shadow_env_vars` (orphaned `.env` keys), missing runtime keys, and hardcoded leaks."
                 },
                 {
                     "name": "remediate (alias: fix)",
@@ -347,7 +348,8 @@ sentris scan --docker <image-or-tar> --json
 sentris scan --workstation --json
 gh run view --log | sentris scan --stdin --json
 sentris scan . --probe --json
-sentris drift . --json
+sentris rot . --verify --json
+sentris drift . --max-age-days 90 --fail-on-drift --json
 ```
 
 ### Autonomously Remediate Secrets (Code / IaC / MCP Rewrite + Secret Store Injection + Transcript Scrubbing)

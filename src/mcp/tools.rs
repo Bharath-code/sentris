@@ -306,13 +306,17 @@ impl McpServer {
                 },
                 {
                     "name": "sentris_drift_audit",
-                    "description": "Audit code environment variable references (os.getenv, process.env, std::env::var, os.Getenv) against `.env.example` and `.env`/vault to compute Vault Coverage %, missing runtime secrets, undocumented secrets, and hardcoded credential leaks.",
+                    "description": "Audit Secret Rot & Configuration Drift across code environment variable references (os.getenv, process.env, std::env::var, os.Getenv), `.env.example`, and `.env`/vault. Computes `vault_coverage_pct`, `rot_score_pct`, `stale_keys` (>max_age_days), `shadow_env_vars` (orphaned keys in .env), missing runtime secrets, and hardcoded credential leaks.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
                             "path": {
                                 "type": "string",
                                 "description": "Directory path inside the workspace to audit (defaults to '.')"
+                            },
+                            "max_age_days": {
+                                "type": "integer",
+                                "description": "Maximum credential age in days before a key in .env is flagged as stale Secret Rot (default: 90)"
                             }
                         }
                     }
@@ -722,9 +726,13 @@ impl McpServer {
             }
             "sentris_drift_audit" => {
                 let target_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let max_age_days = args
+                    .get("max_age_days")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(90);
                 let target = confine(target_path)?;
-                let report =
-                    crate::drift::analyze_drift(&target).map_err(|e| (-32603, e.to_string()))?;
+                let report = crate::drift::analyze_drift_with_options(&target, max_age_days, false)
+                    .map_err(|e| (-32603, e.to_string()))?;
                 let payload = serde_json::to_value(&report).map_err(|e| (-32603, e.to_string()))?;
                 Ok(text_result(payload, false))
             }

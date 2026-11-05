@@ -253,7 +253,7 @@ Run `sentris mcp --print-config` (or `sentris agent --setup`) to generate the `m
 | `sentris scan --verify` | Probes 12 live provider APIs in parallel (bypassing Canary/Honeytoken tripwires) and prints the Identity & Blast Radius scope map. |
 | `sentris scan --probe` | Read-only capability exposure probes for Stripe, GitHub, AWS, Hugging Face, and GitLab ranked by risk tier with OWASP NHI5 least-privilege advisories. |
 | `sentris scan --workstation` | Audits workstation AI coding agent configs, `.jsonl` transcripts (`~/.claude/projects/**/*.jsonl`), shell histories (`~/.zsh_history`, `~/.bash_history`), `~/.aws/credentials`, `~/.docker/config.json`, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, and `~/.git-credentials`. |
-| `sentris drift [PATH] [--fail-on-drift]` | Audits code environment variable references against `.env.example` and `.env`/vault to compute Vault Coverage % and secrets drift. |
+| `sentris drift [PATH]` (aliases: `rot`, `doctor`) | Audits Secret Rot & Configuration Drift across code, `.env.example`, and `.env`/vault (`--max-age-days 90`, `--verify` live vendor keys, `--webhook`, `--fail-on-drift` / `--fail-on-rot`). |
 | `sentris review [PATH]` | Interactive Split-Pane Ratatui TUI with live `-`/`+` staged patch preview (`r`, `b`, `i`, `q`). |
 | `sentris remediate [TARGET]` | 7-step autonomous remediation (`--all` batch mode, `--workstation` AI config/transcript scrubber, `--rotate` AWS IAM & Cloudflare rotation, `--backend env\|vault\|aws\|doppler\|1password\|infisical`, `--dry-run`, `--yes`). |
 | `sentris run --backend <B> --key <K>... -- <CMD>` | Zero-disk `.env` runtime runner: fetches secrets from any of the 6 backends into child process memory only and zeroizes parent buffers. |
