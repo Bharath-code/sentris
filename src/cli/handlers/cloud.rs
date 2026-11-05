@@ -41,7 +41,18 @@ pub fn handle_sync(cli: &Cli, path: PathBuf, repo: Option<String>, branch: Optio
 
     let res = upload_scan(&payload, &creds, false)
         .unwrap_or_else(|err| die("Failed to upload to Sentris Pro Cloud", err));
-    if !cli.quiet {
+    if cli.is_agent_mode() {
+        print_json(serde_json::json!({
+            "ok": true,
+            "command": "sync",
+            "scan_id": res.scan_id,
+            "repo_name": payload.repo_name,
+            "findings_synced": payload.findings.len(),
+            "dashboard_url": res.dashboard_url,
+            "blast_radius_insights": res.blast_radius_insights,
+            "payload": payload,
+        }));
+    } else if !cli.quiet {
         println!(
             "{} {}",
             "✔ Sentris Pro Cloud:".cyan().bold(),

@@ -3,7 +3,7 @@
 > **Target Audience:** AI Coding Agents (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex/Agents, LangGraph, CrewAI, Aider) & Systems Engineers.  
 > **Project:** Sentris (`sentris`)  
 > **Binary Footprint:** `3.8 MB` stripped static Rust binary (`rustls`, zero C/C++/Python/Node runtime dependencies)  
-> **Test Suite Status:** **395 / 395 Automated Tests Passing** (`333` unit tests + `62` integration/e2e/corpus/SLA tests across 8 test suites, `0` Clippy warnings)
+> **Test Suite Status:** **401 / 401 Automated Tests Passing** (`339` unit tests + `62` integration/e2e/corpus/SLA tests across 8 test suites, `0` Clippy warnings)
 
 ---
 
@@ -51,10 +51,11 @@ sentris/
 │   ├── lib.rs                      # Library root exporting all core modules
 │   ├── main.rs                     # Minimal 7-line binary entry point delegating to sentris::cli::handlers
 │   ├── model.rs                    # Finding, Severity, ContextKind (Production vs TestFixture), ScanReport
+│   ├── drift.rs                    # Vault Coverage % & Secrets Configuration Drift Auditor (sentris drift)
 │   ├── error.rs                    # Centralized SentrisError (thiserror)
 │   ├── fsutil.rs                   # Symlink rejection & atomic 0600 file helpers
 │   ├── keystore.rs                 # Local machine audit/confirmation HMAC key derivation
-│   ├── hook.rs                     # Claude Code / AI Agent hook (UserPromptSubmit, PreToolUse, PostToolUse, cloak_tool_output)
+│   ├── hook.rs                     # Claude Code / AI Agent hook (UserPromptSubmit, PreToolUse, PostToolUse, Unicode tag block, cloak_tool_output)
 │   ├── import.rs                   # Betterleaks/Gitleaks JSON importer with flat arena & bit-packed u32 handles
 │   ├── redact.rs                   # Inline text & stream redaction engine («sentris:<rule>:<fp8>» phantom markers)
 │   ├── audit/
@@ -67,17 +68,17 @@ sentris/
 │   │   ├── completions.rs          # Shell completions (bash, zsh, fish, powershell, elvish)
 │   │   └── handlers/               # Modular CLI subcommand execution handlers
 │   │       ├── mod.rs              # Top-level subcommand router
-│   │       ├── scan.rs             # Scan (--workstation, --stdin, --probe, --verify), baseline filter
+│   │       ├── scan.rs             # Scan (--workstation, --stdin, --docker, --fix, --ignore-tests, --probe, --verify), baseline filter
 │   │       ├── scan_output.rs      # Scan output formatting, parallel verification, exposure display, webhook & cloud sync
 │   │       ├── remediate.rs        # Remediate (--all, --rotate, --workstation, --from-report) and rollback handlers
 │   │       ├── quarantine.rs       # Zone 3 quarantine branch & playbook handler
 │   │       ├── revoke.rs           # Guided & API credential revocation (--api, --wait) + KeyDeactivated audit log
 │   │       ├── run.rs              # Zero-disk .env runtime runner across all 6 secret backends
 │   │       ├── review.rs           # Interactive Ratatui review & baseline snapshot handlers
-│   │       ├── audit.rs            # Audit ledger, gitleaks migration, git hook (--with-ai) & init handlers
+│   │       ├── audit.rs            # Audit ledger, drift auditor (handle_drift), gitleaks migration, git hook (--with-ai, --auto-fix) & init handlers
 │   │       ├── auth.rs             # Pro Cloud authentication handlers
 │   │       ├── hook.rs             # Claude Code stdin hook runner
-│   │       ├── rotate.rs           # AWS IAM dual-key rotation status/finish/undo handlers
+│   │       ├── rotate.rs           # AWS IAM & Cloudflare token rotation status/finish/undo handlers
 │   │       ├── investigate.rs      # AWS CloudTrail forensic investigation & CODEOWNERS attribution handler
 │   │       └── cloud.rs            # Sync, team blast-radius, MCP, LSP & AI agent handlers
 │   ├── cloud/
@@ -144,11 +145,13 @@ sentris/
 │   ├── rotator/
 │   │   ├── mod.rs                  # ProviderRotator trait & dual-key rotation state machine
 │   │   ├── aws.rs                  # AWS IAM dual-key lifecycle driver
+│   │   ├── cloudflare.rs           # Cloudflare API token live rotator (PUT /user/tokens/{id}/value)
 │   │   ├── flow.rs                 # Crash-safe rotation orchestration
 │   │   ├── ledger.rs               # HMAC-signed rotation ledger (.sentris/rotations.json)
 │   │   └── timefmt.rs              # RFC 3339 UTC timestamp parser & formatter
 │   ├── scanner/
 │   │   ├── mod.rs                  # Work-stealing parallel directory scanner, --stdin stream reader & workstation AI/MCP/transcript auditor
+│   │   ├── container.rs            # Pure-Rust Docker/OCI tarball & Ghost Layer (.wh.<file>) scanner (sentris scan --docker)
 │   │   └── ignore_tests.rs         # Component-aware ignore & config security unit tests
 │   ├── tui/
 │   │   ├── mod.rs                  # Panic-safe TerminalGuard & Ratatui event loop (sentris review)
@@ -200,18 +203,22 @@ Any AI coding agent (Claude Code, Cursor, Antigravity, Windsurf, OpenAI Codex, L
   - `sentris agent --setup`: Scaffolds `.mcp.json` and `.agents/skills/sentris-security/SKILL.md` in the repository root so any AI coding agent opening the workspace auto-discovers Sentris.
 
 ### 3.1 Model Context Protocol (`sentris mcp`)
-Run `sentris mcp --print-config` (or `sentris agent --setup`) to generate the `mcpServers` block for Claude Code, Cursor, Windsurf, or Antigravity. `sentris mcp` speaks JSON-RPC 2.0 over `stdio` and exposes **10 Tools**, **3 Resources**, and **2 Prompts**:
+Run `sentris mcp --print-config` (or `sentris agent --setup`) to generate the `mcpServers` block for Claude Code, Cursor, Windsurf, or Antigravity. `sentris mcp` speaks JSON-RPC 2.0 over `stdio` and exposes **14 Tools**, **3 Resources**, and **2 Prompts**:
 
 | MCP Tool Name | Arguments | What It Does |
 | :--- | :--- | :--- |
 | `sentris_scan_path` | `{ "path"?: string }` | Scans a file or directory in `<25ms` and returns redacted findings with `recommended_env_var` and `remediate_command`. |
 | `sentris_scan_staged` | `{}` | Scans staged git index diff hunks (`git diff --cached -U0`) before committing. |
+| `sentris_scan_workstation` | `{}` | Audits local workstation AI coding agent & MCP config files and `.jsonl` transcripts for plaintext secrets. |
+| `sentris_probe_exposure` | `{ "path"?: string }` | Read-only capability exposure probes for Stripe, GitHub, AWS, Hugging Face, and GitLab ranked by risk tier. |
+| `sentris_drift_audit` | `{ "path"?: string }` | Audits code environment variable references against `.env.example` and `.env`/vault to compute Vault Coverage % and drift. |
 | `sentris_remediate_finding` | `{ "file_path": string, "backend"?: string, "fingerprint"?: string, "confirm"?: string, "rotate"?: bool, "dry_run"?: bool }` | Quietly extracts the secret to `env`/`vault`/`aws`/`doppler`/`1password`/`infisical`, updates `.env.example`, and patches source/IaC/MCP files (requires two-step `confirm_token` + `SENTRIS_MCP_ALLOW_WRITES=1` when `dry_run=false`). |
+| `sentris_revoke_credential` | `{ "path"?: string, "finding_id"?: string }` | Looks up the provider revocation console URL, instructions, and live verification status for a finding. |
 | `sentris_rollback_session` | `{ "session_id"?: string }` | Reverts a remediation session from `.sentris/rollback_ledger.json` byte-for-byte. |
 | `sentris_redact_text` | `{ "text": string }` | Replaces every detected secret in arbitrary text with a stable `«sentris:<rule>:<fp8>»` phantom marker. |
-| `sentris_rotate_status` | `{}` | Lists active and completed AWS IAM dual-key rotations from `.sentris/rotations.json`. |
-| `sentris_rotate_finish` | `{ "rotation_id": string, "force"?: bool }` | Deactivates the old AWS IAM access key after the grace window (refuses if CloudTrail shows recent use). |
-| `sentris_investigate` | `{ "target"?: string, "known_ips"?: string[] }` | Read-only forensics: earliest git commit + `.github/CODEOWNERS` attribution + AWS CloudTrail event history. |
+| `sentris_rotate_status` | `{}` | Lists active and completed AWS IAM & Cloudflare token rotations from `.sentris/rotations.json`. |
+| `sentris_rotate_finish` | `{ "rotation_id": string, "confirm"?: string, "dry_run"?: bool }` | Deactivates the old AWS IAM access key after the grace window (refuses if CloudTrail shows recent use). |
+| `sentris_investigate` | `{ "path"?: string, "finding_id"?: string, "known_ips"?: string[] }` | Read-only forensics: earliest git commit (including post-remediation lookup) + `.github/CODEOWNERS` attribution + AWS CloudTrail event history. |
 | `sentris_audit_verify` | `{ "ledger_path"?: string }` | Verifies the RFC 2104 HMAC-SHA256 cryptographic hash chain in `.sentris/audit_ledger.json`. |
 | `sentris_team_blast_radius` | `{}` | Returns the Zero-Knowledge Multi-Repo Blast Radius correlation table (`zk_<sha256>` across repos). |
 
@@ -237,31 +244,34 @@ Run `sentris mcp --print-config` (or `sentris agent --setup`) to generate the `m
 
 | Command | Purpose |
 | :--- | :--- |
-| `sentris scan [PATH]` | Parallel recursive directory scan (`--format text\|json\|sarif\|github\|gitlab`, `--min-severity`, `--fail-on-secret`). |
+| `sentris scan [PATH]` | Parallel recursive directory scan (`--format text\|json\|sarif\|github\|gitlab`, `--min-severity`, `--ignore-tests`, `--fail-on-secret`). |
+| `sentris scan --docker <IMAGE_OR_TAR>` | Scans Docker/OCI container images or `.tar` archives across all layers and detects Ghost Layer secrets deleted in later layers. |
 | `sentris scan --stdin` | Scans an arbitrary stream from `stdin` (e.g. `gh run view --log \| sentris scan --stdin` or `docker history`) bounded by `max_file_size_mb`. |
-| `sentris scan --staged` | Diff-only staged hunk scan (`git diff --cached -U0`) in `12ms`. |
+| `sentris scan --staged [--fix]` | Diff-only staged hunk scan (`git diff --cached -U0`) in `12ms`, with optional `--fix` to auto-remediate and `git add` patched files. |
 | `sentris scan --since <REF>` | Commit-range scan (`HEAD~1` or `origin/main..HEAD`) for pre-push and PR checks. |
 | `sentris scan --git-history` | Full git commit DAG and diff history scan. |
 | `sentris scan --verify` | Probes 12 live provider APIs in parallel (bypassing Canary/Honeytoken tripwires) and prints the Identity & Blast Radius scope map. |
 | `sentris scan --probe` | Read-only capability exposure probes for Stripe, GitHub, AWS, Hugging Face, and GitLab ranked by risk tier with OWASP NHI5 least-privilege advisories. |
 | `sentris scan --workstation` | Audits workstation AI coding agent configs, `.jsonl` transcripts (`~/.claude/projects/**/*.jsonl`), shell histories (`~/.zsh_history`, `~/.bash_history`), `~/.aws/credentials`, `~/.docker/config.json`, `~/.npmrc`, `~/.pypirc`, `~/.netrc`, and `~/.git-credentials`. |
+| `sentris drift [PATH] [--fail-on-drift]` | Audits code environment variable references against `.env.example` and `.env`/vault to compute Vault Coverage % and secrets drift. |
 | `sentris review [PATH]` | Interactive Split-Pane Ratatui TUI with live `-`/`+` staged patch preview (`r`, `b`, `i`, `q`). |
-| `sentris remediate [TARGET]` | 7-step autonomous remediation (`--all` batch mode, `--workstation` AI config/transcript scrubber, `--rotate` AWS IAM rotation, `--backend env\|vault\|aws\|doppler\|1password\|infisical`, `--dry-run`, `--yes`). |
+| `sentris remediate [TARGET]` | 7-step autonomous remediation (`--all` batch mode, `--workstation` AI config/transcript scrubber, `--rotate` AWS IAM & Cloudflare rotation, `--backend env\|vault\|aws\|doppler\|1password\|infisical`, `--dry-run`, `--yes`). |
 | `sentris run --backend <B> --key <K>... -- <CMD>` | Zero-disk `.env` runtime runner: fetches secrets from any of the 6 backends into child process memory only and zeroizes parent buffers. |
-| `sentris revoke [TARGET]` | Guided or API-driven (`--api`) credential revocation with 2-second live verification polling (`--wait`) and `KeyDeactivated` SOC 2 audit logging. |
-| `sentris rotate status\|finish\|undo` | Inspects, completes, or reverts an AWS IAM dual-key rotation started with `remediate --rotate`. |
-| `sentris investigate <TARGET>` | Read-only forensics for a leaked AWS key: earliest git commit + `.github/CODEOWNERS` attribution + CloudTrail management event history. |
-| `sentris hook [--print-config] [--fail-closed]` | Claude Code / AI agent hook blocking secrets in `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` tool outputs. |
+| `sentris revoke [TARGET]` | Guided or API-driven (`--api`) credential revocation with 2-second live verification polling (`--wait`), post-remediation historical secret lookup, and `KeyDeactivated` SOC 2 audit logging. |
+| `sentris rotate status\|finish\|undo` | Inspects, completes, or reverts an AWS IAM or Cloudflare API token rotation started with `remediate --rotate`. |
+| `sentris investigate <TARGET>` | Read-only forensics for a leaked credential: earliest git commit (including post-remediation lookup) + `.github/CODEOWNERS` attribution + CloudTrail management event history. |
+| `sentris hook [--print-config] [--fail-closed]` | Claude Code / AI agent hook blocking secrets and Unicode tag injection in `UserPromptSubmit`, `PreToolUse`, and `PostToolUse` tool outputs. |
 | `sentris rollback [--session ID]` | Atomically restores original file contents from `.sentris/rollback_ledger.json`. |
 | `sentris quarantine <ID>` | Creates a Zone 3 quarantine branch and `.sentris/quarantine_qz_<id>_playbook.md`. |
 | `sentris baseline record` | Snapshots existing findings into `.sentris-baseline.json`. |
-| `sentris audit [--verify] [--export-vanta FILE]` | Verifies the HMAC-SHA256 audit chain and exports 1-click Vanta/Drata evidence JSON (`SOC 2 CC6.1/CC6.7/CC6.8`, `ISO 27001 A.8.24`, `OWASP NHI Top 10:2025`, `PCI-DSS v4.0`). |
+| `sentris audit [--verify] [--export-vanta FILE]` | Verifies the HMAC-SHA256 audit chain and exports 1-click Vanta/Drata evidence JSON (`SOC 2 CC6.1/CC6.7/CC6.8`, `ISO 27001 A.8.24`, `OWASP NHI Top 10:2025` + Vault Coverage %, `PCI-DSS v4.0`). |
 | `sentris migrate-gitleaks <FILE>` | Converts `.gitleaks.toml` rules and allowlists into `.sentris.toml` in `3ms`. |
-| `sentris install [--with-ai]` / `uninstall` | Installs or removes `.git/hooks/pre-commit` and `.git/hooks/pre-push` (and optionally `.mcp.json`, `SKILL.md`, and `.claude/settings.local.json`). |
+| `sentris install [--with-ai] [--auto-fix]` / `uninstall` | Installs or removes `.git/hooks/pre-commit` and `.git/hooks/pre-push` (with optional `--auto-fix` self-healing mode and `--with-ai` MCP/Claude Code hook scaffolding). |
 | `sentris auth login\|status\|logout` | Manages Sentris Pro Cloud workstation credentials. |
 | `sentris sync` / `sentris team` | Syncs salted `zk_<sha256>` telemetry and renders the Zero-Knowledge Multi-Repo Blast Radius table. |
 | `sentris mcp [--print-config]` | Runs the JSON-RPC 2.0 MCP server over `stdio` or prints IDE/Agent config JSON. |
 | `sentris lsp` | Runs the LSP 3.17 real-time diagnostic & code-action server over `stdio`. |
+| `sentris agent [--setup]` | Emits the full AI Agent CLI & MCP tool manifest or scaffolds `.mcp.json`, `SKILL.md`, and `.claude/settings.local.json`. |
 
 ---
 

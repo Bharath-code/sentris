@@ -156,7 +156,7 @@ impl McpServer {
                             },
                             "rotate": {
                                 "type": "boolean",
-                                "description": "If true, create a replacement key at the provider (AWS IAM access keys only; other rules return an error). The old key stays active until `sentris_rotate_finish`. Needs its own dry_run=true preview: its confirm_token differs from a non-rotating one"
+                                "description": "If true, create a replacement key at the provider (AWS IAM access keys and Cloudflare API tokens; other rules return an error). The old key stays active until `sentris_rotate_finish` (or rolls in-place for Cloudflare). Needs its own dry_run=true preview: its confirm_token differs from a non-rotating one"
                             },
                             "dry_run": {
                                 "type": "boolean",
@@ -208,7 +208,7 @@ impl McpServer {
                 },
                 {
                     "name": "sentris_investigate",
-                    "description": "Forensics for a leaked AWS access key: the first commit containing it and the CloudTrail events recorded for it since (management events only, last 90 days). Read-only; uses the caller's ambient AWS credentials and needs cloudtrail:LookupEvents. Other providers return 'no forensics yet'. Never concludes a key is safe.",
+                    "description": "Forensics for a leaked credential: the first git commit containing it (even after remediation), `.github/CODEOWNERS` owner attribution, and AWS CloudTrail events recorded for it since (management events only, last 90 days). Read-only; uses the caller's ambient AWS credentials and needs cloudtrail:LookupEvents. Other providers return 'no forensics yet'. Never concludes a key is safe.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {
@@ -300,6 +300,19 @@ impl McpServer {
                             "finding_id": {
                                 "type": "string",
                                 "description": "Optional fingerprint prefix, rule ID, or file path to select a specific finding"
+                            }
+                        }
+                    }
+                },
+                {
+                    "name": "sentris_drift_audit",
+                    "description": "Audit code environment variable references (os.getenv, process.env, std::env::var, os.Getenv) against `.env.example` and `.env`/vault to compute Vault Coverage %, missing runtime secrets, undocumented secrets, and hardcoded credential leaks.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {
+                            "path": {
+                                "type": "string",
+                                "description": "Directory path inside the workspace to audit (defaults to '.')"
                             }
                         }
                     }
@@ -706,6 +719,14 @@ impl McpServer {
                     }),
                     false,
                 ))
+            }
+            "sentris_drift_audit" => {
+                let target_path = args.get("path").and_then(|v| v.as_str()).unwrap_or(".");
+                let target = confine(target_path)?;
+                let report =
+                    crate::drift::analyze_drift(&target).map_err(|e| (-32603, e.to_string()))?;
+                let payload = serde_json::to_value(&report).map_err(|e| (-32603, e.to_string()))?;
+                Ok(text_result(payload, false))
             }
             other => Err((-32601, format!("Unknown tool: {other}"))),
         }

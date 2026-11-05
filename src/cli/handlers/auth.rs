@@ -49,8 +49,10 @@ pub fn handle_auth(cli: &Cli, subcommand: AuthSubcommand) {
 fn login(cli: &Cli, plain: bool, token: &str, server: Option<String>, team_secret: Option<&str>) {
     let mut creds = Credentials::from_token(token, server)
         .unwrap_or_else(|err| die("Authentication failed", err));
-    if let Err(err) = creds.refresh_from_server() {
-        die("Authentication failed", err);
+    if !cli.offline {
+        if let Err(err) = creds.refresh_from_server() {
+            die("Authentication failed", err);
+        }
     }
     let path = Credentials::default_credentials_path();
     let (secret, generated) = resolve_team_secret(team_secret, &path);

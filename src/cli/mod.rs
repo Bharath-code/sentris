@@ -10,7 +10,8 @@ use std::path::PathBuf;
     author = "Sentris Contributors",
     version = env!("CARGO_PKG_VERSION"),
     about = "High-performance, memory-safe, zero-knowledge secret scanner with autonomous remediation.",
-    long_about = "Sentris scans repositories at native speed (>10,000 files/sec), verifies live credentials via provider APIs, and enables safe autonomous remediation without production downtime."
+    long_about = "Sentris scans repositories, git history, Docker/OCI images, stdin streams, and workstation AI/MCP configs at native speed (>10,000 files/sec), verifies live credentials across 12 provider APIs with Canary tripwire immunity, audits Vault Coverage % & secrets drift, and performs safe autonomous remediation across source code, IaC, and 6 secret backends with tamper-evident SOC 2 / ISO 27001 / OWASP NHI 2025 / PCI-DSS v4.0 audit logging.",
+    after_help = "QUICKSTART EXAMPLES (Human & AI Agent Mode):\n  # 1. Scan repository, staged git hunks (with auto-fix), Docker images, or stdin streams\n  sentris scan . --verify --probe\n  sentris scan --staged --fix\n  sentris scan --docker app:latest\n  gh run view --log | sentris scan --stdin\n\n  # 2. Audit Vault Coverage % & configuration drift (.env.example vs .env vs code)\n  sentris drift . --fail-on-drift\n\n  # 3. Autonomously remediate secrets into .env / Vault / AWS / Doppler / 1Password / Infisical\n  sentris fix src/config.ts --yes\n  sentris fix . --all --backend 1password --yes\n  sentris fix --workstation --yes\n\n  # 4. Run commands with secrets in child memory only (zero .env on disk) & export Vanta SOC 2 evidence\n  sentris run --backend env --key STRIPE_SECRET_KEY -- npm start\n  sentris audit --verify --export-vanta vanta-evidence.json\n\n  # 5. AI Coding Agent CLI Mode (deterministic JSON on stdout, zero interactive prompts)\n  sentris scan . --ignore-tests --json\n  sentris agent                  # Emit full AI Agent CLI & MCP tool schema manifest\n  sentris agent --setup          # Auto-configure .mcp.json, SKILL.md & Claude Code hooks"
 )]
 pub struct Cli {
     #[command(subcommand)]
@@ -95,11 +96,11 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         cloud: bool,
 
-        /// Verify detected credentials against live provider APIs and map identity/permission scopes
+        /// Verify detected credentials against 12 live provider APIs (with Canary/Honeytoken tripwire immunity) and map identity/permission scopes
         #[arg(long, default_value_t = false)]
         verify: bool,
 
-        /// Probe each detected Stripe, GitHub or AWS credential read-only to see what it can reach, and rank findings by risk tier (makes network calls; never mutates anything)
+        /// Probe each detected Stripe, GitHub, AWS, Hugging Face or GitLab credential read-only to see what it can reach, emit OWASP NHI5 least-privilege advisories, and rank findings by risk tier (makes network calls; never mutates anything)
         #[arg(long, default_value_t = false)]
         probe: bool,
 
@@ -107,13 +108,36 @@ pub enum Commands {
         #[arg(long, value_enum)]
         fail_on: Option<crate::exposure::RiskTier>,
 
-        /// Audit local workstation AI coding agent & MCP config files (~/.cursor/mcp.json, ~/.claude.json, ~/.npmrc, etc.) for plaintext secrets
+        /// Audit local workstation AI coding agent & MCP config files (.mcp.json, ~/.cursor/mcp.json, ~/.claude.json, ~/.claude/projects/**/*.jsonl, ~/.zsh_history, ~/.npmrc, etc.) for plaintext secrets
         #[arg(long, default_value_t = false)]
         workstation: bool,
 
         /// Scan an arbitrary stream from standard input (e.g. `gh run view --log | sentris scan --stdin` or `docker history`)
         #[arg(long, default_value_t = false, conflicts_with_all = ["staged", "git_history", "since", "workstation", "from_report"])]
         stdin: bool,
+
+        /// Scan a Docker/OCI container image or exported `.tar` archive across all layers and detect Ghost Layer secrets deleted in later layers
+        #[arg(long, conflicts_with_all = ["staged", "git_history", "since", "workstation", "stdin", "from_report"])]
+        docker: Option<String>,
+
+        /// Automatically remediate detected findings in-place (and re-stage patched files when combined with `--staged`)
+        #[arg(long, default_value_t = false)]
+        fix: bool,
+
+        /// Ignore findings inside unit/integration test files and test fixture directories (`tests/`, `__tests__/`, `fixtures/`, `*.test.*`, `*.spec.*`)
+        #[arg(long, default_value_t = false)]
+        ignore_tests: bool,
+    },
+
+    /// Audit code environment variable references against `.env.example` and `.env`/vault to compute Vault Coverage % and secrets drift
+    Drift {
+        /// Target repository directory to audit (defaults to current directory)
+        #[arg(default_value = ".")]
+        path: PathBuf,
+
+        /// Exit with non-zero code (1) if any configuration drift, missing keys, or hardcoded secrets are detected
+        #[arg(long, default_value_t = false)]
+        fail_on_drift: bool,
     },
 
     /// Install the Sentris pre-commit & pre-push hooks (and optionally AI agent MCP/hook configs)
@@ -125,6 +149,10 @@ pub enum Commands {
         /// Also configure workspace AI agent protection (.mcp.json, SKILL.md, and .claude/settings.local.json)
         #[arg(long, default_value_t = false)]
         with_ai: bool,
+
+        /// Configure the pre-commit hook to automatically extract staged secrets into `.env`, patch code, and `git add` fixed files so commits succeed without blocking
+        #[arg(long, default_value_t = false)]
+        auto_fix: bool,
     },
 
     /// Uninstall the Sentris pre-commit hook
@@ -148,7 +176,7 @@ pub enum Commands {
         #[arg(long, default_value = "env")]
         backend: String,
 
-        /// Rotate the leaked key at the provider: creates a replacement, keeps the old key active until `rotate finish` (AWS IAM access keys only)
+        /// Rotate the leaked key at the provider: creates a replacement and keeps the old key active until `rotate finish` (AWS IAM access keys) or rolls the token value in-place (Cloudflare API tokens)
         #[arg(long, default_value_t = false)]
         rotate: bool,
 
@@ -201,7 +229,7 @@ pub enum Commands {
         session: Option<String>,
     },
 
-    /// Claude Code hook: blocks prompts and tool calls that would expose secrets (reads hook JSON on stdin)
+    /// Claude Code hook: blocks prompts, tool calls, Unicode tag injection, and tool outputs that would expose secrets (reads hook JSON on stdin)
     Hook {
         /// Print the settings.json snippet that registers this hook, then exit
         #[arg(long, default_value_t = false)]
@@ -212,7 +240,7 @@ pub enum Commands {
         fail_closed: bool,
     },
 
-    /// Forensics for a leaked key: when it was first committed and what the provider logged since (AWS only; read-only)
+    /// Forensics for a leaked key: earliest git commit, `.github/CODEOWNERS` attribution, and AWS CloudTrail activity since introduction (supports post-remediation lookup)
     Investigate {
         /// The finding ID, file path, or fingerprint prefix to investigate
         finding_id: Option<String>,
@@ -279,7 +307,7 @@ pub enum Commands {
         #[arg(long, default_value_t = true)]
         verify: bool,
 
-        /// Export 1-Click Vanta / Drata SOC 2 Type II (CC6.1, CC6.7, CC6.8) compliance evidence JSON pack
+        /// Export 1-Click Vanta / Drata compliance evidence JSON pack (SOC 2 Type II CC6.1/CC6.7/CC6.8, ISO 27001 A.8.24, OWASP NHI Top 10:2025 + Vault Coverage %, PCI-DSS v4.0)
         #[arg(long)]
         export_vanta: Option<PathBuf>,
     },

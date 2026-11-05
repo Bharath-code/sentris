@@ -159,6 +159,15 @@ impl GitManager {
 
     /// Installs an idempotent, fast pre-commit hook in `.git/hooks/pre-commit`
     pub fn install_pre_commit_hook(force: bool) -> Result<String, SentrisError> {
+        Self::install_pre_commit_hook_with_mode(force, false)
+    }
+
+    /// Installs a pre-commit hook in `.git/hooks/pre-commit`, optionally with `--fix` auto-remediation
+    /// so staged secrets are automatically extracted to `.env`, patched in code, and re-staged (`git add`).
+    pub fn install_pre_commit_hook_with_mode(
+        force: bool,
+        auto_fix: bool,
+    ) -> Result<String, SentrisError> {
         let root = Self::find_git_root()?;
         let hooks_dir = root.join(".git").join("hooks");
 
@@ -167,23 +176,26 @@ impl GitManager {
         }
 
         let hook_file = hooks_dir.join("pre-commit");
+        let fix_flag = if auto_fix { " --fix" } else { "" };
 
-        let hook_script = r#"#!/bin/sh
+        let hook_script = format!(
+            r#"#!/bin/sh
 # --- Sentris Autonomous Pre-Commit Hook (Sub-35ms) ---
 # Blocks commits containing exposed secrets or credentials.
 # Bypass in emergencies using: git commit --no-verify
 
 if command -v sentris >/dev/null 2>&1; then
-    sentris scan --staged --fail-on-secret
+    sentris scan --staged{fix_flag} --fail-on-secret
 else
     # Fallback to local cargo build if sentris is not globally in PATH
     if [ -f "./target/release/sentris" ]; then
-        ./target/release/sentris scan --staged --fail-on-secret
+        ./target/release/sentris scan --staged{fix_flag} --fail-on-secret
     else
         echo "⚠️  Sentris binary not found in PATH or target/release. Skipping scan."
     fi
 fi
-"#;
+"#
+        );
 
         if hook_file.exists() && !force {
             let existing_content = fs::read_to_string(&hook_file)?;
@@ -197,7 +209,7 @@ fi
             let appended = format!("{}\n\n{}", existing_content.trim(), hook_script);
             fs::write(&hook_file, appended)?;
         } else {
-            fs::write(&hook_file, hook_script)?;
+            fs::write(&hook_file, &hook_script)?;
         }
 
         // Set executable permissions on Unix systems

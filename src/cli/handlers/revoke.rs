@@ -1,5 +1,4 @@
 use owo_colors::OwoColorize;
-use std::fs;
 use std::time::Duration;
 
 use super::{die, fail, print_json, record_audit_event};
@@ -92,23 +91,25 @@ fn find_target<'a>(findings: &'a [Finding], id: Option<&str>) -> Option<&'a Find
 #[allow(clippy::too_many_lines)]
 pub fn handle_revoke(cli: &Cli, finding_id: Option<String>, api: bool, wait: bool) {
     let agent_mode = cli.is_agent_mode();
-    if cli.offline {
-        fail("`sentris revoke` requires network access to verify or revoke credentials (cannot run with `--offline`).");
+    if cli.offline && (api || wait) {
+        fail("`sentris revoke` with `--api` or `--wait` requires network access (cannot run with `--offline`).");
     }
 
     let scanner = Scanner::new().unwrap_or_else(|e| die("Failed to initialize scanner", e));
     let scan_target = super::remediate::scan_target_for(finding_id.as_deref());
-    let report = scanner
+    let mut report = scanner
         .scan_path(&scan_target)
         .unwrap_or_else(|e| die("Failed to scan target", e));
+    if find_target(&report.findings, finding_id.as_deref()).is_none() {
+        if let Ok(hist) = scanner.scan_git_history() {
+            report = hist;
+        }
+    }
     let Some(finding) = find_target(&report.findings, finding_id.as_deref()) else {
         fail("No matching finding found to revoke.");
     };
 
-    let content = fs::read_to_string(&finding.file_path)
-        .unwrap_or_else(|e| die(&format!("Cannot read {}", finding.file_path), e));
-    let mut secret = scanner
-        .resolve_finding_secret(&content, finding)
+    let mut secret = crate::investigate::resolve_finding_or_historical_secret(&scanner, finding)
         .unwrap_or_else(|e| fail(&e.to_string()));
 
     let url = revocation_url_for_rule(&finding.rule_id);
@@ -134,11 +135,15 @@ pub fn handle_revoke(cli: &Cli, finding_id: Option<String>, api: bool, wait: boo
         }
     }
 
-    let mut status = match verifier {
-        Some(v) => v
-            .verify_live(&secret)
-            .unwrap_or_else(|e| LiveStatus::Unverified(e.to_string())),
-        None => LiveStatus::Unverified("No live verifier for this rule".to_string()),
+    let mut status = if cli.offline {
+        LiveStatus::Unverified("Zero-egress offline mode active".to_string())
+    } else {
+        match verifier {
+            Some(v) => v
+                .verify_live(&secret)
+                .unwrap_or_else(|e| LiveStatus::Unverified(e.to_string())),
+            None => LiveStatus::Unverified("No live verifier for this rule".to_string()),
+        }
     };
 
     if wait && matches!(status, LiveStatus::Active { .. }) {

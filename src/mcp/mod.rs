@@ -206,7 +206,10 @@ mod tests {
             .as_array()
             .unwrap()
             .clone();
-        assert_eq!(tools.len(), 13);
+        assert_eq!(tools.len(), 14);
+        assert!(tools
+            .iter()
+            .any(|t| t["name"].as_str() == Some("sentris_drift_audit")));
 
         // Without credentials the tool reports an error instead of inventing sample data
         let _guard = crate::keystore::TEST_ENV_LOCK

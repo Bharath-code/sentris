@@ -1,4 +1,5 @@
 pub mod aws;
+pub mod cloudflare;
 pub mod flow;
 pub mod ledger;
 
@@ -125,6 +126,7 @@ pub fn unix_now() -> u64 {
 pub fn rotator_for_rule(rule_id: &str) -> Option<Box<dyn Rotator>> {
     match rule_id {
         "aws-access-key-id" => Some(Box::new(aws::AwsRotator::new())),
+        "cloudflare-api-token" => Some(Box::new(cloudflare::CloudflareRotator::new())),
         _ => None,
     }
 }

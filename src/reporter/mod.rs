@@ -245,8 +245,11 @@ impl Reporter {
 
     /// Emits native GitHub Actions workflow error annotations for inline PR diff code-review
     pub fn print_github_annotations(report: &ScanReport) {
+        use std::io::Write;
+        let mut out = std::io::stdout().lock();
         for f in &report.findings {
-            println!(
+            let _ = writeln!(
+                out,
                 "::error file={},line={},col={},title=Hardcoded Secret Detected ({rule})::[sentris] {} (Entropy: {:.2})",
                 f.file_path,
                 f.line_number,

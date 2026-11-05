@@ -28,10 +28,9 @@ pub(super) fn record_audit_event(action: crate::audit::AuditAction, details: ser
 
 /// Pretty-prints a machine-readable (agent mode) result to stdout.
 pub(super) fn print_json(value: serde_json::Value) {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&value).unwrap_or_default()
-    );
+    use std::io::Write;
+    let text = serde_json::to_string_pretty(&value).unwrap_or_default();
+    let _ = writeln!(std::io::stdout().lock(), "{text}");
 }
 
 /// Prints `ERROR: <context>: <err>` to stderr and exits with status 1.
@@ -63,6 +62,9 @@ pub fn execute(cli: Cli) {
             fail_on,
             workstation,
             stdin,
+            docker,
+            fix,
+            ignore_tests,
         } => scan::handle_scan(
             &cli,
             path,
@@ -82,8 +84,19 @@ pub fn execute(cli: Cli) {
             fail_on,
             workstation,
             stdin,
+            docker,
+            fix,
+            ignore_tests,
         ),
-        Commands::Install { force, with_ai } => audit::handle_install(force, with_ai),
+        Commands::Drift {
+            path,
+            fail_on_drift,
+        } => audit::handle_drift(&cli, path, fail_on_drift),
+        Commands::Install {
+            force,
+            with_ai,
+            auto_fix,
+        } => audit::handle_install(force, with_ai, auto_fix),
         Commands::Uninstall => audit::handle_uninstall(),
         Commands::Remediate {
             finding_id,

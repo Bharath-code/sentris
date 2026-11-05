@@ -43,7 +43,8 @@ pub fn handle_remediate(
         return;
     }
 
-    let targets = select_targets(&report, finding_id.as_deref(), all);
+    let effective_all = all || (workstation && finding_id.is_none());
+    let targets = select_targets(&report, finding_id.as_deref(), effective_all);
     if targets.is_empty() {
         if finding_id.as_deref().is_none_or(|id| id == ".") {
             print_clean(agent_mode);
@@ -136,9 +137,15 @@ fn matches_id(f: &Finding, id: &str) -> bool {
         || Path::new(&f.file_path) == Path::new(id)
 }
 
-/// Internal Sentris state files (`.sentris/*.json`) and `.env` secret stores hold extracted secrets by design
-/// and must never be rewritten as source code by `sentris remediate`.
+/// Internal Sentris state files (`.sentris/*.json`), `.env` secret stores, and non-credential
+/// AI supply-chain advisories must never be rewritten as secret extractions by `sentris remediate`.
 fn is_remediable_target(f: &Finding) -> bool {
+    if matches!(
+        f.rule_id.as_str(),
+        "mcp-unpinned-npx-server" | "unicode-prompt-injection" | "ai-prompt-injection-exfil"
+    ) {
+        return false;
+    }
     let norm = f.file_path.replace('\\', "/");
     let norm = norm.trim_start_matches("./");
     if norm.starts_with(".sentris/") || norm.contains("/.sentris/") {

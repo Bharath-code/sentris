@@ -35,6 +35,9 @@ pub fn handle_scan(
     fail_on: Option<RiskTier>,
     workstation: bool,
     stdin: bool,
+    docker: Option<String>,
+    fix: bool,
+    ignore_tests: bool,
 ) {
     let mut scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let mut report = match &from_report {
@@ -46,14 +49,52 @@ pub fn handle_scan(
             staged,
             workstation,
             stdin,
+            docker.as_deref(),
             &path,
         ),
     };
     let path = from_report.unwrap_or(path);
 
+    if ignore_tests {
+        report.findings.retain(|f| {
+            !crate::detector::false_positives::FalsePositiveFilter::is_test_fixture_path(
+                &f.file_path,
+            )
+        });
+        report.stats.findings_count = report.findings.len();
+    }
+
     if let Some(min_sev) = min_severity {
         report.findings.retain(|f| f.severity >= min_sev);
         report.stats.findings_count = report.findings.len();
+    }
+
+    if fix
+        && !report.findings.is_empty()
+        && docker.is_none()
+        && !git_history
+        && since.is_none()
+        && !stdin
+    {
+        auto_fix_scan_findings(cli, &scanner, &report, staged);
+        report = run_scan(
+            &scanner,
+            since.as_deref(),
+            git_history,
+            staged,
+            workstation,
+            stdin,
+            docker.as_deref(),
+            &path,
+        );
+        if ignore_tests {
+            report.findings.retain(|f| {
+                !crate::detector::false_positives::FalsePositiveFilter::is_test_fixture_path(
+                    &f.file_path,
+                )
+            });
+            report.stats.findings_count = report.findings.len();
+        }
     }
 
     let effective_format = if cli.is_agent_mode() && matches!(format, OutputFormat::Text) {
@@ -119,6 +160,7 @@ pub(super) fn import_report(cli: &Cli, scanner: &mut Scanner, file: &Path) -> Sc
     imported.report
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_scan(
     scanner: &Scanner,
     since: Option<&str>,
@@ -126,9 +168,15 @@ fn run_scan(
     staged: bool,
     workstation: bool,
     stdin: bool,
+    docker: Option<&str>,
     path: &Path,
 ) -> ScanReport {
-    let (context, result) = if stdin {
+    let (context, result) = if let Some(docker_target) = docker {
+        (
+            format!("Failed during Docker image/tar scan ({docker_target})"),
+            scanner.scan_docker(docker_target),
+        )
+    } else if stdin {
         (
             "Failed during standard input (--stdin) stream scan".to_string(),
             scanner.scan_reader(std::io::stdin().lock(), "<stdin>"),
@@ -157,6 +205,66 @@ fn run_scan(
         ("Failed during scan".to_string(), scanner.scan_path(path))
     };
     result.unwrap_or_else(|err| die(&context, err))
+}
+
+fn auto_fix_scan_findings(cli: &Cli, scanner: &Scanner, report: &ScanReport, restage: bool) {
+    let remediator = crate::remediator::Remediator::new();
+    let quiet = cli.quiet || cli.is_agent_mode();
+    let mut patched_files = Vec::new();
+
+    for finding in &report.findings {
+        if matches!(
+            finding.rule_id.as_str(),
+            "mcp-unpinned-npx-server" | "unicode-prompt-injection" | "ai-prompt-injection-exfil"
+        ) {
+            continue;
+        }
+        let norm = finding.file_path.replace('\\', "/");
+        let trimmed = norm.trim_start_matches("./");
+        if trimmed == ".env"
+            || trimmed.ends_with("/.env")
+            || trimmed.starts_with(".sentris/")
+            || trimmed.contains("/.sentris/")
+        {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&finding.file_path) else {
+            continue;
+        };
+        let Ok(mut raw_secret) = scanner.resolve_finding_secret(&content, finding) else {
+            continue;
+        };
+        let ok = remediator
+            .remediate_finding_with_options(
+                finding,
+                &raw_secret,
+                false,
+                Some("env"),
+                cli.offline,
+                false,
+                quiet,
+            )
+            .is_ok();
+        crate::remediator::Remediator::zeroize_secret_string(&mut raw_secret);
+        if ok {
+            patched_files.push(finding.file_path.clone());
+        }
+    }
+
+    if restage && !patched_files.is_empty() {
+        for file in &patched_files {
+            let _ = std::process::Command::new("git")
+                .args(["add", file])
+                .output();
+        }
+        for aux in [".env.example", ".gitignore"] {
+            if Path::new(aux).exists() {
+                let _ = std::process::Command::new("git")
+                    .args(["add", aux])
+                    .output();
+            }
+        }
+    }
 }
 
 fn apply_baseline(report: &mut ScanReport, baseline_path: &Path, show_notes: bool) {

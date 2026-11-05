@@ -28,8 +28,11 @@ pub(super) fn render_scan_report(cli: &Cli, report: &ScanReport, format: OutputF
 }
 
 fn print_serialized<E: std::fmt::Display>(out: Result<String, E>, what: &str) {
+    use std::io::Write;
     match out {
-        Ok(text) => println!("{text}"),
+        Ok(text) => {
+            let _ = writeln!(std::io::stdout().lock(), "{text}");
+        }
         Err(err) => die(&format!("Failed to serialize {what}"), err),
     }
 }

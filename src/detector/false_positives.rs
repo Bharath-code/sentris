@@ -56,6 +56,43 @@ impl FalsePositiveFilter {
         false
     }
 
+    /// Returns true if `file_path` is a unit/integration test file or test fixture directory
+    /// (`tests/`, `__tests__/`, `fixtures/`, `testdata/`, `*.test.*`, `*.spec.*`, `*_test.*`, `test_*.*`).
+    pub fn is_test_fixture_path(file_path: &str) -> bool {
+        let norm = file_path.replace('\\', "/");
+        let trimmed = norm.trim_start_matches("./");
+        for comp in trimmed.split('/') {
+            let lower = comp.to_ascii_lowercase();
+            if matches!(
+                lower.as_str(),
+                "tests"
+                    | "test"
+                    | "__tests__"
+                    | "__mocks__"
+                    | "fixtures"
+                    | "testdata"
+                    | "test_data"
+                    | "spec"
+                    | "specs"
+            ) {
+                return true;
+            }
+        }
+        let file_name = trimmed
+            .rsplit('/')
+            .next()
+            .unwrap_or(trimmed)
+            .to_ascii_lowercase();
+        file_name.contains(".test.")
+            || file_name.contains(".spec.")
+            || file_name.starts_with("test_")
+            || file_name.starts_with("mock_")
+            || file_name.starts_with("fixture")
+            || file_name
+                .rsplit_once('.')
+                .is_some_and(|(stem, _)| stem.ends_with("_test") || stem.ends_with("_spec"))
+    }
+
     /// Syntactic context check: suppresses generic-api-key matches or documentation examples
     /// that appear purely inside source code comments (`//`, `#`, `/*`, `* `, `--`).
     fn is_comment_documentation_example(rule_id: &str, line_context: &str) -> bool {
@@ -160,14 +197,20 @@ impl FalsePositiveFilter {
             "PLACEHOLDER",
             "DUMMY_KEY",
             "DUMMY_TOKEN",
+            "DUMMY_SECRET",
             "FAKE_KEY",
+            "FAKE_SECRET",
             "MOCK_KEY",
             "MOCK_TOKEN",
             "EXAMPLE_KEY",
             "EXAMPLE_TOKEN",
+            "EXAMPLE_DO_NOT_USE",
+            "DO_NOT_USE",
+            "NOT_A_REAL",
             "SAMPLE_KEY",
             "TEST_SECRET",
             "TEST_KEY",
+            "TEST_ONLY",
             "FOOBAR",
             "TODO_KEY",
             "<YOUR_",
@@ -873,5 +916,15 @@ mod basic_auth_tests {
         ));
         assert!(!F::is_plausible_basic_credential("QXV0aGVudGljYXRpb24="));
         assert!(!F::is_plausible_basic_credential("dXNlcjpwYXNzd29yZA=="));
+    }
+
+    #[test]
+    fn classifies_test_and_fixture_paths() {
+        assert!(F::is_test_fixture_path("tests/integration_test.rs"));
+        assert!(F::is_test_fixture_path("src/__tests__/auth.spec.ts"));
+        assert!(F::is_test_fixture_path("pkg/auth/client_test.go"));
+        assert!(F::is_test_fixture_path("testdata/sample_keys.json"));
+        assert!(!F::is_test_fixture_path("src/auth/production.rs"));
+        assert!(!F::is_test_fixture_path("cmd/server/main.go"));
     }
 }

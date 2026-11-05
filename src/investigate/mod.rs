@@ -101,7 +101,8 @@ where
     Ok(inv)
 }
 
-/// Scans `target`, picks the finding named by `finding_id` and investigates it. `None` when nothing matches.
+/// Scans `target` (falling back to git history if already remediated in the working tree),
+/// picks the finding named by `finding_id` and investigates it. `None` when nothing matches.
 pub fn investigate_target(
     scanner: &crate::scanner::Scanner,
     target: &Path,
@@ -109,7 +110,12 @@ pub fn investigate_target(
     known_ips: &[String],
     repo: &Path,
 ) -> Result<Option<Investigation>, SentrisError> {
-    let report = scanner.scan_path(target)?;
+    let mut report = scanner.scan_path(target)?;
+    if select_finding(&report, finding_id).is_none() {
+        if let Ok(hist) = scanner.scan_git_history() {
+            report = hist;
+        }
+    }
     let Some(finding) = select_finding(&report, finding_id) else {
         return Ok(None);
     };
@@ -120,12 +126,47 @@ pub fn investigate_target(
         })
         .map(Some);
     }
-    let content = std::fs::read_to_string(&finding.file_path)?;
-    let mut secret = scanner.resolve_finding_secret(&content, finding)?;
+    let mut secret = resolve_finding_or_historical_secret(scanner, finding)?;
     let now = crate::rotator::unix_now();
     let result = investigate(finding, &secret, repo, known_ips, now, aws::usage_since);
     crate::remediator::Remediator::zeroize_secret_string(&mut secret);
     result.map(Some)
+}
+
+pub(crate) fn resolve_finding_or_historical_secret(
+    scanner: &crate::scanner::Scanner,
+    finding: &Finding,
+) -> Result<String, SentrisError> {
+    if let Ok(content) = std::fs::read_to_string(&finding.file_path) {
+        if let Ok(sec) = scanner.resolve_finding_secret(&content, finding) {
+            return Ok(sec);
+        }
+    }
+    if let Ok(ledger) = crate::remediator::rollback::RollbackLedger::load() {
+        for tx in ledger.transactions.iter().rev() {
+            if tx.secret_fingerprint == finding.fingerprint || tx.file_path == finding.file_path {
+                if let Some(sec) = scanner.extract_raw_secret(&tx.original_line, &finding.rule_id) {
+                    return Ok(sec);
+                }
+            }
+        }
+    }
+    if let Some(commit) = &finding.commit_hash {
+        let spec = format!("{commit}:{}", finding.file_path.trim_start_matches("./"));
+        if let Ok(out) = std::process::Command::new("git")
+            .args(["show", &spec])
+            .output()
+        {
+            if out.status.success() {
+                let text = String::from_utf8_lossy(&out.stdout);
+                if let Ok(sec) = scanner.resolve_finding_secret(&text, finding) {
+                    return Ok(sec);
+                }
+            }
+        }
+    }
+    let content = std::fs::read_to_string(&finding.file_path)?;
+    scanner.resolve_finding_secret(&content, finding)
 }
 
 /// `Some(true)` only when the group's latest use is at or after a credible first-exposure time. Never `Some(false)`: a forged commit date must not be able to label real use "before exposure".
