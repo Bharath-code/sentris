@@ -265,6 +265,7 @@ fn test_cli_help_flags_discovery() {
         .unwrap();
     assert!(out.status.success());
     let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("[TARGET]"));
     assert!(stdout.contains("--backend"));
     assert!(stdout.contains("--workstation"));
     assert!(stdout.contains("Cloudflare API tokens"));
@@ -314,10 +315,12 @@ fn test_cli_remediate_dry_run_backends() {
             String::from_utf8_lossy(&output.stderr)
         );
         let stdout = String::from_utf8_lossy(&output.stdout);
+        assert!(stdout.contains("Target:"));
         assert!(stdout.contains("Autonomous Remediation Session"));
         assert!(stdout.contains("Zero-egress offline mode active"));
         assert!(stdout.contains("EXTRACTED"));
         assert!(stdout.contains("PATCHED"));
+        assert!(stdout.contains("Next:"));
     }
 }
 
@@ -676,6 +679,18 @@ fn test_cli_agent_manifest_and_json_mode() {
     assert_eq!(team_json["ok"], true);
     assert_eq!(team_json["command"], "team");
     assert_eq!(team_json["zero_knowledge_bytes_ingested"], 0);
+
+    // 4. Test structured JSON error + hint on failure in `--json` mode
+    let err_out = Command::new(&bin)
+        .args(["fix", "nonexistent_finding_id_xyz", "--json"])
+        .output()
+        .expect("Failed to execute sentris fix --json error test");
+    assert!(!err_out.status.success());
+    let err_json: serde_json::Value =
+        serde_json::from_slice(&err_out.stdout).expect("Valid JSON error output");
+    assert_eq!(err_json["ok"], false);
+    assert!(err_json["error"]["message"].is_string());
+    assert!(err_json["error"]["hint"].is_string());
 }
 
 fn git(dir: &std::path::Path, args: &[&str], date: &str) {

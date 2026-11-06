@@ -1,7 +1,7 @@
 use owo_colors::OwoColorize;
 use std::time::Duration;
 
-use super::{die, fail, print_json, record_audit_event};
+use super::{die, fail, fail_with_hint, print_json, record_audit_event};
 use crate::audit::AuditAction;
 use crate::cli::Cli;
 use crate::error::SentrisError;
@@ -106,7 +106,10 @@ pub fn handle_revoke(cli: &Cli, finding_id: Option<String>, api: bool, wait: boo
         }
     }
     let Some(finding) = find_target(&report.findings, finding_id.as_deref()) else {
-        fail("No matching finding found to revoke.");
+        fail_with_hint(
+            "No matching finding found to revoke.",
+            "Run 'sentris scan . --git-history' to inspect active and historical finding IDs.",
+        );
     };
 
     let mut secret = crate::investigate::resolve_finding_or_historical_secret(&scanner, finding)
