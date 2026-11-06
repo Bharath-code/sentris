@@ -2,7 +2,7 @@ use owo_colors::OwoColorize;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use super::print_json;
+use super::{die, print_json};
 use crate::audit::AuditLedger;
 use crate::cli::completions::{CompletionGenerator, ShellType};
 use crate::cli::Cli;
@@ -12,14 +12,7 @@ use crate::git::GitManager;
 pub fn handle_install(force: bool, with_ai: bool, auto_fix: bool) {
     match GitManager::install_pre_commit_hook_with_mode(force, auto_fix) {
         Ok(msg) => println!("{}", msg.green()),
-        Err(err) => {
-            eprintln!(
-                "{} Failed to install pre-commit hook: {}",
-                "ERROR:".red().bold(),
-                err
-            );
-            process::exit(1);
-        }
+        Err(err) => die("Failed to install pre-commit hook", err),
     }
     if with_ai {
         match crate::mcp::McpServer::setup_workspace_for_agents(std::path::Path::new(".")) {
@@ -30,16 +23,23 @@ pub fn handle_install(force: bool, with_ai: bool, auto_fix: bool) {
                     files.join(", ")
                 );
             }
-            Err(err) => {
-                eprintln!(
-                    "{} Failed to configure AI agent workspace: {}",
-                    "ERROR:".red().bold(),
-                    err
-                );
-                process::exit(1);
-            }
+            Err(err) => die("Failed to configure AI agent workspace", err),
         }
     }
+}
+
+fn compute_drift_next_actions(report: &crate::drift::DriftReport) -> Vec<String> {
+    let mut actions = Vec::new();
+    if report.hardcoded_leaks_count > 0 {
+        actions.push("sentris fix . --all --yes".to_string());
+    }
+    if !report.stale_keys.is_empty() || !report.dead_or_revoked_keys.is_empty() {
+        actions.push("sentris fix . --rotate --yes".to_string());
+    }
+    if !report.missing_from_env_example.is_empty() || !report.missing_from_env.is_empty() {
+        actions.push("Sync missing keys between .env and .env.example".to_string());
+    }
+    actions
 }
 
 #[allow(clippy::too_many_lines)]
@@ -52,24 +52,15 @@ pub fn handle_drift(
     webhook: Option<String>,
 ) {
     let verify_live = verify && !cli.offline;
-    let report = match crate::drift::analyze_drift_with_options(&path, max_age_days, verify_live) {
-        Ok(rep) => rep,
-        Err(err) => {
-            eprintln!(
-                "{} Failed to analyze secrets drift & rot: {}",
-                "ERROR:".red().bold(),
-                err
-            );
-            process::exit(1);
-        }
-    };
+    let report = crate::drift::analyze_drift_with_options(&path, max_age_days, verify_live)
+        .unwrap_or_else(|err| die("Failed to analyze secrets drift & rot", err));
 
     let mut webhook_status: Option<String> = None;
     if let Some(ref url) = webhook {
         if cli.offline {
             webhook_status = Some("skipped_offline".to_string());
             if !cli.is_agent_mode() && !cli.quiet {
-                println!(
+                eprintln!(
                     "{}",
                     "⚠ Zero-egress offline mode active — skipping webhook dispatch".yellow()
                 );
@@ -81,7 +72,7 @@ pub fn handle_drift(
                 Ok(msg) => {
                     webhook_status = Some(msg.clone());
                     if !cli.is_agent_mode() && !cli.quiet {
-                        println!("{} {}", "✔".green().bold(), msg);
+                        eprintln!("{} {}", "✔".green().bold(), msg);
                     }
                 }
                 Err(err) => {
@@ -94,6 +85,8 @@ pub fn handle_drift(
         }
     }
 
+    let next_actions = compute_drift_next_actions(&report);
+
     if cli.is_agent_mode() {
         print_json(serde_json::json!({
             "ok": !report.has_drift,
@@ -101,6 +94,7 @@ pub fn handle_drift(
             "aliases": ["rot", "doctor"],
             "webhook_status": webhook_status,
             "report": report,
+            "next_agent_actions": next_actions,
         }));
     } else if !cli.quiet {
         println!();
@@ -210,6 +204,12 @@ pub fn handle_drift(
                 "   {} Zero secret rot or drift detected (100% Vault Coverage & healthy keys)",
                 "✔".green().bold()
             );
+        } else if !next_actions.is_empty() {
+            println!(
+                "   {} {}",
+                "Next:".cyan().bold(),
+                next_actions.join("  |  ")
+            );
         }
         println!();
     }
@@ -221,14 +221,7 @@ pub fn handle_drift(
 pub fn handle_uninstall() {
     match GitManager::uninstall_pre_commit_hook() {
         Ok(msg) => println!("{}", msg.yellow()),
-        Err(err) => {
-            eprintln!(
-                "{} Failed to uninstall pre-commit hook: {}",
-                "ERROR:".red().bold(),
-                err
-            );
-            process::exit(1);
-        }
+        Err(err) => die("Failed to uninstall pre-commit hook", err),
     }
 }
 
@@ -246,14 +239,7 @@ pub fn handle_init(force: bool) {
             );
             println!("Edit .sentris.toml to configure custom enterprise rules, ignore patterns, and remediation parameters.");
         }
-        Err(err) => {
-            eprintln!(
-                "{} Failed to initialize configuration: {}",
-                "ERROR:".red().bold(),
-                err
-            );
-            process::exit(1);
-        }
+        Err(err) => die("Failed to initialize configuration", err),
     }
 }
 

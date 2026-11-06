@@ -1,6 +1,6 @@
 use owo_colors::OwoColorize;
 
-use super::{die, fail, print_json, record_audit_event};
+use super::{die, fail_with_hint, print_json, record_audit_event};
 use crate::audit::AuditAction;
 use crate::cli::Cli;
 use crate::git::quarantine::{QuarantineManager, QuarantineReport};
@@ -11,9 +11,10 @@ pub fn handle_quarantine(cli: &Cli, finding_id: String, branch: Option<String>) 
     let scanner = Scanner::new().unwrap_or_else(|err| die("Failed to initialize scanner", err));
     let report = scan_for_quarantine(&scanner);
     let finding = find_finding(&report, &finding_id).unwrap_or_else(|| {
-        fail(&format!(
-            "Could not find finding matching '{finding_id}'. Run 'sentris scan --git-history' to inspect findings."
-        ))
+        fail_with_hint(
+            &format!("Could not find finding matching '{finding_id}'."),
+            "Run 'sentris scan --git-history' to inspect active and historical finding IDs.",
+        )
     });
 
     let created = QuarantineManager::quarantine_finding(finding, branch.as_deref(), None)

@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use std::process;
 
-use super::{die, fail, print_json, record_audit_event};
+use super::{die, fail, fail_with_hint, print_json, record_audit_event};
 use crate::audit::AuditAction;
 use crate::cli::Cli;
 use crate::model::{Finding, ScanReport};
@@ -50,13 +50,20 @@ pub fn handle_remediate(
             print_clean(agent_mode);
             return;
         }
-        fail("Could not find matching finding to remediate.");
+        fail_with_hint(
+            "Could not find matching finding to remediate.",
+            "Run 'sentris scan .' to list active finding IDs, rule names, and file paths.",
+        );
     }
     if !dry_run
         && !(yes || agent_mode)
         && !confirm_interactive_remediation(&targets, &scan_target, &backend)
     {
         return;
+    }
+
+    if !agent_mode && !cli.quiet {
+        print_resolved_targets(&targets, &scan_target, &backend, dry_run, rotate);
     }
 
     let remediator = Remediator::new();
@@ -92,13 +99,58 @@ pub fn handle_remediate(
                 "sentris rollback --json"
             ]
         }));
-    } else if !all && report.findings.len() > 1 {
-        println!(
-            "{} {} additional secret(s) remain in target. Run with {} to batch-remediate all findings at once.",
-            "ℹ️ ".cyan(),
-            (report.findings.len() - 1).to_string().bold(),
-            "--all".cyan().bold()
-        );
+    } else {
+        if !all && report.findings.len() > 1 {
+            println!(
+                "{} {} additional secret(s) remain in target. Run with {} to batch-remediate all findings at once.",
+                "ℹ️ ".cyan(),
+                (report.findings.len() - 1).to_string().bold(),
+                "--all".cyan().bold()
+            );
+        }
+        if !cli.quiet {
+            println!(
+                "{} {} (verify clean)  |  {} (undo)",
+                "   Next:".cyan().bold(),
+                "sentris scan .".bold(),
+                "sentris rollback".bold()
+            );
+        }
+    }
+}
+
+fn print_resolved_targets(
+    targets: &[&Finding],
+    scan_target: &Path,
+    backend: &str,
+    dry_run: bool,
+    rotate: bool,
+) {
+    let mode_label = if dry_run {
+        "dry-run"
+    } else if rotate {
+        "rotate"
+    } else {
+        "extract"
+    };
+    match targets {
+        [f] => println!(
+            "{} {}:{} ({}) → backend '{}' [{}]",
+            "🎯 Target:".cyan().bold(),
+            f.file_path.bold(),
+            f.line_number,
+            f.rule_id.cyan(),
+            backend.bold(),
+            mode_label
+        ),
+        many => println!(
+            "{} {} findings in {} → backend '{}' [{}]",
+            "🎯 Target:".cyan().bold(),
+            many.len().to_string().bold(),
+            scan_target.display().to_string().bold(),
+            backend.bold(),
+            mode_label
+        ),
     }
 }
 
@@ -168,17 +220,28 @@ fn select_targets<'a>(
     if all {
         return eligible;
     }
-    let preferred = match finding_id {
-        Some(id) => eligible.iter().copied().find(|f| matches_id(f, id)),
+    match finding_id {
+        Some(id) if !Path::new(id).exists() => eligible
+            .iter()
+            .copied()
+            .find(|f| matches_id(f, id))
+            .into_iter()
+            .collect(),
+        Some(id) => eligible
+            .iter()
+            .copied()
+            .find(|f| matches_id(f, id))
+            .or_else(|| eligible.first().copied())
+            .into_iter()
+            .collect(),
         None => eligible
             .iter()
             .copied()
-            .find(|f| f.rule_id == "stripe-secret-key" || f.rule_id == "stripe-restricted-key"),
-    };
-    preferred
-        .or_else(|| eligible.first().copied())
-        .into_iter()
-        .collect()
+            .find(|f| f.rule_id == "stripe-secret-key" || f.rule_id == "stripe-restricted-key")
+            .or_else(|| eligible.first().copied())
+            .into_iter()
+            .collect(),
+    }
 }
 
 /// Remediates one finding and returns its session record; any failure aborts the command.
@@ -214,6 +277,16 @@ fn remediate_one(
     Remediator::zeroize_secret_string(&mut raw_secret);
     let session_id = result.unwrap_or_else(|err| match err {
         crate::error::SentrisError::Refused(msg) => {
+            if cli.is_agent_mode() {
+                print_json(serde_json::json!({
+                    "ok": false,
+                    "error": {
+                        "code": "REFUSED",
+                        "message": msg,
+                        "hint": "Run without '--rotate' to extract into .env, then use 'sentris revoke <TARGET> --wait'."
+                    }
+                }));
+            }
             eprintln!("{} {msg}", "REFUSED:".yellow().bold());
             process::exit(2)
         }
@@ -271,7 +344,10 @@ fn confirm_interactive_remediation(
 ) -> bool {
     use std::io::{IsTerminal, Write};
     if !std::io::stdin().is_terminal() {
-        fail("Non-interactive terminal detected. Run with '--yes' to auto-approve remediation in scripts or CI/CD.");
+        fail_with_hint(
+            "Non-interactive terminal detected.",
+            "Run with '--yes' (or '-y') to auto-approve remediation in scripts or CI/CD, or '--dry-run' to preview.",
+        );
     }
 
     print_plan(targets, scan_target, backend);

@@ -33,8 +33,27 @@ pub(super) fn print_json(value: serde_json::Value) {
     let _ = writeln!(std::io::stdout().lock(), "{text}");
 }
 
-/// Prints `ERROR: <context>: <err>` to stderr and exits with status 1.
+/// Returns true if the current CLI invocation requested machine-readable JSON output
+/// (`--json`, `--agent`, or `SENTRIS_AGENT=1`), so error paths also emit structured JSON on stdout.
+pub(super) fn is_json_invocation() -> bool {
+    std::env::var("SENTRIS_AGENT")
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false)
+        || std::env::args().any(|a| a == "--json" || a == "--agent")
+}
+
+/// Prints `ERROR: <context>: <err>` to stderr (plus structured JSON on stdout in `--json` mode) and exits with status 1.
 pub(super) fn die(context: &str, err: impl std::fmt::Display) -> ! {
+    if is_json_invocation() {
+        print_json(serde_json::json!({
+            "ok": false,
+            "error": {
+                "context": context,
+                "message": err.to_string(),
+                "hint": "Run with '--help' to inspect command flags or '--offline' for zero-egress local execution.",
+            }
+        }));
+    }
     eprintln!("{} {}: {}", "ERROR:".red().bold(), context, err);
     std::process::exit(1)
 }
@@ -167,8 +186,32 @@ pub fn execute(cli: Cli) {
     }
 }
 
-/// Prints `ERROR: <message>` to stderr and exits with status 1.
+/// Prints `ERROR: <message>` to stderr (plus structured JSON on stdout in `--json` mode) and exits with status 1.
 pub(super) fn fail(message: &str) -> ! {
+    if is_json_invocation() {
+        print_json(serde_json::json!({
+            "ok": false,
+            "error": {
+                "message": message,
+            }
+        }));
+    }
     eprintln!("{} {}", "ERROR:".red().bold(), message);
+    std::process::exit(1)
+}
+
+/// Prints `ERROR: <message>` and an actionable `Hint: <hint>` to stderr (plus structured JSON on stdout in `--json` mode) and exits with status 1.
+pub(super) fn fail_with_hint(message: &str, hint: &str) -> ! {
+    if is_json_invocation() {
+        print_json(serde_json::json!({
+            "ok": false,
+            "error": {
+                "message": message,
+                "hint": hint,
+            }
+        }));
+    }
+    eprintln!("{} {}", "ERROR:".red().bold(), message);
+    eprintln!("{} {}", "Hint:".cyan().bold(), hint);
     std::process::exit(1)
 }

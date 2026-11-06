@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::remediate::scan_target_for;
-use super::{die, fail, print_json, record_audit_event};
+use super::{die, fail_with_hint, print_json, record_audit_event};
 use crate::audit::AuditAction;
 use crate::cli::Cli;
 use crate::error::SentrisError;
@@ -16,12 +16,26 @@ pub fn handle_investigate(cli: &Cli, finding_id: Option<String>, known_ips: Vec<
     let inv = investigate_target(&scanner, &target, finding_id.as_deref(), &known_ips, &repo)
         .unwrap_or_else(|err| match err {
             SentrisError::Refused(msg) => {
+                if cli.is_agent_mode() {
+                    print_json(serde_json::json!({
+                        "ok": false,
+                        "error": {
+                            "code": "REFUSED",
+                            "message": msg,
+                        }
+                    }));
+                }
                 eprintln!("REFUSED: {msg}");
                 std::process::exit(2)
             }
             other => die("Investigation failed", other),
         })
-        .unwrap_or_else(|| fail("Could not find a matching finding to investigate."));
+        .unwrap_or_else(|| {
+            fail_with_hint(
+                "Could not find a matching finding to investigate.",
+                "Run 'sentris scan . --git-history' to list active and historical finding IDs.",
+            )
+        });
 
     if inv.supported {
         record_audit_event(

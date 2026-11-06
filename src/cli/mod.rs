@@ -175,6 +175,7 @@ pub enum Commands {
     #[command(visible_alias = "fix")]
     Remediate {
         /// The finding ID, file path, or fingerprint prefix to remediate
+        #[arg(value_name = "TARGET")]
         finding_id: Option<String>,
 
         /// Run in dry-run preview mode without making external API changes
@@ -209,6 +210,7 @@ pub enum Commands {
     /// Guided or API-driven credential revocation with live verification polling and SOC 2 audit logging
     Revoke {
         /// The finding ID, file path, rule ID, or fingerprint prefix to revoke
+        #[arg(value_name = "TARGET")]
         finding_id: Option<String>,
 
         /// Call the provider's revocation API directly when supported (e.g. GitHub `POST /credentials/revoke`)
@@ -256,6 +258,7 @@ pub enum Commands {
     /// Forensics for a leaked key: earliest git commit, `.github/CODEOWNERS` attribution, and AWS CloudTrail activity since introduction (supports post-remediation lookup)
     Investigate {
         /// The finding ID, file path, or fingerprint prefix to investigate
+        #[arg(value_name = "TARGET")]
         finding_id: Option<String>,
 
         /// Source IP you recognise (repeatable); other IPs in the provider log are flagged
@@ -272,6 +275,7 @@ pub enum Commands {
     /// Isolate a leaked credential into a Zone 3 quarantine branch and generate a scrub playbook
     Quarantine {
         /// The finding ID, rule ID, or fingerprint prefix to quarantine
+        #[arg(value_name = "TARGET")]
         finding_id: String,
 
         /// Custom branch name (defaults to sentris/quarantine/<finding-id>)
